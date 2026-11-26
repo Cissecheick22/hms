@@ -319,6 +319,13 @@
           { proposee: badge("Proposée", ""), acceptee: badge("Acceptée", "on"), modifiee: badge("Modifiée", "on"), rejetee: badge("Rejetée", "outline") }[r.status],
           r.status === "proposee" ? `<span class="row" style="flex-wrap:nowrap">${btn("Accepter", `A.rat.accept(${q(r.id)})`, "sm")}${btn("Modifier", `A.rat.modify(${q(r.id)})`, "ghost sm")}${btn("Rejeter", `A.rat.reject(${q(r.id)})`, "ghost sm")}</span>` : ""]
       }), "Aucune recommandation.")}
+      <h2>Bornes du mode automatique</h2>
+      ${card("", `<p class="muted" style="margin-top:0">Le mode automatique n'applique un prix qu'entre le plancher et le plafond du type, avec une variation maximale journalière (RG-RAT-02). Une recommandation hors bornes est ramenée à la borne et reste à valider. EF-RAT-014</p>
+        ${tbl(["Type", "#Plancher (FCFA)", "#Plafond (FCFA)"], D.roomTypes.map((t) => [esc(t.label),
+          `<input id="rat-b-lo-${esc(t.code)}" type="number" step="500" value="${S.bounds[t.code][0]}" aria-label="Plancher ${esc(t.label)}" style="max-width:130px">`,
+          `<input id="rat-b-hi-${esc(t.code)}" type="number" step="500" value="${S.bounds[t.code][1]}" aria-label="Plafond ${esc(t.label)}" style="max-width:130px">`]))}
+        <div class="row" style="margin-top:10px"><label for="rat-b-move">Variation max. par jour (± %)</label><input id="rat-b-move" type="number" min="1" max="50" value="${S.maxDailyMove}" style="max-width:90px">${btn("Enregistrer les bornes", "A.rat.saveBounds()")}</div>
+        <p class="muted">Mode actuel : ${ui.ratAuto ? badge("Automatique borné", "on") : badge("Conseil (validation humaine)", "outline")} · ${S.recos.filter((r) => r.status === "proposee" && bounded(r).clipped).length} recommandation(s) hors bornes en attente de décision humaine.</p>`)}
       <div class="cols">
         <section><h2>Prévision de la demande — taux d'occupation</h2>${columns(days.map(fd), forecast, (v) => v + " %")}<p class="muted">Modèle de séries temporelles simulé (pick-up, saisonnalité, événements, concurrence). Repli : moyenne historique.</p></section>
         <section><h2>Rate shopping — Standard (fournisseur simulé)</h2>${tbl(["Établissement", ...daysFrom(today, 7).map((d) => "#" + fd(d))], [
@@ -560,6 +567,20 @@
       const r = S.recos.find((x) => x.id === id)
       r.status = "rejetee"
       log("Humain", `Recommandation rejetée : ${T(r.type).label} ${fd(r.date)}`)
+      render()
+    },
+    saveBounds() {
+      const next = {}
+      for (const t of D.roomTypes) {
+        const lo = Number(val("rat-b-lo-" + t.code)), hi = Number(val("rat-b-hi-" + t.code))
+        if (!lo || !hi || lo >= hi) return toast(`Bornes invalides pour ${t.label} : le plancher doit être inférieur au plafond`)
+        next[t.code] = [lo, hi]
+      }
+      const m = Number(val("rat-b-move"))
+      if (!(m >= 1 && m <= 50)) return toast("Variation journalière entre 1 et 50 %")
+      S.bounds = next; S.maxDailyMove = m
+      log("Humain", `Bornes IA mises à jour : ${D.roomTypes.map((t) => `${t.code} ${Math.round(next[t.code][0] / 1000)}-${Math.round(next[t.code][1] / 1000)} k`).join(", ")}, ± ${m} %/jour`)
+      toast("Bornes enregistrées")
       render()
     },
     toggleAuto() {
