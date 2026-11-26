@@ -154,6 +154,9 @@
   const now = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
   const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0)
   const userSel = (id, val) => select(id, Object.entries(USERS), val)
+  // Anneau : 6 couleurs au plus dans la palette, le reste est regroupé
+  const top6 = (items) => { const a = items.slice().sort((x, y) => y.value - x.value); return a.length <= 6 ? a : [...a.slice(0, 5), { label: "Autres", value: sum(a.slice(5), (x) => x.value) }] }
+  const st = (label, value, hint, icon = "chart") => stat({ label, value: String(value), hint, icon })
   const muted = (t) => `<span class="muted">${esc(t)}</span>`
   const certOk = (c, at = today) => c.expires >= at
   const soon = (c) => certOk(c) && c.expires <= addDays(today, 60)
@@ -343,7 +346,7 @@
         btn("Nouvelle embauche", "go('hr-personnel/mouvements')"))
       const tabs = subtabs("hr-personnel", [["dossiers", "Dossiers"], ["organigramme", "Organigramme"], ["certifications", "Certifications et formation"], ["mouvements", "Entrées et sorties"]], tab)
       const body = { dossiers: dossiers, organigramme: orga, certifications: certifs, mouvements: mouvements }[tab] || dossiers
-      return head + tabs + body(p[1])
+      return head + tabs + (tab === "dossiers" ? personnelOverview() : "") + body(p[1])
     },
     "hr-temps"(p) {
       const tab = p[0] || "planning"
@@ -354,7 +357,7 @@
     "hr-paie"(p) {
       const tab = p[0] || "cycle", per = cur()
       return pageHead(`Paie — ${monthLabel(per.month)}`, `Cycle mensuel de paie de l'entité Hôtel Exemple (FCFA). Moteur et paramètres : ${PACK.version}, taux d'exemple à faire valider.`,
-        badge(per.closed ? "Clôturée" : `Étape ${Math.min(per.step + 1, 9)} / 9`, per.closed ? "dark" : "on"))
+        badge(per.closed ? "Clôturée" : `Étape ${Math.min(per.step + 1, 9)} / 9`, per.closed ? "ok" : "info"))
         + subtabs("hr-paie", [["cycle", "Cycle"], ["variables", "Variables"], ["controle", "Contrôle"], ["bulletins", "Bulletins et livre de paie"], ["virements", "Virements"], ["pourboires", "Pourboires"], ["prets", "Prêts et avances"], ["entites", "Multi-entités"], ["parametres", "Paramètres et rubriques"]], tab)
         + ({ cycle, variables, controle, bulletins, virements, pourboires, prets, entites, parametres }[tab] || cycle)()
     },
@@ -374,21 +377,42 @@
     },
   }
 
+  // ----- Personnel : vue d'ensemble (indicateurs et graphiques) -----
+  function personnelOverview() {
+    const a = active(), withReq = a.filter((e) => REQ[e.job]), okReq = withReq.filter((e) => { const c = certFor(e); return c && certOk(c) })
+    const cdi = a.filter((e) => e.contract === "CDI").length, seniority = a.length ? sum(a, (e) => years(e.start, today)) / a.length : 0
+    const pend = H.leaves.filter((l) => ["Demandée", "Validée chef"].includes(l.status)).length
+    const byDept = Object.keys(DEPTS).map((d) => ({ label: DEPTS[d], value: a.filter((e) => e.dept === d).length })).filter((x) => x.value)
+    const byCtr = [...new Set(a.map((e) => e.contract))].map((c) => ({ label: c, value: a.filter((e) => e.contract === c).length }))
+    const mvIcon = { Entrée: "user", Sortie: "door", Avenant: "file" }
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Effectif actif", value: String(a.length), icon: "users", hint: `${cdi} CDI · ${a.length - cdi} autres contrats`, route: "hr-personnel/organigramme" })}
+        ${stat({ label: "Ancienneté moyenne", value: seniority.toFixed(1).replace(".", ",") + " an(s)", icon: "clock", hint: "effectif actif" })}
+        ${stat({ label: "Conformité des certifications", value: pct((okReq.length / (withReq.length || 1)) * 100), icon: "shield", hint: `${okReq.length}/${withReq.length} postes à certification obligatoire`, route: "hr-personnel/certifications" })}
+        ${stat({ label: "Congés à valider", value: String(pend), icon: "calendar", hint: "chef de service puis RH", route: "hr-temps/conges" })}
+      </div>
+      <div class="dash" style="margin-bottom:16px">
+        <div class="w4">${section("Effectif par service", donut(top6(byDept), { fmt: (v) => v, center: String(a.length), sub: "actifs" }))}</div>
+        <div class="w4">${section("Types de contrat", donut(byCtr, { fmt: (v) => v, center: pct((cdi / (a.length || 1)) * 100), sub: "en CDI" }))}</div>
+        <div class="w4">${section("Mouvements récents", `<div class="feed">${H.moves.slice(0, 5).map((m) => `<div><span class="fi">${ico(mvIcon[m.type] || "file", 15)}</span><span><strong style="font-size:13px">${esc(m.name)}</strong> ${badge(m.type, m.type === "Sortie" ? "bad" : m.type === "Entrée" ? "ok" : "info")}<br><span class="muted">${fd(m.date)} · ${esc(m.detail)}</span></span></div>`).join("")}</div>`, btn("Entrées et sorties", "go('hr-personnel/mouvements')", "ghost sm"))}</div>
+      </div>`
+  }
+
   // ----- Personnel : dossiers -----
   function dossiers(id) {
     const e = E(id) || H.emps[0]
-    const items = H.emps.map((x) => ({ id: x.id, title: x.name, sub: `${x.job} · ${DEPTS[x.dept]}`, badge: x.status !== "actif" ? " " + badge(x.status === "sorti" ? "Sorti" : "Muté", "dark") : x.contract !== "CDI" ? " " + badge(x.contract, "outline") : "" }))
+    const items = H.emps.map((x) => ({ id: x.id, title: x.name, sub: `${x.job} · ${DEPTS[x.dept]}`, badge: x.status !== "actif" ? " " + badge(x.status === "sorti" ? "Sorti" : "Muté", "outline") : x.contract !== "CDI" ? " " + badge(x.contract, "outline") : "" }))
     const shown = ui.hrShow === e.id, c = H.certs.filter((x) => x.emp === e.id)
     const s = e.status === "actif" ? slip(e) : null
     const minCat = CATS[e.cat]
     return split(listItems(items, e.id, "hr-personnel/dossiers"), `<div class="card">
-      <div class="row between"><span class="big">${esc(e.name)}</span><span class="row">${badge(e.contract, "outline")}${badge(e.status === "actif" ? "Actif" : e.status === "sorti" ? "Sorti" : "Muté (autre entité)", e.status === "actif" ? "on" : "dark")}</span></div>
+      <div class="row between"><span class="big">${esc(e.name)}</span><span class="row">${badge(e.contract, "outline")}${badge(e.status === "actif" ? "Actif" : e.status === "sorti" ? "Sorti" : "Muté (autre entité)", e.status === "actif" ? "ok" : "outline")}</span></div>
       <div class="muted">${esc(e.mat)} · ${esc(e.job)}${e.alias ? ` (${esc(e.alias)})` : ""} · ${esc(DEPTS[e.dept])} · ${esc(e.prop)} <span class="muted">· EF-HRM-001</span></div>
-      <div class="grid" style="margin:14px 0">${kpi("Ancienneté", years(e.start, today) + " an(s)", "entrée le " + fd(e.start) + "/" + e.start.slice(0, 4))}${kpi("Solde congés payés", fj(cpSolde(e)), "2,2 j acquis par mois")}${kpi("Coût employeur mensuel", shown && s ? money(s.cost) : "••••", shown ? "exemple" : "masqué")}</div>
+      <div class="grid" style="margin:14px 0">${stat({ label: "Ancienneté", value: years(e.start, today) + " an(s)", icon: "clock", hint: "entrée le " + fd(e.start) + "/" + e.start.slice(0, 4) })}${stat({ label: "Solde congés payés", value: fj(cpSolde(e)), icon: "calendar", hint: "2,2 j acquis par mois" })}${stat({ label: "Coût employeur mensuel", value: shown && s ? money(s.cost) : "••••", icon: "wallet", hint: shown ? "exemple" : "masqué" })}</div>
       <h3>Identité et situation <span class="muted" style="font-weight:400">EF-HRM-001</span></h3>
       ${kv([["Pièce d'identité", esc(e.idDoc)], ["Adresse", esc(e.addr)], ["Situation familiale (paie)", esc(e.family) + ` · ${String(e.parts).replace(".", ",")} part(s) ITS`], ["Coordonnées", `${esc(e.email)} · ${esc(e.phone)}`], ["Manager", e.manager ? elink(e.manager) : "—"],
         ["Entité employeuse", `${esc(ENT(e.entity).name)} · ${esc(ENT(e.entity).country)} · devise ${esc(ENT(e.entity).cur)}`], ["Établissement", esc(e.prop)], ["Date d'entrée · ancienneté", `${fd(e.start)}/${e.start.slice(0, 4)} · ${years(e.start, today)} an(s)`],
-        ["Profil d'accès physique", esc(profileOf(e)) + " " + badge(e.access === "actif" ? "ACC simulé" : e.access, e.access === "actif" ? "outline" : "dark") + ` <span class="muted">EF-HRM-010</span>`]])}
+        ["Profil d'accès physique", esc(profileOf(e)) + " " + badge(e.access === "actif" ? "ACC simulé" : e.access, e.access === "actif" ? "outline" : "bad") + ` <span class="muted">EF-HRM-010</span>`]])}
       ${e.status === "actif" ? `<details style="margin-top:8px"><summary class="muted">Modifier l'identité et la situation</summary><div class="form" style="margin-top:8px">
         ${field("hr-iaddr", "Adresse", input("hr-iaddr", e.addr))}${field("hr-iphone", "Téléphone", input("hr-iphone", e.phone))}${field("hr-imail", "E-mail", input("hr-imail", e.email))}
         ${field("hr-ifam", "Situation familiale", input("hr-ifam", e.family))}${field("hr-iparts", "Parts ITS", select("hr-iparts", Object.keys(PACK.reduc), String(e.parts)))}
@@ -402,7 +426,7 @@
         ${field("hr-rby", "Saisi par", userSel("hr-rby", "PAIE"))}<div class="full">${btn("Enregistrer", `A.hrm.editPay(${q(e.id)})`, "ghost")}</div></div></details>` : ""}
       <h3>Coordonnées de paiement</h3>
       <p class="muted" style="margin:0 0 8px">Chiffrées au niveau du champ ; tout changement est soumis à validation (RG-HRM-07).</p>
-      ${kv([["Mode", esc(e.pay.mode)], ["Compte", e.pay.ref ? esc(e.pay.ref) : badge("À compléter", "dark")]])}
+      ${kv([["Mode", esc(e.pay.mode)], ["Compte", e.pay.ref ? esc(e.pay.ref) : badge("À compléter", "warn")]])}
       ${e.payPending ? `<div class="err" style="margin-top:10px">Changement demandé le ${fd(e.payPending.on)} (${esc(e.payPending.src)}) : ${esc(e.payPending.ref)}. Alerte anti-fraude : vérifier l'identité par un autre canal.
         <div class="row" style="margin-top:8px">${btn("Valider le changement (RH)", `A.hrm.payValidate(${q(e.id)}, true)`, "sm")}${btn("Refuser", `A.hrm.payValidate(${q(e.id)}, false)`, "ghost sm")}</div></div>` : ""}
       ${e.status === "actif" ? `<div class="form" style="margin-top:10px">${field("hr-pmode", "Nouveau mode", select("hr-pmode", ["Virement", "Mobile Money"], e.pay.mode))}${field("hr-pref", "Nouveau compte", input("hr-pref", "", 'placeholder="Ex. Banque Lagune Exemple ••••0000"'))}
@@ -419,7 +443,7 @@
       ${H.audit.length ? `<h3>Journal d'accès aux données salariales</h3>${tbl(["Quand", "Action"], H.audit.slice(0, 5).map((a) => [esc(a.at), esc(a.what)]))}` : ""}
     </div>`)
   }
-  const certBadge = (c) => (!certOk(c) ? badge("Expirée", "dark") : soon(c) ? badge("Expire bientôt", "outline") : badge("Valide", "on"))
+  const certBadge = (c) => (!certOk(c) ? badge("Expirée", "bad") : soon(c) ? badge("Expire bientôt", "warn") : badge("Valide", "ok"))
 
   function orga() {
     const dir = E("E01")
@@ -444,7 +468,7 @@
     const withReq = active().filter((e) => REQ[e.job])
     const okReq = withReq.filter((e) => { const c = certFor(e); return c && certOk(c) })
     const exp = H.certs.filter((c) => !certOk(c)), sn = H.certs.filter(soon)
-    return `${cards([kpi("Conformité des certifications", pct((okReq.length / (withReq.length || 1)) * 100), `${okReq.length}/${withReq.length} postes à certification obligatoire`), kpi("Expirées", exp.length, "bloquent la planification"), kpi("Expirent sous 60 jours", sn.length, "événement hrm.certification.expiring")])}
+    return `<div class="grid g4">${stat({ label: "Conformité des certifications", value: pct((okReq.length / (withReq.length || 1)) * 100), icon: "shield", hint: `${okReq.length}/${withReq.length} postes à certification obligatoire` })}${stat({ label: "Expirées", value: String(exp.length), icon: "alert", hint: "bloquent la planification" })}${stat({ label: "Expirent sous 60 jours", value: String(sn.length), icon: "clock", hint: "événement hrm.certification.expiring" })}${stat({ label: "Places de formation", value: `${sum(H.trainings, (t) => t.inscrits.length)}/${sum(H.trainings, (t) => t.places)}`, icon: "users", hint: `${H.trainings.length} sessions planifiées` })}</div>
       <h2>Certifications <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-004</span></h2>
       ${tbl(["Employé", "Certification", "Expire le", "État", ""], H.certs.slice().sort((a, b) => a.expires.localeCompare(b.expires)).map((c) => [elink(c.emp), esc(c.type), fd(c.expires) + "/" + c.expires.slice(0, 4), certBadge(c),
         !certOk(c) || soon(c) ? btn("Enregistrer le renouvellement", `A.hrm.renew(${q(c.id)})`, "ghost sm") : ""]))}
@@ -470,7 +494,7 @@
         <div style="align-self:end">${btn("Calculer le solde", "A.hrm.stc()", "ghost")}</div></div>
         ${st ? stcPanel(st) : `<p class="muted" style="margin:10px 0 0">Indemnités de préavis, de licenciement ou de fin de contrat, compensatrice de congés (EF-HRM-018). Formules d'exemple.</p>`}</div></section></div>
       <h2>Mouvements récents</h2>
-      ${tbl(["Date", "Employé", "Mouvement", "Détail"], H.moves.map((m) => [fd(m.date) + "/" + m.date.slice(2, 4), esc(m.name), badge(m.type, m.type === "Sortie" ? "dark" : m.type === "Entrée" ? "on" : "outline"), esc(m.detail)]))}`
+      ${tbl(["Date", "Employé", "Mouvement", "Détail"], H.moves.map((m) => [fd(m.date) + "/" + m.date.slice(2, 4), esc(m.name), badge(m.type, m.type === "Sortie" ? "bad" : m.type === "Entrée" ? "ok" : "info"), esc(m.detail)]))}`
   }
   const stcCalc = (st) => {
     const e = E(st.emp), y = years(e.start, st.date), monthly = e.base + (y >= 2 ? r0((e.base * Math.min(25, y)) / 100) : 0)
@@ -487,7 +511,7 @@
   }
   function stcPanel(st) {
     const { e, L, total } = stcCalc(st)
-    if (st.done) return `<div style="margin-top:12px">${badge("Départ enregistré", "dark")} <strong>${esc(e.name)}</strong>
+    if (st.done) return `<div style="margin-top:12px">${badge("Départ enregistré", "info")} <strong>${esc(e.name)}</strong>
       <p>Accès physiques et comptes révoqués en 4 s (événement hrm.employee.terminated → ACC, PLT · simulé) <span class="muted">EF-HRM-010</span> : ${(st.revoked || []).map(esc).join(" · ")}. Solde de tout compte : <strong>${money(total)}</strong>.</p>
       <div class="card"><strong>Certificat de travail (aperçu)</strong><p class="muted" style="margin:6px 0 0">Hôtel Exemple certifie que ${esc(e.name)} a été employé(e) en qualité de ${esc(e.job)} du ${fd(e.start)}/${e.start.slice(0, 4)} au ${fd(st.date)}/${st.date.slice(0, 4)}. Document d'exemple, avec reçu pour solde de tout compte.</p></div></div>`
     return `<div style="margin-top:12px">${tbl(["Élément", "Calcul", "#Montant"], L.map(([l, m, c]) => [esc(l), muted(c), money(m)]), "", `<tfoot><tr><td>Solde de tout compte</td><td></td><td class="num">${money(total)}</td></tr></tfoot>`)}
@@ -499,16 +523,30 @@
     const list = active().filter((e) => ui.hrDept === "all" || e.dept === ui.hrDept)
     const opt = optimize(), viol = active().filter((e) => violations(e).length)
     const counts = Object.fromEntries(Object.keys(DEPTS).map((d) => [d, active().filter((e) => e.dept === d).length]))
-    return `<p class="muted">Semaine du ${fd(WEEK[0])} au ${fd(WEEK[6])}. Cliquer sur une case change le poste (${ORDER.map((c) => `${c} = ${SH[c].l}`).join(" · ")} · C = congé validé). EF-HRM-005, RG-HRM-01.</p>
+    const all = active(), present = WEEK.map((_, i) => all.filter((e) => (SH[cell(e.id, i)] || { h: 0 }).h).length)
+    const totH = sum(all, (e) => sum(WEEK.map((_, i) => cell(e.id, i)), (c) => (SH[c] || { h: 0 }).h)), over = all.filter((e) => sum(WEEK.map((_, i) => cell(e.id, i)), (c) => (SH[c] || { h: 0 }).h) > 48).length
+    const shifts = ORDER.filter((c) => SH[c].h).map((c) => ({ label: SH[c].l, value: sum(all, (e) => WEEK.filter((_, i) => cell(e.id, i) === c).length) })).filter((x) => x.value)
+    return `<div class="grid g4">
+        ${stat({ label: "Heures planifiées", value: totH + " h", icon: "clock", hint: `semaine du ${fd(WEEK[0])} · ${all.length} employés` })}
+        ${stat({ label: "Présents par jour", value: String(Math.round(sum(present, (x) => x) / 7)), icon: "users", hint: `moyenne · de ${Math.min(...present)} à ${Math.max(...present)}`, trend: present })}
+        ${stat({ label: "Employés en écart", value: String(viol.length), icon: "alert", hint: viol.length ? "publication bloquée" : "règles respectées" })}
+        ${stat({ label: "Au-delà de 48 h", value: String(over), icon: "zap", hint: "durée hebdomadaire maximale (exemple)" })}
+      </div>
+      <div class="dash" style="margin:16px 0">
+        <div class="w8">${section("Présents planifiés par jour", columns(WEEK.map((d) => `${wd(d)} ${fd(d)}`), present, (v) => v + " pers."))}</div>
+        <div class="w4">${section("Répartition des postes", donut(shifts, { fmt: (v) => v + " poste(s)", center: String(sum(shifts, (x) => x.value)), sub: "postes" }))}</div>
+      </div>
+      <div class="card sec"><div class="sec-head"><h3>Planning de la semaine</h3>${badge(H.planPublished ? "Publié" : "Brouillon", H.planPublished ? "ok" : "warn")}</div>
+      <p class="muted" style="margin-top:0">Semaine du ${fd(WEEK[0])} au ${fd(WEEK[6])}. Cliquer sur une case change le poste (${ORDER.map((c) => `${c} = ${SH[c].l}`).join(" · ")} · C = congé validé). EF-HRM-005, RG-HRM-01.</p>
       ${chips("hrDept", { all: "Tous", ...DEPTS }, { all: active().length, ...counts })}
       <div class="tablewrap"><table><thead><tr><th>Employé</th>${WEEK.map((d) => `<th class="num">${esc(wd(d))}<br>${fd(d)}</th>`).join("")}<th class="num">Heures</th><th>Règles</th></tr></thead><tbody>
       ${list.map((e) => { const v = violations(e), hrs = sum(WEEK.map((_, i) => cell(e.id, i)), (c) => (SH[c] || { h: 0 }).h)
         return `<tr><td>${elink(e.id)}<div class="muted">${esc(e.alias || e.job)}</div></td>${WEEK.map((d, i) => { const c = cell(e.id, i)
-          return `<td class="num">${c === "C" ? badge("C", "outline") : `<button class="btn ${c === "R" ? "ghost " : ""}sm" title="${esc(SH[c].l)}" onclick="A.hrm.cycle(${q(e.id)}, ${i})">${c}</button>`}</td>` }).join("")}
-          <td class="num ${hrs > 48 ? "cell0" : ""}">${hrs} h</td><td>${v.length ? badge(v.length + " écart(s)", "dark") + `<div class="muted">${v.map(esc).join("<br>")}</div>` : badge("OK", "on")}</td></tr>` }).join("")}
+          return `<td class="num">${c === "C" ? badge("C", "info") : `<button class="btn ${c === "R" ? "ghost " : ""}sm" title="${esc(SH[c].l)}" onclick="A.hrm.cycle(${q(e.id)}, ${i})">${c}</button>`}</td>` }).join("")}
+          <td class="num ${hrs > 48 ? "cell0" : ""}">${hrs} h</td><td>${v.length ? badge(v.length + " écart(s)", "bad") + `<div class="muted">${v.map(esc).join("<br>")}</div>` : badge("OK", "ok")}</td></tr>` }).join("")}
       <tr><td class="muted">Présents planifiés</td>${WEEK.map((_, i) => `<td class="num muted">${list.filter((e) => (SH[cell(e.id, i)] || { h: 0 }).h).length}</td>`).join("")}<td></td><td></td></tr>
       </tbody></table></div>
-      <div class="row" style="margin:12px 0">${btn(H.planPublished ? "Planning publié" : "Publier le planning", "A.hrm.publish()", H.planPublished ? "ghost" : "")}<span class="muted">${viol.length ? `${viol.length} employé(s) en écart : publication bloquée.` : "Aucun écart : publication possible (hrm.schedule.published → ACC, app mobile)."}</span></div>
+      <div class="row" style="margin:12px 0">${btn(H.planPublished ? "Planning publié" : "Publier le planning", "A.hrm.publish()", H.planPublished ? "ghost" : "")}<span class="muted">${viol.length ? `${viol.length} employé(s) en écart : publication bloquée.` : "Aucun écart : publication possible (hrm.schedule.published → ACC, app mobile)."}</span></div></div>
       ${aiBox("Planning optimisé", opt.changes.length ? `Proposition sous contraintes légales, certifications et coût : ${opt.changes.length} modification(s). ${opt.changes.slice(0, 4).join(" ; ")}${opt.changes.length > 4 ? "…" : ""}. Le chef de service reste libre de modifier.` : "Le planning respecte les règles ; aucune modification proposée.", opt.changes.length ? btn("Appliquer la proposition", "A.hrm.optimize()", "sm") : "")}`
   }
 
@@ -518,15 +556,15 @@
     const todo = issues.filter((x) => !x.k.ok)
     const plannedToday = active().filter((e) => (SH[cell(e.id, 3)] || { h: 0 }).h && !H.clocks.some((k) => k.emp === e.id && k.date === today))
     const ot = active().filter((e) => { const v = H.vars[e.id] || {}; return v.h15 || v.h50 || v.h75 })
-    return `${cards([kpi("Pointages à valider", todo.length, "par les chefs de service"), kpi("Anomalies", issues.filter((x) => x.issues.length && !x.k.ok).length, "écarts avec le planning"), kpi("Attendus non pointés aujourd'hui", plannedToday.length, "poste planifié, aucun badge")])}
+    return `<div class="grid g4">${stat({ label: "Pointages à valider", value: String(todo.length), icon: "check", hint: "par les chefs de service" })}${stat({ label: "Anomalies", value: String(issues.filter((x) => x.issues.length && !x.k.ok).length), icon: "alert", hint: "écarts avec le planning" })}${stat({ label: "Attendus non pointés aujourd'hui", value: String(plannedToday.length), icon: "clock", hint: "poste planifié, aucun badge" })}${stat({ label: "Heures majorées du mois", value: fh(sum(ot, (e) => { const v = H.vars[e.id]; return (v.h15 || 0) + (v.h50 || 0) + (v.h75 || 0) })), icon: "zap", hint: `${ot.length} employé(s) concernés` })}</div>
       <h2>Pointages du ${fd(addDays(today, -1))} et du ${fd(today)} <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-006</span></h2>
       ${tbl(["Date", "Employé", "Poste planifié", "Entrée", "Sortie", "Source", "Anomalies", ""], issues.map(({ k, code, issues: is }) => [fd(k.date), elink(k.emp), SH[code] ? esc(SH[code].l) : "Congé", esc(k.in), k.out ? esc(k.out) : k.date === today ? muted("en poste") : "—", esc(k.src) + (k.src !== "Badge" ? " " + badge("simulé", "outline") : ""),
-        is.length ? is.map((x) => badge(x, "dark")).join(" ") : badge("Conforme", "on"),
-        k.ok ? badge("Validé", "outline") : `<span class="row" style="flex-wrap:nowrap">${!k.out && k.date < today ? btn("Corriger la sortie", `A.hrm.fixOut(${q(k.id)})`, "ghost sm") : ""}${!k.out && k.date === today ? btn("Pointer la sortie", `A.hrm.clockOut(${q(k.id)})`, "ghost sm") : ""}${btn("Valider", `A.hrm.clockOk(${q(k.id)})`, "sm")}</span>`]))}
+        is.length ? is.map((x) => badge(x, "warn")).join(" ") : badge("Conforme", "ok"),
+        k.ok ? badge("Validé", "ok") : `<span class="row" style="flex-wrap:nowrap">${!k.out && k.date < today ? btn("Corriger la sortie", `A.hrm.fixOut(${q(k.id)})`, "ghost sm") : ""}${!k.out && k.date === today ? btn("Pointer la sortie", `A.hrm.clockOut(${q(k.id)})`, "ghost sm") : ""}${btn("Valider", `A.hrm.clockOk(${q(k.id)})`, "sm")}</span>`]))}
       <div class="row" style="margin:12px 0">${plannedToday.length ? `<label for="hr-cemp" style="margin:0">Simuler un badge</label>${select("hr-cemp", plannedToday.map((e) => [e.id, `${e.name} (${SH[cell(e.id, 3)].l})`]), plannedToday[0].id)}${btn("Pointer l'entrée", "A.hrm.clockIn()", "ghost")}` : muted("Tous les employés planifiés aujourd'hui ont pointé.")}</div>
       <p class="muted">Le début de poste publie hrm.shift.started : le badge du salarié s'active sur la plage du poste ± 30 min ; la fin de poste publie hrm.shift.ended et le suspend, sauf profil permanent (RG-HRM-02, ACC simulé).</p>
       <h2>Événements publiés vers le contrôle d'accès <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-009</span></h2>
-      ${tbl(["Quand", "Événement", "Employé", "Effet côté ACC (simulé)"], H.events.slice(0, 10).map((x) => [esc(x.at), badge(x.type, x.type === "hrm.employee.terminated" ? "dark" : "outline"), ename(x.emp), esc(x.detail)]), "Aucun événement.")}
+      ${tbl(["Quand", "Événement", "Employé", "Effet côté ACC (simulé)"], H.events.slice(0, 10).map((x) => [esc(x.at), badge(x.type, x.type === "hrm.employee.terminated" ? "bad" : "info"), ename(x.emp), esc(x.detail)]), "Aucun événement.")}
       <p class="muted">Les badges correspondants apparaissent dans Clés et identifiants › Passes et personnel.</p>
       <h2>Heures majorées du mois <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-007</span></h2>
       ${tbl(["Employé", "#+15 %", "#+50 % / nuit", "#Dim. / férié +75 %", "#Montant estimé"], ot.map((e) => { const v = H.vars[e.id], th = e.base / 173.33
@@ -540,10 +578,13 @@
     const prov = sum(active(), (e) => Math.max(0, cpSolde(e)) * (e.base / 26))
     const theo = active().length * 26, absent = sum(active(), (e) => leaveDaysMonth(e.id, "2026-11", "Maladie") + leaveDaysMonth(e.id, "2026-11", "Absence injustifiée"))
     const next = (l) => l.status === "Demandée" ? "chef de service" : "RH"
-    return `${cards([kpi("Demandes en attente", H.leaves.filter((l) => filt.attente.includes(l.status)).length, "circuit : chef de service puis RH"), kpi("Absentéisme du mois", pct((absent / theo) * 100), "maladie + absences injustifiées (exemple)"), kpi("Provision pour congés", money(prov), "soldes × salaire journalier (EF-HRM-017)")])}
+    const byType = [...new Set(H.leaves.map((l) => l.type))].map((t) => ({ label: t, value: sum(H.leaves.filter((l) => l.type === t && l.status !== "Refusée"), (l) => workDays(l.from, l.to)) })).filter((x) => x.value)
+    return `<div class="grid g4">${stat({ label: "Demandes en attente", value: String(H.leaves.filter((l) => filt.attente.includes(l.status)).length), icon: "calendar", hint: "circuit : chef de service puis RH" })}${stat({ label: "Absentéisme du mois", value: pct((absent / theo) * 100), icon: "alert", hint: "maladie + absences injustifiées (exemple)" })}${stat({ label: "Provision pour congés", value: money(prov), icon: "wallet", hint: "soldes × salaire journalier (EF-HRM-017)" })}</div>
+      <div class="dash" style="margin-top:16px"><div class="w6">${section("Jours d'absence par type", donut(byType, { fmt: (v) => v + " j", center: String(sum(byType, (x) => x.value)), sub: "jours" }))}</div>
+      <div class="w6">${section("Soldes de congés les plus élevés", bars(active().slice().sort((a, b) => cpSolde(b) - cpSolde(a)).slice(0, 6).map((e) => ({ label: e.name, value: Math.round(cpSolde(e) * 10) / 10 })), (v) => String(v).replace(".", ",") + " j"))}</div></div>
       <h2>Demandes</h2>
       ${chips("hrLeave", { attente: "En attente", toutes: "Toutes" })}
-      ${tbl(["Réf.", "Employé", "Type", "Du", "Au", "#Jours", "Statut", ""], list.map((l) => [esc(l.id), elink(l.emp), esc(l.type), fd(l.from), fd(l.to), workDays(l.from, l.to), badge(l.status, l.status === "Validée" ? "on" : l.status === "Refusée" ? "dark" : "outline") + (l.note ? `<div class="muted">${esc(l.note)}</div>` : ""),
+      ${tbl(["Réf.", "Employé", "Type", "Du", "Au", "#Jours", "Statut", ""], list.map((l) => [esc(l.id), elink(l.emp), esc(l.type), fd(l.from), fd(l.to), workDays(l.from, l.to), badge(l.status, l.status === "Validée" ? "ok" : l.status === "Refusée" ? "bad" : "warn") + (l.note ? `<div class="muted">${esc(l.note)}</div>` : ""),
         ["Demandée", "Validée chef"].includes(l.status) ? `<span class="row" style="flex-wrap:nowrap">${btn("Valider (" + next(l) + ")", `A.hrm.leave(${q(l.id)}, true)`, "sm")}${btn("Refuser", `A.hrm.leave(${q(l.id)}, false)`, "ghost sm")}</span>` : ""]), "Aucune demande.")}
       <h2>Nouvelle demande</h2>
       <div class="card"><div class="form">${field("hr-lemp", "Employé", select("hr-lemp", active().map((e) => [e.id, e.name]), "E06"))}${field("hr-ltype", "Type", select("hr-ltype", ["Congés payés", "Maladie", "Maternité", "Permission (événement familial)", "Absence injustifiée"], "Congés payés"))}
@@ -566,7 +607,7 @@
       const i = WEEK.indexOf(d), planned = (dept) => (i >= 0 ? active().filter((e) => e.dept === dept && (SH[cell(e.id, i)] || { h: 0 }).h).length : null)
       return { d, occ, arr, dep, hk, fo, fnb, phk: planned("HK"), pfo: planned("HEB"), pfnb: planned("FNB") }
     })
-    const cmp = (need, pl) => (pl == null ? String(need) : `${need} ${pl < need ? badge(`${pl} planifié(s)`, "dark") : muted(`/ ${pl}`)}`)
+    const cmp = (need, pl) => (pl == null ? String(need) : `${need} ${pl < need ? badge(`${pl} planifié(s)`, "warn") : muted(`/ ${pl}`)}`)
     return `${aiBox("Prévision des besoins en effectifs", ui.hrForecast === "ia" ? "Heures nécessaires par service calculées à partir de l'occupation prévue, des arrivées et des départs (données du module réservations). Le chef de service décide du planning final." : "Mode de repli : ratios standards (1 femme de chambre pour 12 chambres occupées, effectifs fixes en réception et restauration).",
         btn(ui.hrForecast === "ia" ? "Basculer sur les ratios standards (repli)" : "Revenir à la prévision IA", "A.hrm.forecastMode()", "ghost sm"))}
       ${tbl(["Jour", "#Chambres occupées", "#Arrivées", "#Départs", "Étages (pers.)", "Réception (pers.)", "Restauration (pers.)"], rows.map((x) => [`${esc(wd(x.d))} ${fd(x.d)}`, x.occ, x.arr, x.dep, cmp(x.hk, x.phk), cmp(x.fo, x.pfo), cmp(x.fnb, x.pfnb)]))}
@@ -599,23 +640,33 @@
     return ""
   }
   function cycle() {
-    const p = cur(), t = totals(slips())
-    return `${cards([kpi("Effectif payé", t.n, "employés actifs"), kpi("Masse salariale brute", money(t.brut), p.calc ? "calculée" : "provisoire"), kpi("Net à payer", money(t.net), "exemple"), kpi("Coût employeur", money(t.cost), "brut + charges patronales")])}
+    const p = cur(), t = totals(slips()), last = H.history[H.history.length - 1]
+    const dl = (a, b) => (b ? ((a - b) / b) * 100 : null), mshort = (m) => day(m + "-01").toLocaleDateString("fr-FR", { month: "short" })
+    const split_ = [{ label: "Net versé", value: t.net }, { label: "Cotisations salariales", value: t.salCot }, { label: "ITS retenu", value: t.its }, { label: "Charges patronales", value: t.patSoc }, { label: "Taxes patronales", value: t.patTax }, { label: "Autres retenues", value: t.aen + t.loanApp + t.consoApp }].filter((x) => x.value > 0)
+    const done = p.closed ? 9 : Math.min(p.step, 9)
+    return `<div class="grid g4">
+        ${stat({ label: "Effectif payé", value: String(t.n), icon: "users", hint: "employés actifs", route: "hr-paie/bulletins" })}
+        ${stat({ label: "Masse salariale brute", value: money(t.brut), icon: "coins", delta: dl(t.brut, last.brut), good: false, hint: (p.calc ? "calculée" : "provisoire") + " · vs " + mshort(last.month), trend: [...H.history.map((h) => h.brut), t.brut] })}
+        ${stat({ label: "Net à payer", value: money(t.net), icon: "wallet", hint: "exemple", route: "hr-paie/virements" })}
+        ${stat({ label: "Coût employeur", value: money(t.cost), icon: "trend", delta: dl(t.cost, last.cost), good: false, hint: "brut + charges · vs " + mshort(last.month), trend: [...H.history.map((h) => h.cost), t.cost] })}
+      </div>
       ${p.stale ? `<div class="err" style="margin-top:14px">Calcul invalidé : ${esc(p.stale)}. Relancez la collecte et le calcul.</div>` : ""}
-      ${p.closed ? `<div class="card" style="margin-top:14px">${badge("Période verrouillée", "dark")} Clôturée le ${fd(p.closed)}. Bulletins publiés dans l'application mobile et le coffre-fort électronique (simulé). Toute correction passe par une régularisation (RG-HRM-03).
+      ${p.closed ? `<div class="card" style="margin-top:14px">${badge("Période verrouillée", "ok")} Clôturée le ${fd(p.closed)}. Bulletins publiés dans l'application mobile et le coffre-fort électronique (simulé). Toute correction passe par une régularisation (RG-HRM-03).
         <div class="row" style="margin-top:10px">${btn(`Ouvrir la période ${monthLabel(nextMonth(p.month))}`, "A.hrm.openNext()")}</div></div>` : ""}
-      <h2>Étapes du cycle <span class="muted" style="font-size:14px;font-weight:400">§5.13 · EF-HRM-013</span></h2>
-      ${STEPS.map(([n, d, who], i) => `<div class="step"><b class="n">${i + 1}</b><div><div class="row between"><strong>${esc(n)}</strong>${p.step > i ? badge("Fait", "on") : p.step === i ? badge("En cours", "outline") : muted("à venir")}</div>
+      <div class="dash" style="margin-top:16px"><div class="w8"><div class="card sec"><div class="sec-head"><h3>Étapes du cycle <span class="muted" style="font-size:13px;font-weight:400">§5.13 · EF-HRM-013</span></h3>${badge(p.closed ? "Clôturée" : `Étape ${Math.min(p.step + 1, 9)} / 9`, p.closed ? "ok" : "info")}</div>
+      ${STEPS.map(([n, d, who], i) => `<div class="step"><b class="n">${i + 1}</b><div><div class="row between"><strong>${esc(n)}</strong>${p.step > i ? badge("Fait", "ok") : p.step === i ? badge("En cours", "info") : muted("à venir")}</div>
         <div class="muted">${esc(d)} · ${esc(who)}${i === 2 && p.calc ? ` · calculé à ${esc(p.calc.at)} avec ${esc(p.calc.version)}` : ""}${i === 4 && p.validated ? ` · ${esc(USERS[p.validated.v1])} et ${esc(USERS[p.validated.v2])}` : ""}</div>
-        ${p.step === i && !p.closed ? `<div style="margin-top:8px">${stepAction(i)}</div>` : ""}</div></div>`).join("")}
-      ${H.regul.length ? `<h2>Régularisations reportées</h2>${tbl(["Date", "Motif", "Période d'imputation", "#Montant"], H.regul.map((x) => [fd(x.date), esc(x.why), esc(x.to), x.amount ? money(x.amount) : muted("—")]))}` : ""}
-      <h2>Périodes précédentes</h2>
-      ${tbl(["Période", "#Masse brute", "#Coût employeur", "#Délai de clôture", "Statut"], H.history.slice().reverse().map((h) => [esc(monthLabel(h.month)), money(h.brut), money(h.cost), h.delay + " j", badge("Clôturée", "outline")]))}`
+        ${p.step === i && !p.closed ? `<div style="margin-top:8px">${stepAction(i)}</div>` : ""}</div></div>`).join("")}</div></div>
+      <div class="w4">${section("Avancement du cycle", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((done / 9) * 100, "Avancement")}<div><div class="stat-val">${done} / 9</div><div class="muted">étapes terminées</div></div></div>`)}
+        <div style="height:16px"></div>${section("Répartition du coût employeur", donut(split_, { fmt: money, center: shortNum(t.cost), sub: "FCFA" }))}</div>
+      <div class="w6">${section("Masse brute et coût employeur (6 mois)", lineChart([...H.history.map((h) => mshort(h.month)), mshort(p.month)], [{ name: "Coût employeur", values: [...H.history.map((h) => h.cost), t.cost] }, { name: "Masse brute", values: [...H.history.map((h) => h.brut), t.brut] }], { fmt: shortNum }))}</div>
+      <div class="w6">${section("Périodes précédentes", tbl(["Période", "#Masse brute", "#Coût employeur", "#Délai de clôture", "Statut"], H.history.slice().reverse().map((h) => [esc(monthLabel(h.month)), money(h.brut), money(h.cost), h.delay + " j", badge("Clôturée", "ok")])))}</div>
+      ${H.regul.length ? `<div>${section("Régularisations reportées", tbl(["Date", "Motif", "Période d'imputation", "#Montant"], H.regul.map((x) => [fd(x.date), esc(x.why), esc(x.to), x.amount ? money(x.amount) : muted("—")])))}</div>` : ""}</div>`
   }
 
   function variables() {
     const tr = troncShares()
-    return `<p class="muted">Variables du mois collectées depuis le pointage, les congés, le POS (consommations du personnel, simulé) et le tronc commun. ${cur().step >= 2 ? badge("Collectées", "on") : badge("Collecte à lancer", "outline")}</p>
+    return `<p class="muted">Variables du mois collectées depuis le pointage, les congés, le POS (consommations du personnel, simulé) et le tronc commun. ${cur().step >= 2 ? badge("Collectées", "ok") : badge("Collecte à lancer", "warn")}</p>
       ${tbl(["Employé", "#HS +15 %", "#HS +50 %", "#+75 %", "#Abs. non payées", "#Congés / maladie", "#Prime", "#Pourboires", "#Consommations", "#Prêts"], active().map((e) => { const v = H.vars[e.id] || {}
         return [elink(e.id), fh(v.h15 || 0), fh(v.h50 || 0), fh(v.h75 || 0), absDays(e.id, cur().month) + " j", leaveDaysMonth(e.id, cur().month) + " j", money(v.prime || 0), H.tronc.integrated && tr[e.id] ? money(tr[e.id].share) : "—", money(v.conso || 0), money(loanDue(e.id))] }))}
       <h2>Saisie d'une prime</h2>
@@ -634,7 +685,7 @@
     const ia = list.filter((a) => a.src === "IA")
     return `${aiBox("Contrôle intelligent de la paie", `${ia.length} signal(aux) détecté(s) : variations inhabituelles, employé sans pointage, compte bancaire partagé, heures supplémentaires atypiques. Alerte au gestionnaire uniquement : aucune correction automatique.`)}
       <p class="muted" style="margin-top:14px">${cur().calc ? "Sur la paie calculée." : "Aperçu sur un calcul provisoire (le calcul n'est pas encore lancé)."} Le contrôle ne peut être terminé que lorsque chaque anomalie est corrigée ou justifiée.</p>
-      ${tbl(["Employé", "Source", "Gravité", "Anomalie", "État", ""], list.map((a) => [elink(a.emp), badge(a.src, a.src === "IA" ? "outline" : ""), a.sev === "Bloquant" ? badge("Bloquant", "dark") : esc(a.sev), esc(a.text), a.state ? badge(a.state, "on") : "Ouverte",
+      ${tbl(["Employé", "Source", "Gravité", "Anomalie", "État", ""], list.map((a) => [elink(a.emp), badge(a.src, a.src === "IA" ? "info" : "outline"), a.sev === "Bloquant" ? badge("Bloquant", "bad") : esc(a.sev), esc(a.text), a.state ? badge(a.state, "ok") : badge("Ouverte", "warn"),
         a.state ? "" : `<span class="row" style="flex-wrap:nowrap">${a.fix ? btn("Corriger", `go('hr-personnel/dossiers/${esc(a.emp)}')`, "ghost sm") : ""}${btn("Justifier", `A.hrm.justify(${q(a.key)})`, "sm")}</span>`]), "Aucune anomalie.")}
       <p class="muted">${open.length} ouverte(s). Les coordonnées manquantes ou non validées se corrigent dans le dossier ; l'anomalie disparaît d'elle-même.</p>`
   }
@@ -679,11 +730,11 @@
     const R = p.recon || {}, nR = okL.filter((x) => /^Rapproché/.test(R[x.e.id] || "")).length
     const file = okL.filter((x) => x.e.pay.mode === "Virement").slice(0, 3).map((x) => `VIR;${x.e.mat};${x.e.pay.ref};${x.s.net};XOF;SALAIRE ${p.month}`).join("\n")
     const recon = p.paid ? `<h2>Rapprochement des paiements <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-021</span></h2>
-      ${cards([kpi("Paiements rapprochés", `${nR}/${okL.length}`, "relevé bancaire + état de l'agrégateur (simulés)"), kpi("Montant rapproché", money(sum(okL.filter((x) => /^Rapproché/.test(R[x.e.id] || "")), (x) => x.s.net)), "sur " + money(sum(okL, (x) => x.s.net))), kpi("Rejets", okL.filter((x) => /^Rejeté/.test(R[x.e.id] || "")).length, "à relancer")])}
+      ${cards([st("Paiements rapprochés", `${nR}/${okL.length}`, "relevé bancaire + état de l'agrégateur (simulés)", "check"), st("Montant rapproché", money(sum(okL.filter((x) => /^Rapproché/.test(R[x.e.id] || "")), (x) => x.s.net)), "sur " + money(sum(okL, (x) => x.s.net)), "bank"), st("Rejets", okL.filter((x) => /^Rejeté/.test(R[x.e.id] || "")).length, "à relancer", "alert")])}
       <div class="row" style="margin:12px 0">${btn(Object.keys(R).length ? "Réimporter les relevés" : "Importer le relevé bancaire et l'état mobile money (simulé)", "A.hrm.recon()", "ghost")}</div>
       ${Object.keys(R).length ? tbl(["Employé", "Mode", "Compte", "#Net", "Statut", ""], okL.map((x) => { const st = R[x.e.id] || "Non trouvé"
-        return [ename(x.e.id), esc(x.e.pay.mode), esc(x.e.pay.ref), money(x.s.net), badge(st, /^Rapproché/.test(st) ? "on" : "dark"), /^Rejeté|Non trouvé/.test(st) ? btn("Relancer le paiement", `A.hrm.retryPay(${q(x.e.id)})`, "ghost sm") : ""] })) : ""}` : ""
-    return `${p.paid ? `<div class="card">${badge("Exécuté (simulé)", "on")} Lots validés par ${esc(USERS[p.paid.v1])} et ${esc(USERS[p.paid.v2])}. Confirmation fin.payment.executed reçue (simulé).</div>` : ""}
+        return [ename(x.e.id), esc(x.e.pay.mode), esc(x.e.pay.ref), money(x.s.net), badge(st, /^Rapproché/.test(st) ? "ok" : "bad"), /^Rejeté|Non trouvé/.test(st) ? btn("Relancer le paiement", `A.hrm.retryPay(${q(x.e.id)})`, "ghost sm") : ""] })) : ""}` : ""
+    return `${p.paid ? `<div class="card">${badge("Exécuté (simulé)", "ok")} Lots validés par ${esc(USERS[p.paid.v1])} et ${esc(USERS[p.paid.v2])}. Confirmation fin.payment.executed reçue (simulé).</div>` : ""}
       <div class="cols" style="margin-top:14px">${block("Virement", "Fichier BANQUE-LAGUNE-EXEMPLE-" + p.month.replace("-", "") + ".txt (format bancaire simulé)")}${block("Mobile Money", "Lot transmis à l'agrégateur mobile money (simulé)")}</div>
       <details style="margin-top:10px"><summary class="muted">Aperçu du fichier de virement (format simulé) · EF-HRM-021</summary><pre style="white-space:pre-wrap;font-size:12px">${esc(file)}\n…</pre></details>
       ${recon}
@@ -695,7 +746,7 @@
   function pourboires() {
     const tr = troncShares(), el = Object.keys(tr)
     const dist = sum(el, (id) => tr[id].share)
-    return `${cards([kpi("Montant à répartir", money(H.tronc.pool), H.tronc.src), kpi("Bénéficiaires", el.length, "restauration, réception, étages"), kpi("Statut", H.tronc.integrated ? "Intégré à la paie" : "À intégrer", "EF-HRM-015")])}
+    return `${cards([st("Montant à répartir", money(H.tronc.pool), H.tronc.src, "coins"), st("Bénéficiaires", el.length, "restauration, réception, étages", "users"), st("Statut", H.tronc.integrated ? "Intégré à la paie" : "À intégrer", "EF-HRM-015", "check")])}
       <div class="card" style="margin-top:14px"><div class="form">${field("hr-pool", "Montant du tronc (FCFA)", input("hr-pool", H.tronc.pool, 'type="number" step="1000"'))}<div style="align-self:end">${btn("Mettre à jour", "A.hrm.pool()", "ghost")}</div>
         <div style="align-self:end">${btn(H.tronc.integrated ? "Réintégrer à la paie" : "Intégrer à la paie", "A.hrm.troncIn()")}</div></div></div>
       <h2>Répartition (points par poste × jours de présence)</h2>
@@ -708,7 +759,7 @@
     const sched = []
     if (l) { let rem = l.remaining, m = cur().month; while (rem > 0 && sched.length < 24) { const pay = Math.min(l.monthly, rem); rem -= pay; sched.push([esc(monthLabel(m)), money(pay), money(rem)]); m = nextMonth(m) } }
     return `<p class="muted">Acomptes, avances et prêts au personnel, remboursés par retenue sur salaire selon l'échéancier (EF-HRM-016). Retenue effective à la clôture de chaque période.</p>
-      ${tbl(["Réf.", "Employé", "Type", "#Montant", "#Échéance", "#Restant dû", ""], H.loans.map((x) => [esc(x.id), elink(x.emp), esc(x.type), money(x.amount), money(x.monthly), x.remaining ? money(x.remaining) : badge("Soldé", "on"), `<span class="row" style="flex-wrap:nowrap">${btn("Échéancier", `ui.hrLoan=${q(x.id)};render()`, "ghost sm")}${x.remaining ? btn("Remboursement anticipé", `A.hrm.repay(${q(x.id)})`, "ghost sm") : ""}</span>`]))}
+      ${tbl(["Réf.", "Employé", "Type", "#Montant", "#Échéance", "#Restant dû", ""], H.loans.map((x) => [esc(x.id), elink(x.emp), esc(x.type), money(x.amount), money(x.monthly), x.remaining ? money(x.remaining) : badge("Soldé", "ok"), `<span class="row" style="flex-wrap:nowrap">${btn("Échéancier", `ui.hrLoan=${q(x.id)};render()`, "ghost sm")}${x.remaining ? btn("Remboursement anticipé", `A.hrm.repay(${q(x.id)})`, "ghost sm") : ""}</span>`]))}
       ${l ? `<h2>Échéancier ${esc(l.id)} — ${ename(l.emp)}</h2>${tbl(["Mois", "#Retenue", "#Restant après"], sched, "Soldé.")}` : ""}
       <h2>Nouvelle avance ou nouveau prêt</h2>
       <div class="card"><div class="form">${field("hr-lnemp", "Employé", select("hr-lnemp", active().map((e) => [e.id, e.name]), "E14"))}${field("hr-lntype", "Type", select("hr-lntype", ["Acompte (mois en cours)", "Avance sur salaire", "Prêt"], "Avance sur salaire"))}
@@ -721,23 +772,30 @@
   function portail() {
     const e = E(ui.hrMe) && E(ui.hrMe).status === "actif" ? E(ui.hrMe) : E("E09"), p = cur(), s = slips()[e.id]
     const mine = H.leaves.filter((l) => l.emp === e.id).slice(-4).reverse(), att = H.attest.filter((a) => a.emp === e.id).slice().reverse()
-    const plan = WEEK.map((d, i) => { const c = cell(e.id, i); return `<div class="row between"><span>${esc(wd(d))} ${fd(d)}</span>${c === "C" ? badge("Congé", "outline") : c === "R" ? muted("Repos") : `<strong>${esc(SH[c].l)}</strong>`}</div>` }).join("")
+    const plan = WEEK.map((d, i) => { const c = cell(e.id, i); return `<div class="row between"><span>${esc(wd(d))} ${fd(d)}</span>${c === "C" ? badge("Congé", "info") : c === "R" ? muted("Repos") : `<strong>${esc(SH[c].l)}</strong>`}</div>` }).join("")
     const slipsL = [...(p.closed ? [[p.month, true]] : [[p.month, false]]), ...H.history.slice(-2).reverse().map((h) => [h.month, true])]
     const app = `<p class="muted" style="margin:0">${esc(e.name)} · ${esc(e.mat)}</p>
-      <h3>Mon planning ${H.planPublished ? badge("publié", "on") : badge("provisoire", "outline")}</h3>${plan}
+      <h3>Mon planning ${H.planPublished ? badge("publié", "ok") : badge("provisoire", "warn")}</h3>${plan}
       <h3>Mes bulletins</h3>${slipsL.map(([m, pub]) => `<div class="row between"><span>${esc(monthLabel(m))}</span>${pub ? (m === p.month ? btn("Ouvrir", `go('hr-bulletin/${esc(e.id)}')`, "ghost sm") : badge("Coffre-fort", "outline")) : muted("en cours · " + (s ? money(s.net) + " estimé" : "—"))}</div>`).join("")}
       <h3>Mes congés · solde ${fj(cpSolde(e))}</h3>
       ${field("hr-mfrom", "Du", input("hr-mfrom", addDays(today, 14), 'type="date"'))}${field("hr-mto", "Au", input("hr-mto", addDays(today, 15), 'type="date"'))}
       <div id="hr-merr"></div>${btn("Demander un congé", "A.hrm.meLeave()", "sm")}
-      ${mine.map((l) => `<div class="row between"><span>${esc(l.type)} ${fd(l.from)}–${fd(l.to)}</span>${badge(l.status, l.status === "Validée" ? "on" : l.status === "Refusée" ? "dark" : "outline")}</div>`).join("")}
+      ${mine.map((l) => `<div class="row between"><span>${esc(l.type)} ${fd(l.from)}–${fd(l.to)}</span>${badge(l.status, l.status === "Validée" ? "ok" : l.status === "Refusée" ? "bad" : "warn")}</div>`).join("")}
       <h3>Attestations</h3><div class="row">${btn("Attestation de travail", "A.hrm.meAttest('Attestation de travail')", "ghost sm")}${btn("Attestation de salaire", "A.hrm.meAttest('Attestation de salaire')", "ghost sm")}</div>
-      ${att.map((a) => `<div class="row between"><span>${esc(a.id)} · ${esc(a.type)} · ${fd(a.date)}</span>${badge(a.status, "on")}</div>`).join("")}
+      ${att.map((a) => `<div class="row between"><span>${esc(a.id)} · ${esc(a.type)} · ${fd(a.date)}</span>${badge(a.status, "ok")}</div>`).join("")}
       <h3>Mes coordonnées de paiement</h3><p class="muted" style="margin:0">${esc(e.pay.ref || "à compléter")}</p>
-      ${e.payPending ? badge("Changement en attente de validation RH", "outline") : `${field("hr-mref", "Nouveau compte", input("hr-mref", "", 'placeholder="Mobile Money ••••0000"'))}${btn("Demander le changement", "A.hrm.mePay()", "ghost sm")}`}`
+      ${e.payPending ? badge("Changement en attente de validation RH", "warn") : `${field("hr-mref", "Nouveau compte", input("hr-mref", "", 'placeholder="Mobile Money ••••0000"'))}${btn("Demander le changement", "A.hrm.mePay()", "ghost sm")}`}`
     const last = att[0]
     return pageHead("Portail employé", "Application mobile du personnel (simulée) : planning, bulletins, attestations et demandes. Données fictives.")
       + `<div class="row" style="margin-bottom:12px"><label for="hr-me" style="margin:0">Connecté en tant que</label>${select("hr-me", active().map((x) => [x.id, x.name]), e.id, `onchange="ui.hrMe=this.value;render()"`)}<span class="muted">EF-HRM-028</span></div>
+      <div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Solde de congés", value: fj(cpSolde(e)), icon: "calendar", hint: "congés payés acquis non pris" })}
+        ${stat({ label: "Net du mois (estimé)", value: s ? money(s.net) : "—", icon: "wallet", hint: monthLabel(p.month) + (p.closed ? " · publié" : " · en cours") })}
+        ${stat({ label: "Heures planifiées", value: sum(WEEK.map((_, i) => cell(e.id, i)), (c) => (SH[c] || { h: 0 }).h) + " h", icon: "clock", hint: "semaine du " + fd(WEEK[0]), trend: WEEK.map((_, i) => (SH[cell(e.id, i)] || { h: 0 }).h) })}
+        ${stat({ label: "Demandes en cours", value: String(mine.filter((l) => ["Demandée", "Validée chef"].includes(l.status)).length + (e.payPending ? 1 : 0)), icon: "message", hint: "congés et coordonnées" })}
+      </div>
       <div class="cols"><section>${phone(app, "HMS Personnel")}</section><section>
+        ${section("Mes heures de la semaine", columns(WEEK.map((d) => wd(d)), WEEK.map((_, i) => (SH[cell(e.id, i)] || { h: 0 }).h), (v) => v + " h"))}<div style="height:16px"></div>
         ${last ? card(`${last.type} — aperçu`, `<p style="margin-top:0">${esc(ENT(e.entity).name)} atteste que ${esc(e.name)}, matricule ${esc(e.mat)}, est employé(e) en qualité de ${esc(e.job)} (${esc(e.contract)}) depuis le ${fd(e.start)}/${e.start.slice(0, 4)}${last.type === "Attestation de salaire" && s ? `, pour un salaire brut mensuel de ${money(s.brut)}` : ""}.</p><p class="muted">Document d'exemple généré le ${fd(last.date)}, déposé dans le coffre-fort électronique (simulé).</p>`) : ""}
         ${card("Circuit des demandes", `<p class="muted" style="margin-top:0">Congés : chef de service puis RH (Plannings et temps › Congés). Coordonnées de paiement : validation RH et alerte anti-fraude (RG-HRM-07). Bulletins publiés à la clôture de la paie.</p>${btn("Voir les demandes de congés", "go('hr-temps/conges')", "ghost sm")}`)}
       </section></div>`
@@ -754,9 +812,9 @@
     const rows = entRows(), cons = sum(rows, (r) => r.cost * r.x.rate)
     const props = ENT("ENT1").props.map((pp) => { const ids = active().filter((e) => e.prop === pp).map((e) => e.id), S = slips(); return [esc(pp), ids.length, money(sum(ids, (i) => (S[i] || { brut: 0 }).brut)), money(sum(ids, (i) => (S[i] || { cost: 0 }).cost))] })
     return `<p class="muted">Chaque entité juridique a sa période de paie, son pack légal et sa devise ; la consolidation groupe se fait en XOF au taux d'exemple (EF-HRM-026). Entités hors Hôtel Exemple SARL : effectifs et montants d'exemple.</p>
-      ${cards([kpi("Entités juridiques", H.entities.length, `${new Set(H.entities.map((x) => x.cur)).size} devises`), kpi("Effectif groupe", sum(rows, (r) => r.n), "toutes entités"), kpi("Coût employeur consolidé", money(cons), "contre-valeur XOF · exemple")])}
+      ${cards([st("Entités juridiques", H.entities.length, `${new Set(H.entities.map((x) => x.cur)).size} devises`, "building"), st("Effectif groupe", sum(rows, (r) => r.n), "toutes entités", "users"), st("Coût employeur consolidé", money(cons), "contre-valeur XOF · exemple", "globe")])}
       ${tbl(["Entité", "Pays · pack", "Devise", "#Effectif", "#Masse brute (devise)", "#Coût employeur (devise)", "#Contre-valeur XOF", "Période", ""], rows.map((r) => [esc(r.x.name) + (r.mut ? `<div class="muted">dont ${r.mut} muté(s) depuis Hôtel Exemple SARL</div>` : ""), `${esc(r.x.country)}<div class="muted">${esc(r.x.pack)}</div>`, esc(r.x.cur) + (r.x.rate !== 1 ? `<div class="muted">1 ${esc(r.x.cur)} = ${r.x.rate} XOF</div>` : ""), r.n, fx(r.brut, r.x.cur), fx(r.cost, r.x.cur), money(r.cost * r.x.rate),
-        badge(r.status, r.status === "Clôturée" ? "outline" : r.status === "Calculée" ? "on" : ""), r.live ? btn("Ouvrir le cycle", "go('hr-paie/cycle')", "ghost sm") : r.status !== "Clôturée" ? btn(r.status === "Ouverte" ? "Calculer" : "Clôturer", `A.hrm.entStep(${q(r.x.id)})`, "ghost sm") : ""]), "", `<tfoot><tr><td>Consolidé groupe</td><td></td><td>XOF</td><td class="num">${sum(rows, (r) => r.n)}</td><td></td><td></td><td class="num">${money(cons)}</td><td></td><td></td></tr></tfoot>`)}
+        badge(r.status, r.status === "Clôturée" ? "ok" : r.status === "Calculée" ? "info" : "warn"), r.live ? btn("Ouvrir le cycle", "go('hr-paie/cycle')", "ghost sm") : r.status !== "Clôturée" ? btn(r.status === "Ouverte" ? "Calculer" : "Clôturer", `A.hrm.entStep(${q(r.x.id)})`, "ghost sm") : ""]), "", `<tfoot><tr><td>Consolidé groupe</td><td></td><td>XOF</td><td class="num">${sum(rows, (r) => r.n)}</td><td></td><td></td><td class="num">${money(cons)}</td><td></td><td></td></tr></tfoot>`)}
       <h2>Établissements de Hôtel Exemple SARL</h2>
       ${tbl(["Établissement", "#Effectif", "#Masse brute", "#Coût employeur"], props)}
       <p class="muted">Une mutation (Dossier › Avenant, promotion ou mutation) vers un autre établissement de la même entité garde la paie ; vers une autre entité, l'employé sort de cette paie et rejoint celle de l'entité cible, dans sa devise.</p>`
@@ -766,7 +824,7 @@
     const P = PACK
     const rub = [["Gains de base", "1000 Salaire de base · 1010 Sursalaire · 1020 Ancienneté (2 % à 2 ans puis +1 %/an, plafond 25 %)"], ["Gains variables", "1100–1120 Heures majorées · 1150 Prime de rendement · 1160 Service et pourboires · 1400 Rappel sur périodes antérieures"], ["Indemnités", "1200 Transport (non imposable ≤ plafond) · 1210 Logement · 1220 Panier"], ["Avantages en nature", "1300 Logement · 1310 Nourriture (véhicule paramétrable)"],
       ["Cotisations sociales", "2000 Retraite · 2010 Prestations familiales · 2020 Accidents du travail · 2030 CMU"], ["Impôts sur salaires", "3000 ITS selon barème et parts"], ["Taxes patronales", "3100 Contribution employeur · 3110 Taxe d'apprentissage · 3120 FPC"], ["Retenues", "4000 Reprise avantage en nature · 4010 Prêts et avances · 4020 Consommations · absences"], ["Informatives", "9000 Coût employeur · 9010 Congés acquis · 9020 Reliquat reporté"]]
-    return `<p class="muted">${esc(P.version)} · date d'effet ${fd(P.effect)}/${P.effect.slice(0, 4)} · ${badge("Taux d'exemple", "outline")} à faire valider par un expert local avant tout usage (EF-HRM-011, EF-HRM-012).</p>
+    return `<p class="muted">${esc(P.version)} · date d'effet ${fd(P.effect)}/${P.effect.slice(0, 4)} · ${badge("Taux d'exemple", "warn")} à faire valider par un expert local avant tout usage (EF-HRM-011, EF-HRM-012).</p>
       <div class="cols"><section><h2>Taux et plafonds</h2>
         ${tbl(["Paramètre", "Salarié", "Employeur", "Base / plafond"], [["CNPS retraite", pc(P.retS), pc(P.retP), "plafond " + money(P.capRet)], ["Prestations familiales", "—", pc(P.pf), "plafond " + money(P.capPF)], ["Accidents du travail", "—", pc(P.at), "plafond " + money(P.capPF)], ["CMU", money(P.cmuS), money(P.cmuP), "forfait mensuel"], ["Contribution employeur", "—", pc(P.ce), "brut imposable"], ["Taxe d'apprentissage", "—", pc(P.ta), "brut imposable"], ["Formation continue", "—", pc(P.fpc), "brut imposable"], ["Indemnité transport", "non imposable", "", "≤ " + money(P.transportCap)], ["Minimum légal (exemple)", money(P.smig), "", "mensuel"]].map((r) => r.map(esc)))}</section>
       <section><h2>Barème ITS mensuel (exemple)</h2>
@@ -790,10 +848,19 @@
     ]
   }
   function periodiques() {
-    const p = cur(), can = p.step >= 5
+    const p = cur(), can = p.step >= 5, dd = declData(), tots = dd.map((d) => ({ label: d.k, value: sum(d.detail, (x) => x[1]) })), all = sum(tots, (x) => x.value)
+    const sent = dd.filter((d) => p.decl[d.k] === "Télédéclarée").length, icons = { CNPS: "shield", ITS: "bank", FDFP: "briefcase" }
     return `${can ? "" : `<div class="err">La paie doit être validée (étape 5) avant de générer les déclarations. Les montants ci-dessous sont provisoires.</div>`}
-      <div class="grid" style="margin-top:14px">${declData().map((d) => { const tot = sum(d.detail, (x) => x[1]), st = p.decl[d.k]
-        return card(d.label, `<div class="kpi">${money(tot)}</div><div class="muted">Échéance d'exemple : ${d.due} · ${st ? badge(st, st === "Télédéclarée" ? "on" : "outline") : "à générer"}</div>
+      <div class="grid g4" style="margin-top:14px">
+        ${stat({ label: "Total à déclarer", value: money(all), icon: "filecheck", hint: monthLabel(p.month) + (can ? "" : " · provisoire") })}
+        ${tots.map((x) => stat({ label: x.label, value: money(x.value), icon: icons[x.label], hint: p.decl[x.label] || "à générer" })).join("")}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Détail des cotisations et taxes", bars(dd.flatMap((d) => d.detail.map(([l, v]) => ({ label: `${d.k} · ${l}`, value: v }))).filter((x) => x.value), money))}</div>
+        <div class="w4">${section("Répartition par organisme", donut(tots, { fmt: money, center: shortNum(all), sub: "FCFA" }) + `<p class="muted" style="margin:10px 0 0">${sent}/${dd.length} télédéclarée(s) (simulé)</p>`)}</div>
+      </div>
+      <div class="grid" style="margin-top:16px">${dd.map((d) => { const tot = sum(d.detail, (x) => x[1]), st = p.decl[d.k]
+        return section(d.label, `<div class="stat-val">${money(tot)}</div><div class="muted">Échéance d'exemple : ${d.due} · ${st ? badge(st, st === "Télédéclarée" ? "ok" : "info") : badge("À générer", "warn")}</div>
           ${tbl(["Élément", "#Montant"], d.detail.map(([l, v]) => [esc(l), money(v)]))}
           <div class="row" style="margin-top:10px">${!st ? btn("Générer le fichier", `A.hrm.decl(${q(d.k)})`, "sm") : st === "Fichier généré" ? btn("Télédéclarer (simulé)", `A.hrm.declSend(${q(d.k)})`, "sm") : muted("Accusé de réception simulé n° " + d.k + "-" + p.month.replace("-", ""))}</div>`) }).join("")}</div>
       <p class="muted">Formats de télédéclaration en vigueur non reproduits : fichiers d'exemple (EF-HRM-022).</p>`
@@ -804,7 +871,7 @@
       return { e, months, brut: s.brutImp * months, cnps: (s.lines.find((l) => l.code === "2000") || {}).ret * months, its: s.its * months } })
     return `<p class="muted">Déclaration annuelle des salaires 2026, à déposer en début d'année suivante. Brouillon : cumuls janvier–octobre estimés à partir de novembre (exemple), novembre calculé ; décembre ajouté à la clôture annuelle.</p>
       ${tbl(["Matricule", "Employé", "#Mois", "#Brut imposable cumulé", "#CNPS salariale", "#ITS"], rows.map((x) => [esc(x.e.mat), ename(x.e.id), x.months, money(x.brut), money(x.cnps), money(x.its)]), "", `<tfoot><tr><td>Total</td><td></td><td></td><td class="num">${money(sum(rows, (x) => x.brut))}</td><td class="num">${money(sum(rows, (x) => x.cnps))}</td><td class="num">${money(sum(rows, (x) => x.its))}</td></tr></tfoot>`)}
-      <div class="row" style="margin-top:12px">${H.disa ? badge("Brouillon DISA généré (" + H.disa + ")", "on") : btn("Générer le brouillon DISA", "A.hrm.disa()")}</div>`
+      <div class="row" style="margin-top:12px">${H.disa ? badge("Brouillon DISA généré (" + H.disa + ")", "ok") : btn("Générer le brouillon DISA", "A.hrm.disa()")}</div>`
   }
   const journalLines = () => {
     const S = slips(), a = Object.values(S), t = totals(S), L = []
@@ -817,7 +884,7 @@
   function ecritures() {
     const p = cur(), L = journalLines(), dr = sum(L, (l) => l[3]), cr = sum(L, (l) => l[4])
     return `<p class="muted">${p.journal ? `Écritures transmises au journal de paie le ${fd(p.journal)} (FIN, simulé).` : "Aperçu : les écritures sont générées à l'étape Comptabilisation."} Plan de comptes de type SYSCOHADA (exemple), ventilation analytique par service (EF-HRM-023).</p>
-      ${tbl(["Compte", "Libellé", "Analytique", "#Débit", "#Crédit"], L.map((l) => [esc(l[0]), esc(l[1]), esc(l[2]), l[3] ? money(l[3]) : "", l[4] ? money(l[4]) : ""]), "", `<tfoot><tr><td></td><td>Total</td><td>${dr === cr ? badge("Équilibré", "on") : badge("Déséquilibre", "dark")}</td><td class="num">${money(dr)}</td><td class="num">${money(cr)}</td></tr></tfoot>`)}
+      ${tbl(["Compte", "Libellé", "Analytique", "#Débit", "#Crédit"], L.map((l) => [esc(l[0]), esc(l[1]), esc(l[2]), l[3] ? money(l[3]) : "", l[4] ? money(l[4]) : ""]), "", `<tfoot><tr><td></td><td>Total</td><td>${dr === cr ? badge("Équilibré", "ok") : badge("Déséquilibre", "bad")}</td><td class="num">${money(dr)}</td><td class="num">${money(cr)}</td></tr></tfoot>`)}
       <p class="muted">Chaque ligne renvoie aux bulletins du service concerné (paie → hrm.payroll.closed → FIN).</p>`
   }
 
@@ -830,16 +897,25 @@
     const byDept = Object.keys(DEPTS).map((d) => ({ label: DEPTS[d], value: sum(Object.values(S).filter((s) => E(s.id).dept === d), (s) => s.cost) })).filter((x) => x.value)
     const proj = Array.from({ length: 12 }, (_, i) => { let m = cur().month; for (let k = 0; k <= i; k++) m = nextMonth(m); const mo = Number(m.slice(5, 7)); return { m, v: r0(t.cost * (mo >= 1 && i >= 1 ? 1.03 : 1) * ([12, 1, 2].includes(mo) ? 1.06 : [7, 8].includes(mo) ? 1.04 : 1)) } })
     const mshort = (m) => day(m + "-01").toLocaleDateString("fr-FR", { month: "short" })
-    return `<div class="grid">${kpi("Masse salariale brute", money(t.brut), monthLabel(cur().month) + " · exemple")}${kpi("Coût employeur", money(t.cost), "brut + charges patronales")}
-      ${kpi("Coût de personnel / chambre occupée", money(t.cost / H.nuitees), H.nuitees + " nuitées du mois (exemple)")}${kpi("Écart vs budget", (t.cost > H.budget ? "+" : "") + pct(((t.cost - H.budget) / H.budget) * 100), "budget " + money(H.budget))}
-      ${kpi("Délai de clôture de paie", last.delay + " j", "après fin de mois (octobre)")}${kpi("Taux d'erreurs de paie", pct((last.errors / t.n) * 100), "bulletins corrigés / émis (octobre)")}
-      ${kpi("Absentéisme", pct((absent / (active().length * 26)) * 100), "maladie + absences injustifiées")}${kpi("Rotation (12 mois)", pct((exits / active().length) * 100), exits + " sorties / effectif")}
-      ${kpi("Conformité des certifications", pct((okReq.length / (withReq.length || 1)) * 100), "employés à jour")}</div>
-      <div class="cols"><section><h2>Coût employeur par service</h2>${bars(byDept, money)}</section>
-      <section><h2>Historique du coût employeur</h2>${columns([...H.history.map((h) => mshort(h.month)), mshort(cur().month)], [...H.history.map((h) => h.cost), t.cost], (v) => Math.round(v / 1e5) / 10 + " M")}</section></div>
-      <h2>Projection de masse salariale — 12 mois</h2>
-      ${aiBox("Projection de masse salariale", `Coût de personnel prévu sur 12 mois : ${money(sum(proj, (x) => x.v))}. Hypothèses : revalorisation d'exemple de 3 % en janvier, renforts saisonniers en haute saison (décembre–février) et en juillet–août. Transmis au budget (FIN) après validation du DAF.`)}
-      ${columns(proj.map((x) => mshort(x.m)), proj.map((x) => x.v), (v) => Math.round(v / 1e5) / 10 + " M")}`
+    const hs = [...H.history.map((h) => h.cost), t.cost], ms = [...H.history.map((h) => mshort(h.month)), mshort(cur().month)]
+    const dl = (x, y) => (y ? ((x - y) / y) * 100 : null), cpo = (c) => c / H.nuitees
+    return `<div class="grid g4">
+        ${stat({ label: "Masse salariale brute", value: money(t.brut), icon: "coins", delta: dl(t.brut, last.brut), good: false, hint: monthLabel(cur().month) + " · vs octobre", trend: [...H.history.map((h) => h.brut), t.brut], route: "hr-paie/cycle" })}
+        ${stat({ label: "Coût employeur", value: money(t.cost), icon: "wallet", delta: dl(t.cost, last.cost), good: false, hint: "brut + charges patronales", trend: hs })}
+        ${stat({ label: "Coût de personnel / chambre occupée", value: money(t.cost / H.nuitees), icon: "bed", hint: H.nuitees + " nuitées du mois (exemple)", trend: hs.map(cpo) })}
+        ${stat({ label: "Écart vs budget", value: (t.cost > H.budget ? "+" : "") + pct(((t.cost - H.budget) / H.budget) * 100), icon: "calc", hint: "budget " + money(H.budget) })}
+        ${stat({ label: "Délai de clôture de paie", value: last.delay + " j", icon: "clock", delta: dl(last.delay, H.history[H.history.length - 2].delay), good: false, hint: "après fin de mois (octobre)", trend: H.history.map((h) => h.delay) })}
+        ${stat({ label: "Taux d'erreurs de paie", value: pct((last.errors / t.n) * 100), icon: "alert", hint: "bulletins corrigés / émis (octobre)", trend: H.history.map((h) => h.errors) })}
+        ${stat({ label: "Absentéisme", value: pct((absent / (active().length * 26)) * 100), icon: "calendar", hint: "maladie + absences injustifiées", route: "hr-temps/conges" })}
+        ${stat({ label: "Rotation (12 mois)", value: pct((exits / active().length) * 100), icon: "refresh", hint: exits + " sorties / effectif", route: "hr-personnel/mouvements" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Historique du coût employeur", lineChart(ms, [{ name: "Coût employeur", values: hs }, { name: "Budget mensuel", values: ms.map(() => H.budget) }], { fmt: shortNum }))}</div>
+        <div class="w4">${section("Conformité des certifications", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((okReq.length / (withReq.length || 1)) * 100, "Conformité")}<div><div class="stat-val">${okReq.length}/${withReq.length}</div><div class="muted">employés à jour sur les postes à certification obligatoire</div></div></div>`, btn("Détail", "go('hr-personnel/certifications')", "ghost sm"))}</div>
+        <div class="w6">${section("Coût employeur par service", donut(top6(byDept), { fmt: money, center: shortNum(t.cost), sub: "FCFA" }))}</div>
+        <div class="w6">${section("Projection de masse salariale — 12 mois", lineChart(proj.map((x) => mshort(x.m)), [{ name: "Coût prévu", values: proj.map((x) => x.v) }], { fmt: shortNum }))}</div>
+      </div>
+      <div style="margin-top:16px">${aiBox("Projection de masse salariale", `Coût de personnel prévu sur 12 mois : ${money(sum(proj, (x) => x.v))}. Hypothèses : revalorisation d'exemple de 3 % en janvier, renforts saisonniers en haute saison (décembre–février) et en juillet–août. Transmis au budget (FIN) après validation du DAF.`)}</div>`
   }
   function simulation() {
     const s = ui.hrSim
@@ -848,7 +924,7 @@
         ${field("hr-strans", "Indemnité de transport", input("hr-strans", s ? s.transport : 30000, 'type="number" step="1000"'))}${field("hr-slog", "Indemnité de logement", input("hr-slog", s ? s.logement : 0, 'type="number" step="1000"'))}
         ${field("hr-sparts", "Parts ITS", select("hr-sparts", Object.keys(PACK.reduc), s ? String(s.parts) : "1"))}${field("hr-sstart", "Date d'entrée", input("hr-sstart", s ? s.start : today, 'type="date"'))}
         <div class="full" id="hr-serr"></div><div class="full">${btn("Simuler", "A.hrm.simulate()")}</div></div></div>
-      ${s && s.res ? `<div class="grid" style="margin-top:14px">${kpi("Brut mensuel", money(s.res.brut), "exemple")}${kpi("Net à payer", money(s.res.net), "après CNPS, CMU et ITS")}${kpi("Coût employeur mensuel", money(s.res.cost), "charges patronales " + money(s.res.patSoc + s.res.patTax))}${kpi("Coût annuel", money(s.res.cost * 12), "12 mois, hors primes")}</div>` : ""}`
+      ${s && s.res ? `<div class="grid" style="margin-top:14px">${st("Brut mensuel", money(s.res.brut), "exemple", "coins")}${st("Net à payer", money(s.res.net), "après CNPS, CMU et ITS", "wallet")}${st("Coût employeur mensuel", money(s.res.cost), "charges patronales " + money(s.res.patSoc + s.res.patTax), "trend")}${st("Coût annuel", money(s.res.cost * 12), "12 mois, hors primes", "calendar")}</div>` : ""}`
   }
 
   // ---------- Actions ----------

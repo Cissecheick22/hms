@@ -101,9 +101,9 @@
   const M = D.mnt
   const EQ = (id) => M.equipments.find((e) => e.id === id)
   const OT = (id) => M.orders.find((o) => o.id === id)
-  const PRIO = { critique: ["Critique", "on"], haute: ["Haute", "dark"], normale: ["Normale", ""], basse: ["Basse", "outline"] }
-  const OST = { ouvert: ["Ouvert", ""], en_cours: ["En cours", "on"], attente_pieces: ["Attente pièces", "outline"], clos: ["Clos", "dark"] }
-  const LST = { stocke: ["En stock", ""], restitue: ["Restitué", "on"], detruit: ["Détruit", "dark"], donne: ["Donné", "outline"] }
+  const PRIO = { critique: ["Critique", "bad"], haute: ["Haute", "warn"], normale: ["Normale", "info"], basse: ["Basse", "outline"] }
+  const OST = { ouvert: ["Ouvert", "warn"], en_cours: ["En cours", "info"], attente_pieces: ["Attente pièces", "bad"], clos: ["Clos", "ok"] }
+  const LST = { stocke: ["En stock", "info"], restitue: ["Restitué", "ok"], detruit: ["Détruit", "bad"], donne: ["Donné", "outline"] }
   const b2 = (map, k) => badge(map[k][0], map[k][1])
   const muted = (t) => `<span class="muted" style="font-size:12px">${esc(t)}</span>`
   const isRoom = (t) => !!room(t)
@@ -112,12 +112,19 @@
   const openFor = (target, source) => M.orders.find((o) => o.target === target && o.source === source && o.status !== "clos")
   const hhmm = (h) => NOW.slice(11, 16).replace(/^(\d\d)/, (x) => String(Math.min(23, Number(x) + h)).padStart(2, "0"))
   // EF-HKM-001 : propreté détaillée et occupation
-  const CS = { propre: ["Propre", "on"], inspectee: ["Inspectée", "on"], a_inspecter: ["Propre, à inspecter", "outline"], en_cours: ["En cours de nettoyage", "outline"], sale: ["Sale", ""], hors_commande: ["Hors commande", "dark"] }
-  const OCC = { libre: ["Libre", "outline"], occupee: ["Occupée", ""], depart: ["Départ", "dark"], arrivee: ["Arrivée", "on"] }
+  const CS = { propre: ["Propre", "ok"], inspectee: ["Inspectée", "ok"], a_inspecter: ["Propre, à inspecter", "warn"], en_cours: ["En cours de nettoyage", "info"], sale: ["Sale", "warn"], hors_commande: ["Hors commande", "bad"] }
+  const OCC = { libre: ["Libre", "outline"], occupee: ["Occupée", "info"], depart: ["Départ", "warn"], arrivee: ["Arrivée", "ok"] }
   const cleanState = (r) => r.hk === "hs" ? "hors_commande" : r.hk === "inspection" ? "a_inspecter" : r.hk === "sale" ? (M.rs[r.no] === "en_cours" ? "en_cours" : "sale") : M.inspected[r.no] ? "inspectee" : "propre"
   const occState = (no) => { const o = occupant(no); if (o) return o.to === today ? "depart" : "occupee"; return D.reservations.some((r) => r.room === no && r.from === today && r.status === "confirmee") ? "arrivee" : "libre" }
   const syncStates = () => D.rooms.forEach((r) => { if (r.hk !== "propre") delete M.inspected[r.no]; if (r.hk !== "sale") delete M.rs[r.no] })
   const accLocks = () => (D.acc && D.acc.locks) || []
+
+  // Indicateurs illustrés : séries sur 14 jours calculées sur les ordres (créés, clos, ouverts en fin de journée)
+  const days14 = () => Array.from({ length: 14 }, (_, i) => addDays(today, i - 13))
+  const openAt = (d) => M.orders.filter((o) => o.created.slice(0, 10) <= d && (o.status !== "clos" || (o.closed || "").slice(0, 10) > d)).length
+  const dlt = (h) => (h.length > 1 && h[h.length - 2] ? ((h[h.length - 1] - h[h.length - 2]) / Math.abs(h[h.length - 2])) * 100 : null)
+  const statRow = (items) => `<div class="grid g4" style="margin-bottom:16px">${items.map(stat).join("")}</div>`
+  const countBy = (arr, f) => Object.entries(arr.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m }, {})).map(([label, value]) => ({ label, value }))
 
   // ---------- Écran 1 : Maintenance technique ----------
   function maintenance(p) {
@@ -125,10 +132,11 @@
     const open = M.orders.filter((o) => o.status !== "clos")
     return pageHead("Maintenance technique", "Ordres de travail, plans préventifs, capteurs IoT et maintenance prédictive. Données d'exemple ; capteurs et serrures simulés.",
       btn("Déclarer une panne", "go('mnt-ot/ordres/new')"))
-      + cards([kpi("Ordres ouverts", open.length, `${open.filter((o) => o.prio === "critique" || o.prio === "haute").length} prioritaires`),
-        kpi("Chambres hors commande", D.rooms.filter((r) => r.hk === "hs").length, "par ordre bloquant ou manuel"),
-        kpi("Préventifs en retard", M.plans.filter((x) => nextDue(x) < today).length, "plans échus"),
-        kpi("Alertes capteurs", M.iot.filter((s) => s.leak || s.temp > 29).length, "passerelle edge simulée")])
+      + statRow([
+        { label: "Ordres ouverts", value: String(open.length), icon: "wrench", hint: `${open.filter((o) => o.prio === "critique" || o.prio === "haute").length} prioritaires · courbe sur 14 jours`, trend: days14().map(openAt), route: "mnt-ot/ordres" },
+        { label: "Chambres hors commande", value: String(D.rooms.filter((r) => r.hk === "hs").length), icon: "bed", hint: "par ordre bloquant ou manuel" },
+        { label: "Préventifs en retard", value: String(M.plans.filter((x) => nextDue(x) < today).length), icon: "calendar", hint: `${M.plans.length} plans · échus`, route: "mnt-ot/preventif" },
+        { label: "Alertes capteurs", value: String(M.iot.filter((s) => s.leak || s.temp > 29).length), icon: "zap", hint: "passerelle edge simulée", route: "mnt-ot/iot" }])
       + subtabs("mnt-ot", [["ordres", "Ordres de travail"], ["preventif", "Maintenance préventive"], ["iot", "IoT et prédictif"], ["kpi", "Indicateurs"]], tab)
       + ({ ordres: tabOrders, preventif: tabPlans, iot: tabIot, kpi: tabKpi }[tab] || tabOrders)(p.slice(1))
   }
@@ -140,8 +148,14 @@
     const cur = p[0] === "new" ? null : OT(p[0]) || list[0]
     const left = `<div class="chips">${Object.entries({ actifs: "Actifs", clos: "Clos", tous: "Tous" }).map(([k, l]) =>
       `<button aria-pressed="${f === k}" onclick="ui.mntFilter='${k}';render()">${l}</button>`).join("")}</div>`
-      + listItems(list.map((o) => ({ id: o.id, title: `${o.id} · ${o.title}`, badge: " " + b2(PRIO, o.prio) + (o.blocking ? " " + badge("Bloquant", "dark") : ""), sub: `${isRoom(o.target) ? "Ch. " : ""}${o.target} · ${OST[o.status][0]} · ${o.assignee || "non affecté"}` })), cur && cur.id, "mnt-ot/ordres")
+      + listItems(list.map((o) => ({ id: o.id, title: `${o.id} · ${o.title}`, badge: " " + b2(PRIO, o.prio) + (o.blocking ? " " + badge("Bloquant", "bad") : ""), sub: `${isRoom(o.target) ? "Ch. " : ""}${o.target} · ${OST[o.status][0]} · ${o.assignee || "non affecté"}` })), cur && cur.id, "mnt-ot/ordres")
+    const d14 = days14(), open = M.orders.filter((o) => o.status !== "clos")
     return split(left, p[0] === "new" ? newOrderForm() : cur ? orderDetail(cur) : `<p class="muted">Aucun ordre.</p>`)
+      + `<div class="dash" style="margin-top:16px">
+          <div class="w4">${section("Ordres par statut", bars(Object.keys(OST).map((k) => ({ label: OST[k][0], value: M.orders.filter((o) => o.status === k).length })), (v) => v))}</div>
+          <div class="w4">${section("Ordres ouverts sur 14 jours", columns(d14.filter((_, i) => i % 2 === 1).map((d) => fd(d)), d14.filter((_, i) => i % 2 === 1).map(openAt), (v) => v))}</div>
+          <div class="w4">${section("Ordres actifs par priorité", open.length ? donut(Object.keys(PRIO).map((k) => ({ label: PRIO[k][0], value: open.filter((o) => o.prio === k).length })).filter((x) => x.value), { fmt: (v) => v, center: String(open.length), sub: "actifs" }) : `<p class="muted">Aucun ordre actif.</p>`)}</div>
+        </div>`
   }
 
   function newOrderForm() {
@@ -184,7 +198,7 @@
       + tbl(["Plan", "Équipement", "#Fréquence", "Dernière", "Prochaine", "Check-list", ""], M.plans.map((x) => {
         const n = nextDue(x), late = n < today, soon = !late && n <= addDays(today, 7)
         const pending = M.orders.find((o) => o.plan === x.id && o.status !== "clos")
-        return [esc(x.id), esc(EQ(x.equip).label), `${x.freq} j`, fd(x.last), `${fd(n)} ${late ? badge("En retard", "on") : soon ? badge("Sous 7 j", "outline") : ""}`,
+        return [esc(x.id), esc(EQ(x.equip).label), `${x.freq} j`, fd(x.last), `${fd(n)} ${late ? badge("En retard", "bad") : soon ? badge("Sous 7 j", "warn") : ""}`,
           `<span class="muted">${esc(x.checklist.join(" · "))}</span>`,
           pending ? badge(pending.id + " ouvert", "outline") : btn("Générer l'ordre", `A.mnt.genPlan(${q(x.id)})`, "ghost sm")]
       }))
@@ -196,21 +210,21 @@
     return `<h2>Capteurs de chambre ${muted("EF-HKM-011 · passerelle edge simulée")}</h2>`
       + tbl(["Chambre", "#Temp.", "#Humidité", "#kWh (24 h)", "Présence", "Fuite", "État", ""], M.iot.map((s) => {
         const alert = s.leak ? "Fuite détectée" : s.temp > 29 ? "Température élevée" : ""
-        return [esc(s.room), `${s.temp.toFixed(1)} °C`, `${s.hum} %`, s.kwh.toFixed(1), s.presence ? "Oui" : "Non", s.leak ? badge("Oui", "on") : "Non",
-          alert ? badge(alert, "on") : badge("Normal", "outline"),
+        return [esc(s.room), `${s.temp.toFixed(1)} °C`, `${s.hum} %`, s.kwh.toFixed(1), s.presence ? "Oui" : "Non", s.leak ? badge("Oui", "bad") : "Non",
+          alert ? badge(alert, "bad") : badge("Normal", "ok"),
           (s.temp > 29 && !s.leak ? (openFor(s.room, "IoT") ? badge(openFor(s.room, "IoT").id, "outline") : btn("Créer l'ordre", `A.mnt.iotOrder(${q(s.room)})`, "sm")) + " " : "") + (s.leak ? "" : btn("Simuler une fuite", `A.mnt.simLeak(${q(s.room)})`, "ghost sm"))]
       }))
       + `<h2>Événements de serrure ${muted("EF-HKM-012 · batterie faible, serrure hors ligne (simulé)")}</h2>`
       + (() => {
         const ev = accLocks().filter((l) => l.offline || (l.battery != null && l.battery < 20))
         return tbl(["Porte", "Événement", "Ordre de travail"], ev.map((l) => { const t = l.room || l.door, o = openFor(t, "Serrure")
-          return [esc(l.door), l.offline ? badge("Serrure hors ligne", "dark") : badge(`Batterie ${l.battery} %`, "on"), o ? `${badge(o.id, "outline")} ${muted(OST[o.status][0])}` : btn("Créer l'ordre", `A.mnt.lockOrder(${q(l.id)})`, "sm")] }), "Aucun événement de serrure en cours.")
+          return [esc(l.door), l.offline ? badge("Serrure hors ligne", "bad") : badge(`Batterie ${l.battery} %`, "warn"), o ? `${badge(o.id, "outline")} ${muted(OST[o.status][0])}` : btn("Créer l'ordre", `A.mnt.lockOrder(${q(l.id)})`, "sm")] }), "Aucun événement de serrure en cours.")
           + `<div class="row" style="margin-top:8px">${btn("Traiter toutes les alertes (IoT et serrures)", "A.mnt.scanAlerts()", "ghost sm")}${muted("Un ordre par alerte ; pas de doublon si un ordre est déjà ouvert sur la même cible.")}</div>`
       })()
       + `<p class="muted">Une alerte de fuite crée un ordre critique et bloquant ; si la chambre est occupée, le relogement est proposé (US-HKM-02). Les chambres libres sans présence passent la climatisation en mode économie (EF-HKM-014, simulé).</p>`
       + `<h2>Maintenance prédictive</h2>`
       + M.predictions.map((x) => aiBox(`${EQ(x.equip).label} — risque de panne ${Math.round(x.risk * 100)} % sous ${x.horizon}`, x.why + " Proposition : ordre préventif, à valider par le responsable technique.",
-        x.done ? badge("Ordre proposé créé", "on") : btn("Créer l'ordre préventif proposé", `A.mnt.fromPrediction(${q(x.equip)})`, "sm") + btn("Ignorer", `A.mnt.ignorePred(${q(x.equip)})`, "ghost sm"))).join("")
+        x.done ? badge("Ordre proposé créé", "ok") : btn("Créer l'ordre préventif proposé", `A.mnt.fromPrediction(${q(x.equip)})`, "sm") + btn("Ignorer", `A.mnt.ignorePred(${q(x.equip)})`, "ghost sm"))).join("")
   }
 
   function tabKpi() {
@@ -222,19 +236,33 @@
     const occ = M.iot.filter((s) => occupant(s.room))
     const kwhOcc = occ.reduce((s, x) => s + x.kwh, 0) / Math.max(1, occ.length)
     return `<p class="muted">Indicateurs §11.12, calculés sur les données d'exemple de la maquette (temps de nettoyage et ponctualité : valeurs d'exemple du mois).</p>`
-      + cards([kpi("Minutes par chambre", Math.round(dt0.reduce((s, k) => s + k.minutes, 0) / Math.max(1, dt0.length)) + " min", "crédit moyen des tâches du jour"), kpi("Chambres prêtes à l'heure", "91 %", "valeur d'exemple du mois"),
-        kpi("Score d'inspection", Math.round(score) + " / 100", `${M.inspections.length} inspections`), kpi("MTTR", mttr.toFixed(1).replace(".", ",") + " h", `${closed.length} ordres clos`),
-        kpi("Taux de maintenance préventive", pct((prev / Math.max(1, M.orders.length)) * 100), "ordres préventifs / total"), kpi("Énergie / chambre occupée", kwhOcc.toFixed(1).replace(".", ",") + " kWh", "sur 24 h")])
-      + cards([card("Minutes par type de tâche", bars([{ label: "Départ", value: 44 }, { label: "Recouche", value: 21 }, { label: "Approfondi", value: 86 }, { label: "Couverture", value: 9 }], (v) => v + " min")),
-        card("Ordres par source", bars(["Employé", "Client", "IoT", "Serrure", "Plan préventif"].map((s) => ({ label: s, value: M.orders.filter((o) => o.source === s).length })))),
-        card("Délai de résolution par ordre clos (h)", columns(closed.map((o) => o.id.replace("OT-", "")), closed.map((o) => Math.round(hoursBetween(o.created, o.closed) * 10) / 10)))])
+      + `<div class="grid g4">${[
+        { label: "Minutes par chambre", value: Math.round(dt0.reduce((s, k) => s + k.minutes, 0) / Math.max(1, dt0.length)) + " min", icon: "clock", hint: "crédit moyen des tâches du jour" },
+        { label: "Chambres prêtes à l'heure", value: "91 %", icon: "check", delta: 2.1, hint: "valeur d'exemple du mois · vs mois précédent", trend: [86, 88, 87, 89, 90, 89, 91] },
+        { label: "Score d'inspection", value: Math.round(score) + " / 100", icon: "star", hint: `${M.inspections.length} inspections`, trend: M.inspections.map((i) => i.score).reverse(), route: "mnt-hk/inspections" },
+        { label: "MTTR", value: mttr.toFixed(1).replace(".", ",") + " h", icon: "wrench", hint: `${closed.length} ordres clos · délai moyen de résolution` },
+        { label: "Taux de maintenance préventive", value: pct((prev / Math.max(1, M.orders.length)) * 100), icon: "calendar", hint: "ordres préventifs / total" },
+        { label: "Énergie / chambre occupée", value: kwhOcc.toFixed(1).replace(".", ",") + " kWh", icon: "zap", hint: "sur 24 h" }].map(stat).join("")}</div>`
+      + `<div class="dash" style="margin-top:16px">
+          <div class="w8">${section("Délai de résolution par ordre clos (h)", columns(closed.map((o) => o.id.replace("OT-", "")), closed.map((o) => Math.round(hoursBetween(o.created, o.closed) * 10) / 10), (v) => String(v).replace(".", ",")))}</div>
+          <div class="w4">${section("Ordres par source", donut(["Employé", "Client", "IoT", "Serrure", "Plan préventif"].map((s) => ({ label: s, value: M.orders.filter((o) => o.source === s).length })).filter((x) => x.value), { fmt: (v) => v, center: String(M.orders.length), sub: "ordres" }))}</div>
+          <div class="w6">${section("Minutes par type de tâche (exemple)", bars([{ label: "Départ", value: 44 }, { label: "Recouche", value: 21 }, { label: "Approfondi", value: 86 }, { label: "Couverture", value: 9 }], (v) => v + " min"))}</div>
+          <div class="w6">${section("Coût des pièces par équipement", bars(M.equipments.map((e) => ({ label: e.label, value: M.orders.filter((o) => o.equip === e.id).reduce((s, o) => s + o.parts.reduce((t, x) => t + x.qty * x.cost, 0), 0) })).filter((x) => x.value).sort((a, b) => b.value - a.value), money))}</div>
+        </div>`
   }
 
   // ---------- Écran 2 : Gouvernance (tâches, inspections, objets trouvés) ----------
   function governance(p) {
     const tab = p[0] || "taches"
     syncStates()
+    const tasks = dayTasks(), sc = M.inspections.map((i) => i.score).reverse(), avg = sc.reduce((s, x) => s + x, 0) / Math.max(1, sc.length)
+    const st = D.rooms.map((r) => cleanState(r))
     return pageHead("Gouvernance et qualité", "Statuts détaillés, tâches du jour générées depuis les séjours, application mobile du personnel, inspections avec check-list, objets trouvés et produits d'accueil.")
+      + statRow([
+        { label: "Tâches du jour", value: String(tasks.length), icon: "list", hint: `${tasks.reduce((s, k) => s + k.minutes, 0)} min de crédit · ${tasks.filter((k) => !k.who).length} non attribuée(s)`, route: "mnt-hk/taches" },
+        { label: "Chambres à nettoyer", value: String(st.filter((c) => c === "sale" || c === "en_cours").length), icon: "bed", hint: `${st.filter((c) => c === "en_cours").length} en cours de nettoyage`, route: "mnt-hk/statuts" },
+        { label: "À inspecter", value: String(st.filter((c) => c === "a_inspecter").length), icon: "filecheck", hint: "rôle inspecteur requis", route: "mnt-hk/inspections" },
+        { label: "Score d'inspection", value: Math.round(avg) + " / 100", icon: "star", delta: dlt(sc), hint: `moyenne de ${sc.length} inspections · vs précédente`, trend: sc }])
       + subtabs("mnt-hk", [["taches", "Tâches du jour"], ["statuts", "Statuts des chambres"], ["mobile", "Application mobile"], ["inspections", "Inspections"], ["objets", "Objets trouvés"], ["produits", "Produits d'accueil"]], tab)
       + ({ taches: tabTasks, statuts: tabStatus, mobile: tabMobile, inspections: tabInspections, objets: tabLost, produits: tabAmenities }[tab] || tabTasks)(p.slice(1))
   }
@@ -260,21 +288,22 @@
     const tasks = dayTasks()
     const load = (h) => tasks.filter((k) => k.who === h).reduce((s, k) => s + k.minutes, 0)
     const prop = M.proposal
-    return cards(D.housekeepers.map((h) => kpi(h, load(h) + " min", `${tasks.filter((k) => k.who === h).length} tâche(s) · crédit ${M.credit} min${load(h) > M.credit ? " · DÉPASSÉ" : ""}${M.presence[h] ? "" : " · absente"}`)))
-      + card("Secteurs, crédits de temps et présence", tbl(["Femme de chambre", "Pointage (RH, simulé)", "Secteur", "#Charge", ""], D.housekeepers.map((h) => [esc(h),
-          M.presence[h] ? badge("Présente depuis " + M.presence[h], "on") : badge("Absente / non pointée", "dark"),
+    return `<div class="dash"><div class="w8">${section("Secteurs, crédits de temps et présence", tbl(["Femme de chambre", "Pointage (RH, simulé)", "Secteur", "#Charge", ""], D.housekeepers.map((h) => [esc(h),
+          M.presence[h] ? badge("Présente depuis " + M.presence[h], "ok") : badge("Absente / non pointée", "warn"),
           `<span class="row" style="flex-wrap:nowrap">${[1, 2, 3].map((f) => `<label class="row" style="color:var(--ink);margin:0 6px 0 0"><input type="checkbox" ${M.sectors[f] === h ? "checked" : ""} onchange="A.mnt.setSector(${f}, ${q(h)})"> Étage ${f}</label>`).join("")}</span>`,
           `${load(h)} / ${M.credit} min`, btn(M.presence[h] ? "Marquer absente" : "Simuler le pointage", `A.mnt.togglePresence(${q(h)})`, "ghost sm")]))
-        + `<div class="row" style="margin-top:8px">${btn("Affecter par secteur", "A.mnt.bySector()", "sm")}${muted("Secteur d'abord ; si la titulaire est absente ou au-delà de son crédit, la collègue présente la moins chargée. Affectation manuelle dans la colonne « Attribuée à ». EF-HKM-003")}</div>`)
-      + `<h2>Tâches du jour ${muted("EF-HKM-002 · priorité : arrivées imminentes et VIP (RG-HKM-03)")}</h2>`
-      + tbl(["Chambre", "Tâche", "#Crédit", "Priorité", "Ne pas déranger", "Attribuée à"], tasks.map((k) => [
+        + `<div class="row" style="margin-top:8px">${btn("Affecter par secteur", "A.mnt.bySector()", "sm")}${muted("Secteur d'abord ; si la titulaire est absente ou au-delà de son crédit, la collègue présente la moins chargée. Affectation manuelle dans la colonne « Attribuée à ». EF-HKM-003")}</div>`)}</div>
+      <div class="w4">${section(`Charge (crédit ${M.credit} min)`, bars(D.housekeepers.map((h) => ({ label: h.split(" ")[0] + (M.presence[h] ? "" : " (absente)"), value: load(h) })), (v) => v + " min" + (v > M.credit ? " · dépassé" : "")))}
+        <div style="margin-top:16px">${section("Tâches par type", donut(countBy(tasks, (k) => k.kind), { fmt: (v) => v, center: String(tasks.length), sub: "tâches" }))}</div></div></div>`
+      + section("Tâches du jour", `<p class="muted" style="margin-top:0">${esc("EF-HKM-002 · priorité : arrivées imminentes et VIP (RG-HKM-03)")}</p>` + tbl(["Chambre", "Tâche", "#Crédit", "Priorité", "Ne pas déranger", "Attribuée à"], tasks.map((k) => [
         `<strong>${esc(k.room)}</strong> ${muted(T(room(k.room).type).label)}`, esc(k.kind) + (k.note ? " " + muted(k.note) : ""), k.minutes + " min",
-        (k.arrival ? badge("Arrivée attendue", "on") + " " : "") + (k.vip ? badge("VIP", "dark") : "") || muted("standard"),
+        (k.arrival ? badge("Arrivée attendue", "info") + " " : "") + (k.vip ? badge("VIP", "ok") : "") || muted("standard"),
         k.dnd ? `${badge("DND depuis " + k.dnd.at, "outline")} ${muted(k.dnd.src)}<br>${muted("replanifiée à")} ${select("dr-" + k.room, ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"].includes(k.dnd.retry) ? ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"] : [k.dnd.retry, "12:00", "14:00", "16:00"], k.dnd.retry, `style="max-width:90px;display:inline-block" onchange="A.mnt.retry(${q(k.room)}, this.value)"`)} ${btn("Levé", `A.mnt.clearDnd(${q(k.room)})`, "ghost sm")}` : btn("Signaler DND", `A.mnt.setDnd(${q(k.room)})`, "ghost sm"),
         k.kind === "Couverture du soir" ? esc(k.who || "—") : select("ta-" + k.room, [["", "—"], ...D.housekeepers.map((h) => [h, h + (M.presence[h] ? "" : " (absente)")])], k.who, `style="max-width:200px" onchange="A.mnt.assignTask(${q(k.room)}, this.value)"`),
       ]))
       + `<div class="row" style="margin-top:8px">${btn("Synchroniser « Ne pas déranger » depuis les serrures", "A.mnt.syncDnd()", "ghost sm")}${muted("Ne pas déranger et mode intimité remontés par les serrures (simulé) : la tâche passe en fin de liste, est replanifiée et l'application bloque l'entrée. EF-HKM-006")}</div>`
-      + `<p class="muted">L'entrée du personnel dans une chambre occupée n'est autorisée que pendant une tâche assignée (RG-HKM-04).</p>`
+      + `<p class="muted">L'entrée du personnel dans une chambre occupée n'est autorisée que pendant une tâche assignée (RG-HKM-04).</p>`)
+      + `<div style="margin-top:16px"></div>`
       + aiBox("Optimisation des tâches", prop ? `Proposition : ${prop.map((x) => `${x.room} → ${x.who}`).join(", ")}. Regroupement par étage, arrivées en premier, charge équilibrée. À valider par la gouvernante générale.`
         : "Calcule une affectation qui minimise les déplacements entre étages et traite d'abord les chambres attendues à l'arrivée. Repli sans IA : affectation par secteur (étage).",
         prop ? btn("Valider la proposition", "A.mnt.applyProposal()", "sm") + btn("Rejeter", "A.mnt.dropProposal()", "ghost sm") : btn("Proposer une affectation", "A.mnt.propose()", "sm"))
@@ -282,26 +311,27 @@
 
   function tabStatus() {
     const st = D.rooms.map((r) => ({ r, c: cleanState(r), o: occState(r.no) }))
-    return cards(Object.entries(CS).map(([k, [l]]) => kpi(l, st.filter((x) => x.c === k).length, "chambres")).concat([kpi("Hors service", Object.keys(M.oos).length, "restent vendables")]))
-      + `<h2>Propreté et occupation ${muted("EF-HKM-001")}</h2>`
-      + tbl(["Chambre", "Propreté", "Occupation", "Technique", "Action"], st.map(({ r, c, o }) => [
+    return `<div class="dash" style="margin-bottom:16px">
+        <div class="w6">${section("Propreté", donut(Object.entries(CS).map(([k, [l]]) => ({ label: l, value: st.filter((x) => x.c === k).length })).filter((x) => x.value), { fmt: (v) => v, center: String(D.rooms.length), sub: "chambres" }))}</div>
+        <div class="w6">${section("Occupation", donut(Object.entries(OCC).map(([k, [l]]) => ({ label: l, value: st.filter((x) => x.o === k).length })).filter((x) => x.value), { fmt: (v) => v, center: String(D.rooms.length), sub: "chambres" }), badge(`${Object.keys(M.oos).length} hors service (vendables)`, "warn"))}</div></div>`
+      + section("Propreté et occupation · EF-HKM-001", tbl(["Chambre", "Propreté", "Occupation", "Technique", "Action"], st.map(({ r, c, o }) => [
         `<strong>${esc(r.no)}</strong> ${muted(T(r.type).label + " · étage " + r.floor)}`,
         b2(CS, c) + (c === "inspectee" ? " " + muted(dt(M.inspected[r.no])) : "") + (M.dnd[r.no] ? " " + badge("Ne pas déranger", "outline") : ""),
         b2(OCC, o),
-        c === "hors_commande" ? `${badge("Hors commande", "dark")} ${muted(r.note || "ordre bloquant")}` : M.oos[r.no] ? `${badge("Hors service", "outline")} ${muted(M.oos[r.no])} ${btn("Rétablir", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm")}` : btn("Déclarer hors service", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm"),
+        c === "hors_commande" ? `${badge("Hors commande", "bad")} ${muted(r.note || "ordre bloquant")}` : M.oos[r.no] ? `${badge("Hors service", "warn")} ${muted(M.oos[r.no])} ${btn("Rétablir", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm")}` : btn("Déclarer hors service", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm"),
         c === "sale" ? btn("Commencer le nettoyage", `A.mnt.roomAct(${q(r.no)}, 'start')`, "ghost sm")
           : c === "en_cours" ? btn("Terminer le nettoyage", `A.mnt.roomAct(${q(r.no)}, 'done')`, "sm")
           : c === "a_inspecter" ? btn("Inspecter", `go('mnt-hk/inspections/${esc(r.no)}')`, "ghost sm")
           : c === "hors_commande" ? btn("Voir les ordres", "go('mnt-ot/ordres')", "ghost sm")
           : c === "propre" ? btn("Remettre à sale", `A.mnt.roomAct(${q(r.no)}, 'dirty')`, "ghost sm") : muted("prête à la vente"),
       ]))
-      + `<p class="muted">Cycle : sale → en cours de nettoyage → propre, à inspecter → inspectée (rôle inspecteur, RG-HKM-02). « Hors service » signale un défaut mineur, la chambre reste vendable ; « hors commande » la retire de la vente tant qu'un ordre bloquant est ouvert (EF-HKM-010). Une chambre libérée au check-out passe à sale / départ (RG-HKM-01).</p>`
+      + `<p class="muted">Cycle : sale → en cours de nettoyage → propre, à inspecter → inspectée (rôle inspecteur, RG-HKM-02). « Hors service » signale un défaut mineur, la chambre reste vendable ; « hors commande » la retire de la vente tant qu'un ordre bloquant est ouvert (EF-HKM-010). Une chambre libérée au check-out passe à sale / départ (RG-HKM-01).</p>`)
   }
 
   function tabMobile() {
     const h = M.mobUser
     const mine = dayTasks().filter((k) => k.who === h && k.kind !== "Couverture du soir")
-    const body = `<div class="row between" style="margin-bottom:8px"><strong>${esc(h)}</strong>${M.offline ? badge("Hors ligne", "dark") : badge("En ligne", "on")}</div>
+    const body = `<div class="row between" style="margin-bottom:8px"><strong>${esc(h)}</strong>${M.offline ? badge("Hors ligne", "warn") : badge("En ligne", "ok")}</div>
       ${M.offline ? `<p class="muted" style="font-size:12px;margin:0 0 8px">Pas de réseau : ${M.queue.length} mise(s) à jour en file, envoyées au retour du réseau.</p>` : ""}
       ${mine.length ? mine.map((k) => { const r = room(k.room), c = cleanState(r), pend = M.queue.filter((x) => x.no === k.room).map((x) => x.act)
         const eff = pend.includes("done") ? "a_inspecter" : pend.includes("start") ? "en_cours" : c
@@ -334,7 +364,7 @@
     return split(left, right)
       + `<h2>Inspections récentes</h2>`
       + tbl(["Réf.", "Chambre", "Date", "Inspecteur", "Femme de chambre", "#Photos", "#Score", "Points non conformes"], M.inspections.map((i) => [esc(i.id), esc(i.room), dt(i.date), esc(i.by), esc(i.hk), i.photos,
-        i.score >= 80 ? badge(i.score + " / 100", "on") : badge(i.score + " / 100", "dark"), esc(i.ko.join(", ") || "—")]))
+        i.score >= 80 ? badge(i.score + " / 100", "ok") : badge(i.score + " / 100", "bad"), esc(i.ko.join(", ") || "—")]))
   }
 
   function tabLost() {
@@ -348,7 +378,7 @@
       ]))
       + tbl(["Réf.", "Trouvé le", "Lieu", "Objet", "Stockage", "Échéance", "Statut", ""], M.lost.map((o) => {
         const expired = deadline(o) < today
-        return [esc(o.id), fd(o.date), esc(o.place), esc(o.desc) + (o.value ? " " + badge("Valeur", "dark") : ""), esc(o.store), o.status === "stocke" ? fd(deadline(o)) + (expired ? " " + badge("Échue", "on") : "") : "—",
+        return [esc(o.id), fd(o.date), esc(o.place), esc(o.desc) + (o.value ? " " + badge("Valeur", "info") : ""), esc(o.store), o.status === "stocke" ? fd(deadline(o)) + (expired ? " " + badge("Échue", "warn") : "") : "—",
           b2(LST, o.status) + (o.guest ? " " + muted(o.guest) : ""),
           o.status !== "stocke" ? "" : `<span class="row" style="flex-wrap:nowrap">${btn("Restituer", `A.mnt.returnLost(${q(o.id)})`, "ghost sm")}${btn("Détruire / donner", `A.mnt.disposeLost(${q(o.id)})`, "ghost sm")}</span>`]
       }))
@@ -362,7 +392,7 @@
         const need = Math.ceil([1, 2, 3].reduce((s, f) => s + byFloor(f), 0) * a.perRoom)
         const low = [1, 2, 3].filter((f) => a.office[f] < a.min)
         return [esc(a.label), ...[1, 2, 3].map((f) => a.office[f] < a.min ? `<strong>${a.office[f]}</strong>` : a.office[f]), a.min, need,
-          low.length ? btn(`Réassort étage ${low.join(", ")}`, `A.mnt.restock(${i})`, "ghost sm") : badge("OK", "outline")]
+          low.length ? btn(`Réassort étage ${low.join(", ")}`, `A.mnt.restock(${i})`, "ghost sm") : badge("OK", "ok")]
       }))
   }
 

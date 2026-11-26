@@ -86,11 +86,11 @@
   const who = (b) => (b.res ? G(R(b.res).guest).name : b.client)
   const span = (b) => { const t = TR(b.t), s = mins(b.start); return [s, s + t.dur + t.prep] }
   const activeB = () => S.bookings.filter((b) => b.status !== "annule")
-  const BST = { confirme: ["Confirmé", ""], arrive: ["En soin", "on"], termine: ["Terminé", "outline"], annule: ["Annulé", "dark"] }
+  const BST = { confirme: ["Confirmé", "info"], arrive: ["En soin", "warn"], termine: ["Terminé", "ok"], annule: ["Annulé", "bad"] }
   const PAY = { folio: "Folio chambre", direct: "Encaissement direct", forfait: "Inclus au forfait", abonnement: "Abonnement membre" }
   const stayOptions = () => [...inHouse(), ...arrivals().filter((r) => r.status === "confirmee")].map((r) => [r.id, r.room ? `Ch. ${r.room} — ${G(r.guest).name}` : `${G(r.guest).name} (arrivée ce jour)`])
   const AI_DONE = { promo: "Créneaux soin visage 15:00 et 16:00 mis en avant dans l'application client", grid: "Grille de demain recalée sur 75 min pour les massages" }
-  const aiAct = (k, label) => (S.ai[k] ? badge("Appliqué", "on") + " " + muted(AI_DONE[k]) : btn(label, `A.spa.ai(${q(k)})`, "ghost sm"))
+  const aiAct = (k, label) => (S.ai[k] ? badge("Appliqué", "ok") + " " + muted(AI_DONE[k]) : btn(label, `A.spa.ai(${q(k)})`, "ghost sm"))
   const pkgOf = (resId) => S.packages.find((p) => p.stays.includes(resId))
   // Décrément des stocks dans Achats (carte #61) : sans effet si l'API n'est pas chargée
   const consume = (lines) => { A.prc && A.prc.consume && A.prc.consume(lines, "Spa") }
@@ -147,11 +147,18 @@
       const ih = inHouse().sort((a, b) => a.room.localeCompare(b.room))
       const acts = [...S.activities].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
       return pageHead("Loisirs et services annexes", "Excursions, locations, navettes et golf avec gestion de capacité (EF-SPA-009). Prestataires partenaires et tarifs d'exemple.")
-        + `<div class="grid">${kpi("Départs à venir", acts.length, "7 prochains jours")}${kpi("Places vendues", acts.reduce((s, a) => s + a.booked, 0), `sur ${acts.reduce((s, a) => s + a.cap, 0)} offertes`)}${kpi("Complets", acts.filter((a) => a.booked >= a.cap).length, "liste d'attente proposée")}</div>
-        <h2>Programme</h2>
-        ${tbl(["Date", "Activité", "Type", "Prestataire", "#Prix/pers.", "Remplissage", ""], acts.map((a) => [`${wd(a.date)} ${fd(a.date)} · ${esc(a.time)}`, esc(a.name), esc(a.kind), esc(a.partner), money(a.price),
-          `${a.booked}/${a.cap} ${a.booked >= a.cap ? badge("Complet", "dark") : ""}<span class="track" style="display:block;margin-top:4px"><i style="width:${(a.booked / a.cap) * 100}%"></i></span>`,
-          a.booked >= a.cap ? muted("—") : btn("Inscrire", `document.getElementById('ls-act').value=${q(a.id)};document.getElementById('ls-act').scrollIntoView()`, "ghost sm")]))}
+        + `<div class="grid g4">
+          ${stat({ label: "Départs à venir", value: String(acts.length), icon: "calendar", hint: "7 prochains jours" })}
+          ${stat({ label: "Places vendues", value: String(acts.reduce((s, a) => s + a.booked, 0)), icon: "users", hint: `sur ${acts.reduce((s, a) => s + a.cap, 0)} offertes · remplissage en courbe`, trend: acts.map((a) => (a.booked / a.cap) * 100) })}
+          ${stat({ label: "Complets", value: String(acts.filter((a) => a.booked >= a.cap).length), icon: "alert", hint: "liste d'attente proposée" })}
+          ${stat({ label: "Chiffre d'affaires prévu", value: money(acts.reduce((s, a) => s + a.booked * a.price, 0)), icon: "coins", hint: "places vendues × prix · exemple" })}
+        </div>
+        <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Programme", tbl(["Date", "Activité", "Type", "Prestataire", "#Prix/pers.", "Remplissage", ""], acts.map((a) => [`${wd(a.date)} ${fd(a.date)} · ${esc(a.time)}`, esc(a.name), esc(a.kind), esc(a.partner), money(a.price),
+          `${a.booked}/${a.cap} ${a.booked >= a.cap ? badge("Complet", "warn") : ""}<span class="track" style="display:block;margin-top:4px"><i style="width:${(a.booked / a.cap) * 100}%"></i></span>`,
+          a.booked >= a.cap ? muted("—") : btn("Inscrire", `document.getElementById('ls-act').value=${q(a.id)};document.getElementById('ls-act').scrollIntoView()`, "ghost sm")])))}</div>
+        <div class="w4">${section("Places vendues par type", donut(Object.entries(acts.reduce((o, a) => ((o[a.kind] = (o[a.kind] || 0) + a.booked), o), {})).map(([label, value]) => ({ label, value })).filter((x) => x.value), { fmt: (v) => v + " place(s)", center: String(acts.reduce((s, a) => s + a.booked, 0)), sub: "places" }))}</div>
+        </div>
         <div class="cols"><section><h2>Inscription</h2><div class="card">
           ${form([field("ls-act", "Activité", select("ls-act", acts.map((a) => [a.id, `${fd(a.date)} ${a.time} — ${a.name}`]), acts.find((a) => a.booked < a.cap)?.id)),
             field("ls-res", "Client", select("ls-res", ih.map((r) => [r.id, `Ch. ${r.room} — ${G(r.guest).name}`]), ih[0]?.id)),
@@ -172,15 +179,32 @@
         if (skip) return skip--
         const b = list.find((x) => mins(x.start) === m)
         if (b) { const t = TR(b.t), n = Math.max(1, Math.ceil((t.dur + t.prep) / 30)); skip = n - 1
-          html += `<td colspan="${n}" style="background:var(--line);border-left:2px solid var(--ink);font-size:12px;line-height:1.3;min-width:${n * 40}px"><button class="link" onclick="go('spa/rdv/${esc(b.id)}')">${esc(who(b))}</button><div class="muted">${esc(t.name)} · ${b.start}${t.prep ? ` + ${t.prep} min prép.` : ""}</div>${b.status === "termine" ? badge("Terminé", "outline") : b.status === "arrive" ? badge("En soin", "on") : ""}</td>` }
+          html += `<td colspan="${n}" style="background:var(--line);border-left:2px solid var(--ink);font-size:12px;line-height:1.3;min-width:${n * 40}px"><button class="link" onclick="go('spa/rdv/${esc(b.id)}')">${esc(who(b))}</button><div class="muted">${esc(t.name)} · ${b.start}${t.prep ? ` + ${t.prep} min prép.` : ""}</div>${b.status === "termine" ? badge("Terminé", "outline") : b.status === "arrive" ? badge("En soin", "ok") : ""}</td>` }
         else html += `<td style="min-width:34px;${m === Math.floor(mins(S.now) / 30) * 30 ? "border-left:2px dashed var(--ink2)" : ""}"></td>`
       })
       return `<tr>${html}</tr>`
     }
-    return `<p class="muted">Grille de la journée par praticien et par cabine. Un soin bloque la ressource pendant sa durée plus le temps de préparation (RG-SPA-01). Trait pointillé : heure actuelle.</p>
+    const act = activeB(), hours = act.reduce((s, b) => s + TR(b.t).dur, 0) / 60, avail = S.cabins.length * (CLOSE - OPEN) / 60
+    const ca = act.filter((b) => b.pay !== "forfait" && b.pay !== "abonnement").reduce((s, b) => s + TR(b.t).price, 0)
+    const next = act.filter((b) => b.status === "confirme" && b.start >= S.now).sort((x, y) => x.start.localeCompare(y.start))[0]
+    const byHour = []; for (let m = OPEN; m < CLOSE; m += 60) byHour.push(m)
+    const load = byHour.map((m) => act.filter((b) => { const [bs, be] = span(b); return bs < m + 60 && m < be }).length)
+    const byCat = Object.entries(act.reduce((o, b) => { const c = TR(b.t).cat; o[c] = (o[c] || 0) + 1; return o }, {})).map(([label, value]) => ({ label, value }))
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Rendez-vous du jour", value: String(act.length), icon: "calendar", hint: `${act.filter((b) => b.status === "termine").length} terminé(s) · ${act.filter((b) => b.status === "arrive").length} en soin`, route: "spa/rdv" })}
+        ${stat({ label: "Utilisation des cabines", value: pct((hours / avail) * 100), icon: "sparkle", hint: `${(Math.round(hours * 10) / 10).toLocaleString("fr-FR")} h vendues / ${avail} h · charge horaire en courbe`, trend: load, route: "spa/pilotage" })}
+        ${stat({ label: "Chiffre d'affaires soins", value: money(ca), icon: "coins", hint: "hors forfaits et abonnements · exemple" })}
+        ${stat({ label: "Prochain soin", value: next ? next.start : "—", icon: "clock", hint: next ? `${who(next)} · ${TR(next.t).name}` : "plus de rendez-vous aujourd'hui" })}
+      </div>
+      ${section("Agenda du jour", `<p class="muted" style="margin-top:0">Grille de la journée par praticien et par cabine. Un soin bloque la ressource pendant sa durée plus le temps de préparation (RG-SPA-01). Trait pointillé : heure actuelle.</p>
       <div class="tablewrap"><table><thead><tr><th>Ressource</th>${slots.map((m) => `<th style="font-size:11px;padding:6px 4px">${m % 60 ? "" : hm(m)}</th>`).join("")}</tr></thead>
       <tbody><tr><td colspan="${slots.length + 1}" class="muted">Praticiens</td></tr>${S.practitioners.map((p) => row(p.name, "pr", p.id)).join("")}
-      <tr><td colspan="${slots.length + 1}" class="muted">Cabines</td></tr>${S.cabins.map((c) => row(c.name, "cab", c.id)).join("")}</tbody></table></div>
+      <tr><td colspan="${slots.length + 1}" class="muted">Cabines</td></tr>${S.cabins.map((c) => row(c.name, "cab", c.id)).join("")}</tbody></table></div>`, btn("Nouveau rendez-vous", "go('spa/rdv')", "ghost sm"))}
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Soins en cours par heure", columns(byHour.map((m) => hm(m).slice(0, 2) + " h"), load, (v) => v))}</div>
+        <div class="w4">${section("Rendez-vous par catégorie", donut(byCat, { fmt: (v) => v + " rdv", center: String(act.length), sub: "rendez-vous" }))}</div>
+      </div>
+      <div style="height:16px"></div>
       ${aiBox("Optimisation du planning", "La cabine beauté est libre de 15:00 à 17:00 et la demande du soir sur les massages est forte : proposer deux soins visage de 45 min à 15:00 et 16:00 aux clients en séjour ayant consenti aux offres permet de porter l'utilisation des cabines de 38 % à 50 %.", aiAct("promo", "Publier les créneaux dans l'application"))}`
   }
 
@@ -209,7 +233,7 @@
       <div class="row"><span class="muted">Profil connecté :</span>${chips("spaRole", { reception: "Réceptionniste spa", praticien: "Praticien" })}</div>
       ${tbl(["Heure", "Client", "Soin", "Praticien · cabine", "Règlement", "Questionnaire", "Statut", ""], list.map((b) => { const t = TR(b.t)
         return [esc(b.start), `<button class="link" onclick="go('spa/rdv/${esc(b.id)}')">${esc(who(b))}</button>${b.res && R(b.res).room ? `<div class="muted">ch. ${esc(R(b.res).room)}</div>` : ""}`, esc(t.name), `${esc(PR(b.pr).name)}<div class="muted">${esc(CB(b.cab).name)}</div>`, esc(PAY[b.pay]),
-          t.health ? (b.health ? (ui.spaRole === "praticien" ? btn("Consulter", `ui.spaHealth=${q(b.id)};render()`, "ghost sm") : badge("Rempli · accès praticien", "outline")) : badge("Manquant", "dark")) : muted("Non requis"),
+          t.health ? (b.health ? (ui.spaRole === "praticien" ? btn("Consulter", `ui.spaHealth=${q(b.id)};render()`, "ghost sm") : badge("Rempli · accès praticien", "outline")) : badge("Manquant", "warn")) : muted("Non requis"),
           badge(...BST[b.status]),
           `<span class="row" style="flex-wrap:nowrap">${b.status === "confirme" ? btn("Arrivé", `A.spa.status(${q(b.id)}, 'arrive')`, "sm") + btn("Annuler", `A.spa.cancel(${q(b.id)})`, "ghost sm") : ""}${b.status === "arrive" ? btn("Terminer et facturer", `A.spa.finish(${q(b.id)})`, "sm") : ""}</span>`] }))}
       ${ui.spaHealth && ui.spaRole === "praticien" ? card("Questionnaire santé — " + who(S.bookings.find((b) => b.id === ui.spaHealth)), `<p>Aucune contre-indication déclarée. Pression souhaitée : moyenne. Zones à éviter : aucune. (Contenu fictif.)</p><p class="muted">Donnée sensible : visible uniquement par les praticiens, consultation journalisée (RG-SPA-03).</p>`) : ""}
@@ -247,8 +271,8 @@
       ${S.accessLog.length ? tbl(["Chambre", "Zones retirées", "Date", "Motif"], S.accessLog.slice(0, 8).map((x) => [`Ch. ${esc(x.room)}`, esc(x.zone), esc(x.at), esc(x.reason)])) : ""}
       <h2>Abonnements membres externes (EF-SPA-004)</h2>
       ${tbl(["Membre", "Formule", "#Cotisation", "Validité", "Badge", ""], S.members.map((m) => { const exp = m.until < today, soon = !exp && nights(today, m.until) <= 15
-        return [`${esc(m.name)}<div class="muted">${esc(m.card)}</div>`, esc(m.formula), money(m.fee), `${fd(m.until)}/${m.until.slice(0, 4)} ${exp ? badge("Expiré", "dark") : soon ? badge("Expire bientôt", "outline") : ""}`,
-          m.badge === "active" ? badge("Actif", "on") : badge("Suspendu", "dark"),
+        return [`${esc(m.name)}<div class="muted">${esc(m.card)}</div>`, esc(m.formula), money(m.fee), `${fd(m.until)}/${m.until.slice(0, 4)} ${exp ? badge("Expiré", "bad") : soon ? badge("Expire bientôt", "warn") : ""}`,
+          m.badge === "active" ? badge("Actif", "ok") : badge("Suspendu", "bad"),
           `<span class="row" style="flex-wrap:nowrap">${btn("Renouveler", `A.spa.renew(${q(m.id)})`, "sm")}${m.badge === "active" ? btn("Suspendre le badge", `A.spa.suspend(${q(m.id)})`, "ghost sm") : ""}</span>`] }))}
       <div class="card" style="margin-top:12px">${form([field("mb-name", "Nouveau membre", input("mb-name", "", 'placeholder="Prénom Nom"')), field("mb-f", "Formule", select("mb-f", S.formulas.map((f) => [f[0], `${f[0]} — ${money(f[1])}`]), S.formulas[0][0])),
         `<div style="align-self:end">${btn("Créer l'abonnement et le badge", "A.spa.addMember()")}</div>`])}</div>`
@@ -257,7 +281,7 @@
   function boutique() {
     const ih = inHouse().sort((a, b) => a.room.localeCompare(b.room))
     return `<p class="muted">Vente de produits et suivi du stock (EF-SPA-008). Alerte quand le stock passe sous le seuil ; réapprovisionnement via Achats et stocks.</p>
-      ${tbl(["Produit", "#Prix", "#Stock", "#Seuil", ""], S.products.map((x) => [esc(x.name), money(x.price), x.stock, x.min, x.stock < x.min ? badge("Sous le seuil", "dark") : ""]))}
+      ${tbl(["Produit", "#Prix", "#Stock", "#Seuil", ""], S.products.map((x) => [esc(x.name), money(x.price), x.stock, x.min, x.stock < x.min ? badge("Sous le seuil", "warn") : ""]))}
       <div class="card" style="margin-top:12px">${form([field("bt-p", "Produit", select("bt-p", S.products.map((x) => [x.id, x.name]), "PR1")), field("bt-q", "Quantité", input("bt-q", 1, 'type="number" min="1"')),
         field("bt-m", "Règlement", select("bt-m", [["direct", "Encaissement direct"], ...ih.map((r) => [r.id, `Folio ch. ${r.room} — ${G(r.guest).name}`])], "direct")), `<div style="align-self:end">${btn("Vendre", "A.spa.sell()")}</div>`])}</div>
       <h2>Ventes du jour</h2>${tbl(["Produit", "#Qté", "#Montant", "Règlement"], S.sales.map((s) => [esc(S.products.find((x) => x.id === s.product).name), s.qty, money(s.amount), esc(s.mode)]))}`
@@ -267,15 +291,20 @@
     const act = activeB(), hours = act.reduce((s, b) => s + TR(b.t).dur, 0) / 60, avail = S.cabins.length * (CLOSE - OPEN) / 60
     const rev = act.filter((b) => b.pay !== "forfait" && b.pay !== "abonnement").reduce((s, b) => s + TR(b.t).price, 0) + S.fees.reduce((s, f) => s + f, 0)
     const ih = inHouse(), cap = ih.filter((r) => S.bookings.some((b) => b.res === r.id && b.status !== "annule")).length
-    return `<div class="grid">
-        ${kpi("Utilisation des cabines", pct((hours / avail) * 100), `${Math.round(hours * 10) / 10} h vendues / ${avail} h disponibles`)}
-        ${kpi("Revenu par heure de praticien", money(rev / Math.max(1, hours)), "soins facturés, hors forfaits")}
-        ${kpi("Taux de captation", pct((cap / Math.max(1, ih.length)) * 100), `${cap}/${ih.length} clients en séjour au spa`)}
-        ${kpi("Chiffre d'affaires spa du jour", money(rev + S.sales.reduce((s, x) => s + x.amount, 0)), "soins + boutique · exemple")}
+    const comm = S.practitioners.map((p) => { const l = act.filter((b) => b.pr === p.id), ca = l.reduce((s, b) => s + TR(b.t).price, 0); return { p, n: l.length, ca } })
+    return `<div class="grid g4">
+        ${stat({ label: "Utilisation des cabines", value: pct((hours / avail) * 100), icon: "sparkle", hint: `${Math.round(hours * 10) / 10} h vendues / ${avail} h disponibles` })}
+        ${stat({ label: "Revenu par heure de praticien", value: money(rev / Math.max(1, hours)), icon: "wallet", hint: "soins facturés, hors forfaits" })}
+        ${stat({ label: "Taux de captation", value: pct((cap / Math.max(1, ih.length)) * 100), icon: "users", hint: `${cap}/${ih.length} clients en séjour au spa` })}
+        ${stat({ label: "Chiffre d'affaires spa du jour", value: money(rev + S.sales.reduce((s, x) => s + x.amount, 0)), icon: "coins", hint: "soins + boutique · exemple" })}
       </div>
-      <div class="cols"><section><h2>Heures vendues par cabine</h2>${bars(S.cabins.map((c) => ({ label: c.name, value: act.filter((b) => b.cab === c.id).reduce((s, b) => s + TR(b.t).dur, 0) / 60 })), (v) => Math.round(v * 10) / 10 + " h")}</section>
-      <section><h2>Commissions des praticiens</h2>${tbl(["Praticien", "#Soins", "#CA généré", "#Commission"], S.practitioners.map((p) => { const l = act.filter((b) => b.pr === p.id), ca = l.reduce((s, b) => s + TR(b.t).price, 0)
-        return [esc(p.name), l.length, money(ca), money(ca * p.commission)] }))}</section></div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w4">${section("Taux d'utilisation", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((hours / avail) * 100, "Utilisation des cabines")}<div><div class="stat-val">${pct((hours / avail) * 100)}</div><div class="muted">des heures cabine vendues</div></div></div>`)}</div>
+        <div class="w8">${section("Heures vendues par cabine", bars(S.cabins.map((c) => ({ label: c.name, value: act.filter((b) => b.cab === c.id).reduce((s, b) => s + TR(b.t).dur, 0) / 60 })), (v) => Math.round(v * 10) / 10 + " h"))}</div>
+        <div class="w6">${section("CA généré par praticien", donut(comm.filter((x) => x.ca).map((x) => ({ label: x.p.name, value: x.ca })), { fmt: money, center: shortNum(comm.reduce((s, x) => s + x.ca, 0)), sub: "FCFA" }))}</div>
+        <div class="w6">${section("Commissions des praticiens", tbl(["Praticien", "#Soins", "#CA généré", "#Commission"], comm.map((x) => [esc(x.p.name), x.n, money(x.ca), money(x.ca * x.p.commission)])))}</div>
+      </div>
+      <div style="height:16px"></div>
       ${aiBox("Optimisation du planning", "Les soins de 60 min démarrant à l'heure pile laissent des trous de 15 min. Décaler la grille des massages sur 75 min (soin + préparation) libère 1 créneau par cabine et par jour.", aiAct("grid", "Appliquer à la grille de demain"))}`
   }
 

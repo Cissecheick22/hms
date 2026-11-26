@@ -100,13 +100,13 @@
   const total = (c) => live(c).reduce((s, l) => s + I(l.item).price * l.qty, 0)
   const checkOf = (table) => F.checks.find((c) => c.table === table && c.status === "ouvert")
   const roomOf = (resId) => R(resId)?.room
-  const LST = { attente: ["Envoyée", ""], prep: ["En préparation", "outline"], pret: ["Prête", "on"], servi: ["Servie", ""], annule: ["Annulée", "dark"], file: ["En file (hors ligne)", "outline"] }
+  const LST = { attente: ["Envoyée", "warn"], prep: ["En préparation", "info"], pret: ["Prête", "ok"], servi: ["Servie", "outline"], annule: ["Annulée", "bad"], file: ["En file (hors ligne)", "warn"] }
   const lineBadge = (l) => (l.st ? badge(LST[l.st][0], LST[l.st][1]) : badge("Non envoyée", "outline"))
   const tableState = (o, t) => {
     const c = checkOf(t)
-    if (c) return c.bill ? ["Addition", "dark"] : ["Occupée", "on"]
+    if (c) return c.bill ? ["Addition", "warn"] : ["Occupée", "info"]
     const b = F.bookings.find((x) => x.outlet === o.id && x.table === t && mins(x.time) >= mins(F.now) - 15 && mins(x.time) - mins(F.now) <= 60)
-    return b ? [`Réservée ${b.time}`, "outline"] : ["Libre", ""]
+    return b ? [`Réservée ${b.time}`, "outline"] : ["Libre", "ok"]
   }
   // Droit de crédit chambre (RG-FNB-01)
   const creditIssue = (r) => {
@@ -127,7 +127,7 @@
     return true
   }
   const AI_DONE = { forecast: "Prévision transmise aux Achats (commande poisson +30 %) et aux RH (2 extras samedi midi)", buffet: "Bon de production du buffet de demain mis à jour : 2,5 kg de fruits, 40 viennoiseries" }
-  const aiAct = (k, label) => (F.ai[k] ? badge("Appliqué", "on") + " " + muted(AI_DONE[k]) : btn(label, `A.fnb.ai(${q(k)})`, "ghost sm"))
+  const aiAct = (k, label) => (F.ai[k] ? badge("Appliqué", "ok") + " " + muted(AI_DONE[k]) : btn(label, `A.fnb.ai(${q(k)})`, "ghost sm"))
   const avgPrep = (s) => { const a = F.prep[s] || []; return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0 }
 
   // ---------- Écran ----------
@@ -137,7 +137,7 @@
       const tab = p[0] || "salle"
       const body = { salle, mobile, cuisine, roomservice, chambres, carte, pdv, pilotage }[tab] || salle
       return pageHead("Restauration / POS", `Service de midi en cours (heure simulée ${F.now}). Montants et volumes d'exemple ; TPE, imprimantes et écrans cuisine simulés.`,
-        F.offline ? badge("Hors ligne · commandes en file", "dark") + btn("Revenir en ligne", "A.fnb.online()", "sm") : btn("Simuler une coupure réseau", "A.fnb.offline()", "ghost sm"))
+        F.offline ? badge("Hors ligne · commandes en file", "bad") + btn("Revenir en ligne", "A.fnb.online()", "sm") : btn("Simuler une coupure réseau", "A.fnb.offline()", "ghost sm"))
         + subtabs("fnb", TABS, tab) + body(p.slice(1))
     },
   }
@@ -149,9 +149,28 @@
       return `<button class="card" style="text-align:left;cursor:pointer;font:inherit;color:var(--ink);${x === t ? "border-color:var(--ink);box-shadow:inset 3px 0 0 var(--ink)" : ""}" onclick="go('fnb/salle/${esc(x)}')">
         <div class="row between"><span class="roomno">${esc(x)}</span>${badge(s, k)}</div>
         <div class="muted">${F.seats[x]} places${c ? ` · ${c.covers} couv. · ${money(total(c))}` : ""}</div></button>` }).join("")}</div>`
-    return `${chips("fnbOutlet", outs)}
+    const open = F.checks.filter((c) => c.status === "ouvert"), lines = open.flatMap((c) => live(c))
+    const kitchen = lines.filter((l) => ["attente", "prep"].includes(l.st)).length
+    const cashed = F.closed.reduce((s, c) => s + c.total, 0)
+    const states = o.tables.map((x) => tableState(o, x)[0].replace(/ \d\d:\d\d$/, ""))
+    const stCount = ["Libre", "Occupée", "Addition", "Réservée"].map((label) => ({ label, value: states.filter((x) => x === label).length })).filter((x) => x.value)
+    const byOutlet = F.outlets.map((x) => ({ label: x.name, value: F.closed.filter((c) => c.outlet === x.id).reduce((s, c) => s + c.total, 0) + F.checks.filter((c) => c.outlet === x.id && c.status === "ouvert").reduce((s, c) => s + total(c), 0) })).filter((x) => x.value)
+    const lst = ["attente", "prep", "pret", "servi"].map((k) => ({ label: LST[k][0], value: lines.filter((l) => l.st === k).reduce((s, l) => s + l.qty, 0) }))
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Tickets ouverts", value: String(open.length), icon: "receipt", hint: `${open.reduce((s, c) => s + c.covers, 0)} couverts en salle` })}
+        ${stat({ label: "En cours (non encaissé)", value: money(open.reduce((s, c) => s + total(c), 0)), icon: "cart", hint: "tous points de vente" })}
+        ${stat({ label: "Encaissé aujourd'hui", value: money(cashed), icon: "coins", hint: `${F.closed.length} tickets clôturés · exemple`, route: "fnb/pilotage" })}
+        ${stat({ label: "Lignes en cuisine", value: String(kitchen), icon: "utensils", hint: "envoyées ou en préparation", route: "fnb/cuisine" })}
+      </div>
+      ${chips("fnbOutlet", outs)}
       <p class="muted">${esc(o.name)} · ${esc(o.hours)} · EF-FNB-001 · EF-FNB-003 (tablette de salle ; version mobile dans « Commande mobile »)</p>
-      ${t ? split(plan, ticket(o, t)) : plan + `<p class="muted" style="margin-top:12px">Sélectionnez une table pour ouvrir ou reprendre un ticket.</p>`}`
+      <div class="dash">
+        ${t ? `<div class="w12">${split(plan, ticket(o, t))}</div>`
+          : `<div class="w8">${section(`Plan de salle · ${o.name}`, plan + `<p class="muted" style="margin:12px 0 0">Sélectionnez une table pour ouvrir ou reprendre un ticket.</p>`)}</div>
+             <div class="w4">${section("État des tables", donut(stCount, { fmt: (v) => v + " table(s)", center: String(o.tables.length), sub: "tables" }))}</div>`}
+        <div class="w6">${section("Chiffre d'affaires du jour par point de vente", bars(byOutlet, money), btn("Indicateurs", "go('fnb/pilotage')", "ghost sm"))}</div>
+        <div class="w6">${section("Articles en cours par étape", bars(lst, (v) => v + " art."), btn("Écran cuisine", "go('fnb/cuisine')", "ghost sm"))}</div>
+      </div>`
   }
 
   function ticket(o, t) {
@@ -163,7 +182,7 @@
     const cats = [...new Set(menu.map((i) => i.cat))]
     const unsent = c.lines.filter((l) => !l.sent).length
     return `<div class="card">
-      <div class="row between"><span class="big">Ticket ${esc(c.id)} · table ${esc(t)}</span>${c.bill ? badge("Addition demandée", "dark") : badge("Ouvert", "on")}</div>
+      <div class="row between"><span class="big">Ticket ${esc(c.id)} · table ${esc(t)}</span>${c.bill ? badge("Addition demandée", "warn") : badge("Ouvert", "info")}</div>
       <div class="muted">${c.covers} couverts · ${esc(c.waiter)} · ouvert à ${esc(c.opened)}</div>
       ${tbl(["Article", "#Qté", "#Montant", "Cuisine", ""], c.lines.map((l, i) => [
         l.st === "annule" ? `<s>${esc(I(l.item).name)}</s> ${muted("motif : " + l.motif)}` : esc(I(l.item).name), l.qty, money(I(l.item).price * l.qty), lineBadge(l),
@@ -203,7 +222,7 @@
     const c = checkOf(t), menu = F.items.filter((i) => i.outlets.includes(o.id))
     const queued = F.checks.reduce((s, x) => s + x.lines.filter((l) => l.st === "file").length, 0)
     const unsent = c ? c.lines.filter((l) => !l.sent).length : 0
-    const screen = `<div class="row between"><span class="muted">${esc(o.name)}</span>${F.offline ? badge("Hors ligne", "dark") : badge("En ligne", "outline")}</div>
+    const screen = `<div class="row between"><span class="muted">${esc(o.name)}</span>${F.offline ? badge("Hors ligne", "bad") : badge("En ligne", "ok")}</div>
       ${field("fnb-mt", "Table", select("fnb-mt", o.tables.map((x) => [x, `${x}${checkOf(x) ? " · ouverte" : ""}`]), t, `onchange="ui.fnbMobTable=this.value;render()"`))}
       ${c ? `<div class="muted" style="margin-top:6px">Ticket ${esc(c.id)} · ${c.covers} couv. · ${esc(money(total(c)))}</div>
         <div class="stack" style="margin-top:6px">${c.lines.map((l) => `<div class="row between"><span>${l.qty} × ${esc(I(l.item).name)}</span>${lineBadge(l)}</div>`).join("") || muted("Aucun article.")}</div>
@@ -238,7 +257,7 @@
   }
 
   function roomservice() {
-    const RS = { recue: ["Reçue", "outline"], preparation: ["En préparation", ""], livraison: ["En livraison", "on"], livree: ["Livrée", "dark"] }
+    const RS = { recue: ["Reçue", "warn"], preparation: ["En préparation", "info"], livraison: ["En livraison", "info"], livree: ["Livrée", "ok"] }
     const next = { recue: "preparation", preparation: "livraison", livraison: "livree" }
     const rooms = inHouse().sort((a, b) => a.room.localeCompare(b.room))
     const menu = F.items.filter((i) => i.outlets.includes("RS") && i.avail)
@@ -284,7 +303,7 @@
     const bk = (r) => F.breakfast[r.id] || (F.breakfast[r.id] = { pax: 1, incl: r.guarantee !== "Aucune", used: 0 })
     return `<h2>Petits-déjeuners — contrôle par chambre (EF-FNB-009)</h2>
       ${tbl(["Chambre", "Client", "Forfait", "#Personnes", "#Servis", ""], ih.map((r) => { const b = bk(r)
-        return [`Ch. ${esc(r.room)}`, esc(G(r.guest).name), b.incl ? badge("Inclus", "on") : badge("Non inclus", "outline"), b.pax, b.used, btn("Pointer un couvert", `A.fnb.breakfast(${q(r.id)})`, "sm")] }))}
+        return [`Ch. ${esc(r.room)}`, esc(G(r.guest).name), b.incl ? badge("Inclus", "ok") : badge("Non inclus", "outline"), b.pax, b.used, btn("Pointer un couvert", `A.fnb.breakfast(${q(r.id)})`, "sm")] }))}
       <p class="muted">Couverts inclus valorisés à zéro et ventilés ; au-delà du nombre de personnes ou hors forfait : facturé 10 000 FCFA au folio (RG-FNB-04).</p>
       <h2>Minibar (EF-FNB-007)</h2>
       <div class="cols"><section><h3>Détections du minibar connecté (simulé)</h3>
@@ -336,16 +355,21 @@
     const guests = inHouse(), captured = guests.filter((r) => (D.extras[r.id] || []).some((l) => /restaurant|bar|room service|snack|minibar|petit/i.test(l.label))).length
     const stations = Object.keys(F.prep)
     const fc = [["Jeu. 26 · dîner", 58, 42], ["Ven. 27 · déjeuner", 74, 61], ["Ven. 27 · dîner", 66, 50], ["Sam. 28 · déjeuner", 92, 70], ["Sam. 28 · dîner", 110, 85]]
-    return `<div class="grid">
-        ${kpi("Revenu F&B / chambre occupée", money(rev / occ), `${occ} chambres occupées · exemple`)}
-        ${kpi("Ticket moyen", money(rev / cov), `${cov} couverts encaissés aujourd'hui`)}
-        ${kpi("Coût matière", pct((cst / rev) * 100), "du chiffre d'affaires (fiches techniques)")}
-        ${kpi("Temps de préparation", Math.round(stations.reduce((s, x) => s + avgPrep(x), 0) / stations.length) + " min", "moyenne tous postes")}
-        ${kpi("Taux de captation", pct((captured / guests.length) * 100), `${captured}/${guests.length} clients en séjour ont consommé`)}
+    const byOutlet = F.outlets.map((o) => ({ label: o.name, value: all.filter((c) => c.outlet === o.id).reduce((s, c) => s + c.total, 0) })).filter((x) => x.value)
+    const modes = Object.entries(all.reduce((m, c) => { const k = /Imputation/.test(c.mode) ? "Imputation chambre" : c.mode; m[k] = (m[k] || 0) + c.total; return m }, {})).map(([label, value]) => ({ label, value }))
+    return `<div class="grid g4" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))">
+        ${stat({ label: "Revenu F&B / chambre occupée", value: money(rev / occ), icon: "bed", hint: `${occ} chambres occupées · exemple` })}
+        ${stat({ label: "Ticket moyen", value: money(rev / cov), icon: "receipt", hint: `${cov} couverts encaissés aujourd'hui`, trend: all.map((c) => c.total / c.covers) })}
+        ${stat({ label: "Coût matière", value: pct((cst / rev) * 100), icon: "box", hint: "du chiffre d'affaires (fiches techniques)", trend: all.map((c) => (c.cost / c.total) * 100), good: false })}
+        ${stat({ label: "Temps de préparation", value: Math.round(stations.reduce((s, x) => s + avgPrep(x), 0) / stations.length) + " min", icon: "clock", hint: "moyenne tous postes", trend: F.prep.Chaud })}
+        ${stat({ label: "Taux de captation", value: pct((captured / guests.length) * 100), icon: "users", hint: `${captured}/${guests.length} clients en séjour ont consommé` })}
       </div>
-      <div class="cols"><section><h2>Chiffre d'affaires du jour par point de vente</h2>
-        ${bars(F.outlets.map((o) => ({ label: o.name, value: all.filter((c) => c.outlet === o.id).reduce((s, c) => s + c.total, 0) })), money)}</section>
-        <section><h2>Temps de préparation moyen par poste</h2>${bars(stations.map((s) => ({ label: s, value: Math.round(avgPrep(s)) })), (v) => v + " min")}</section></div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Prévision de couverts (5 prochains services)", lineChart(fc.map((x) => x[0]), [{ name: "Couverts prévus", values: fc.map((x) => x[1]) }, { name: "dont clients hôtel", values: fc.map((x) => x[2]) }], { fmt: (v) => Math.round(v) }))}</div>
+        <div class="w4">${section("Chiffre d'affaires par point de vente", donut(byOutlet, { fmt: money, center: shortNum(rev), sub: "FCFA" }))}</div>
+        <div class="w6">${section("Temps de préparation moyen par poste", bars(stations.map((s) => ({ label: s, value: Math.round(avgPrep(s)) })), (v) => v + " min"))}</div>
+        <div class="w6">${section("Encaissements par moyen de paiement", bars(modes.sort((a, b) => b.value - a.value), money))}</div>
+      </div>
       <h2>Prévision de fréquentation</h2>
       <div class="cols"><section>${tbl(["Service", "#Couverts prévus", "#dont clients hôtel"], fc.map((x) => [esc(x[0]), x[1], x[2]]))}</section>
         <section>${aiBox("Prévision de couverts", "Le déjeuner de samedi est porté par le séminaire de la Société Ivoirienne Exemple et 9 chambres du bloc : prévoir 2 serveurs supplémentaires et augmenter la commande de poisson de 30 %. Estimation à valider par le responsable F&B.", aiAct("forecast", "Transmettre aux Achats et RH"))}

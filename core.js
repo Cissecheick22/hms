@@ -60,7 +60,7 @@ const tbl = (cols, rows, empty = "Rien à afficher.", foot = "") => rows.length
   : `<p class="muted">${esc(empty)}</p>`
 
 // État d'interface (non métier)
-const ui = { resFilter: "actives", hkFilter: "toutes", done: null, encoding: null, invoiceSeq: 1041, resSeq: 2062 }
+const ui = { resFilter: "actives", hkFilter: "toutes", done: null, encoding: null, invoiceSeq: 1041, resSeq: 2080 }
 
 let toastT
 const toast = (msg) => { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600) }

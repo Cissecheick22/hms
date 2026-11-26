@@ -65,7 +65,7 @@
     home() {
       const r = res(), g = G(M.guest)
       return `<div class="muted">${esc(M.brand.welcome)}</div>${h("Bonjour " + g.name)}
-        ${r ? `<div class="card" style="padding:12px"><div class="row between"><strong>Séjour ${esc(r.id)}</strong>${inStay() ? badge("En séjour", "on") : badge(M.mci.status === "soumis" ? "Check-in envoyé" : "À venir", "outline")}</div>
+        ${r ? `<div class="card" style="padding:12px"><div class="row between"><strong>Séjour ${esc(r.id)}</strong>${inStay() ? badge("En séjour", "ok") : badge(M.mci.status === "soumis" ? "Check-in envoyé" : "À venir", "outline")}</div>
           <div class="muted">${esc(T(r.type).label)} · du ${fd(r.from)} au ${fd(r.to)}${r.room ? " · ch. " + esc(r.room) : ""}</div>
           ${left() ? `<div class="muted">Séjour terminé · facture ${esc(r.invoice || "")} envoyée par e-mail</div>` : `<div class="row" style="margin-top:8px">${!inStay() && M.mci.status !== "soumis" ? btn("Check-in en ligne", go2("c", "checkin"), "sm") : ""}${btn("Ma clé", go2("c", "key"), inStay() ? "sm" : "ghost sm")}</div>`}</div>`
           : `<div class="card" style="padding:12px"><strong>Aucun séjour en cours</strong><div style="margin-top:8px">${btn("Réserver un séjour", go2("c", "search"), "sm")}</div></div>`}
@@ -119,12 +119,12 @@
         <div class="card" style="text-align:center;padding:18px"><div class="muted">Clé ${esc(mine?.id || "")} · valable jusqu'au ${fd(r.to)} 12 h</div>
           <div style="margin:12px 0">${btn("Ouvrir la porte", `A.mob.open(${q(r.room)})`, "accent")}</div>
           <div class="muted">Approchez le téléphone de la serrure (BLE simulé). Fonctionne sans connexion Internet.</div>
-          ${M.doorLog[0] ? `<p style="margin:8px 0 0">${badge("Ouvert", "on")} ${esc(M.doorLog[0])}</p>` : ""}</div>
+          ${M.doorLog[0] ? `<p style="margin:8px 0 0">${badge("Ouvert", "ok")} ${esc(M.doorLog[0])}</p>` : ""}</div>
         <h3>Espaces</h3><div class="row" style="gap:4px">${SPACES.map((sp) => btn(sp, `A.mob.openSpace(${q(sp)})`, "ghost sm")).join("")}</div>
         <div class="muted" style="margin-top:4px">Autorisés avec votre séjour : ${esc(allowedSpaces().join(", "))}.</div>
         <h3>Partager avec un accompagnant</h3>
         <div class="row" style="flex-wrap:nowrap">${input("mob-share", "", `placeholder="Nom de l'accompagnant"`)}${btn("Partager", "A.mob.share()", "sm")}</div>
-        <div class="stack" style="margin-top:8px">${shared.map((k) => `<div class="row between"><span>${esc(k.holder)} ${badge(k.status === "active" ? "Active" : "Révoquée", k.status === "active" ? "on" : "outline")}</span>${k.status === "active" ? btn("Révoquer", `A.mob.revoke(${q(k.id)})`, "ghost sm") : ""}</div>`).join("")}</div>
+        <div class="stack" style="margin-top:8px">${shared.map((k) => `<div class="row between"><span>${esc(k.holder)} ${badge(k.status === "active" ? "Active" : "Révoquée", k.status === "active" ? "ok" : "outline")}</span>${k.status === "active" ? btn("Révoquer", `A.mob.revoke(${q(k.id)})`, "ghost sm") : ""}</div>`).join("")}</div>
         ${cite("EF-MOB-004 · RG-MOB-01 à 03 · US-MOB-01")}${nav("c", CNAV, "key")}`
     },
     services() {
@@ -133,11 +133,11 @@
         <div class="stack">${SERVICES.map((s) => `<div class="card" style="padding:10px"><div class="row between"><strong>${esc(s.label)}</strong><span>${s.price ? money(s.price) : "Offert"}</span></div>
           <div class="muted">${esc(s.sub)}</div><div style="margin-top:6px">${btn("Commander", `A.mob.order('${s.id}')`, inStay() ? "sm" : "ghost sm")}</div></div>`).join("")}</div>
         <div style="margin-top:8px">${btn("Écrire au concierge IA", go2("c", "chat"), "ghost sm")}</div>
-        ${mine.length ? `<h3>Mes demandes</h3>${mine.map((x) => `<div class="row between" style="margin-bottom:4px"><span>${esc(x.label)}</span>${badge(x.status === "terminee" ? "Terminée" : x.status === "encours" ? "En cours" : "Reçue", x.status === "terminee" ? "on" : "outline")}</div>`).join("")}` : ""}
+        ${mine.length ? `<h3>Mes demandes</h3>${mine.map((x) => `<div class="row between" style="margin-bottom:4px"><span>${esc(x.label)}</span>${badge(x.status === "terminee" ? "Terminée" : x.status === "encours" ? "En cours" : "Reçue", x.status === "terminee" ? "ok" : "outline")}</div>`).join("")}` : ""}
         ${cite("EF-MOB-005")}${nav("c", CNAV, "services")}`
     },
     chat() {
-      return `${back("c")}${h("Concierge")}<div class="stack">${M.chat.map(([w, t]) => `<div style="${w === "client" ? "text-align:right" : ""}"><span class="pill ${w === "ia" ? "outline" : w === "humain" ? "dark" : ""}" style="white-space:normal;text-align:left">${esc(t)}</span></div>`).join("")}</div>
+      return `${back("c")}${h("Concierge")}<div class="stack">${M.chat.map(([w, t]) => `<div style="${w === "client" ? "text-align:right" : ""}"><span class="pill ${w === "ia" ? "outline" : w === "humain" ? "bad" : ""}" style="white-space:normal;text-align:left">${esc(t)}</span></div>`).join("")}</div>
         <div class="stack" style="margin-top:12px">${CHAT.map((c, i) => btn(c.q, `A.mob.ask(${i})`, "ghost sm")).join("")}</div>
         <p class="muted">Assistant IA simulé, réponses pré-écrites.</p>${cite("EF-MOB-005")}`
     },
@@ -146,12 +146,12 @@
       if (left()) { const f = folio(r)
         return `${h("Facture " + (r.invoice || ""))}${f.lines.map((l) => `<div class="row between" style="flex-wrap:nowrap;font-size:13px;margin-bottom:4px"><span>${esc(l.label)}</span><span class="num">${money(l.amount)}</span></div>`).join("")}
         <div class="row between" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><strong>Total réglé</strong><strong>${money(f.paid)}</strong></div>
-        <p>${badge("Soldé", "on")} Séjour clôturé le ${fd(r.to)} · facture envoyée à ${esc(G(r.guest).email)}</p>${cite("EF-MOB-006")}${nav("c", CNAV, "folio")}` }
+        <p>${badge("Soldé", "ok")} Séjour clôturé le ${fd(r.to)} · facture envoyée à ${esc(G(r.guest).email)}</p>${cite("EF-MOB-006")}${nav("c", CNAV, "folio")}` }
       if (!inStay()) return `${h("Ma facture")}<p class="muted">Le folio s'affiche en temps réel dès le check-in. Estimation : ${money(nights(r.from, r.to) * r.rate)} d'hébergement.</p>${nav("c", CNAV, "folio")}`
       const f = folio(r)
       return `${h("Ma facture")}${f.lines.map((l) => `<div class="row between" style="flex-wrap:nowrap;font-size:13px;margin-bottom:4px"><span>${esc(l.label)}</span><span class="num">${money(l.amount)}</span></div>`).join("")}
         <div class="row between" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><strong>Solde</strong><strong>${money(Math.max(0, f.balance))}</strong></div>
-        <div class="stack" style="margin-top:12px">${f.balance > 0 ? btn("Payer par Mobile Money (simulé)", "A.mob.pay()", "accent") : badge("Soldé", "on")}
+        <div class="stack" style="margin-top:12px">${f.balance > 0 ? btn("Payer par Mobile Money (simulé)", "A.mob.pay()", "accent") : badge("Soldé", "ok")}
           ${btn(r.to > today ? "Express check-out (départ anticipé)" : "Express check-out", "A.mob.express()", "sm")}
           <div class="muted">Le solde doit être réglé avant l'express check-out. Départ prévu le ${fd(r.to)}${r.to > today ? " : un départ anticipé raccourcit le séjour à aujourd'hui" : ""}.</div><div id="mob-xco-err"></div></div>
         ${cite("EF-MOB-006 · folio en temps réel")}${nav("c", CNAV, "folio")}`
@@ -221,9 +221,9 @@
   const S = {
     tasks() {
       const reqs = M.requests.filter((x) => x.kind === "housekeeping" && x.status !== "terminee")
-      return `<div class="row between"><span class="muted">${esc(M.staff)}</span>${M.offline ? badge("Hors ligne", "dark") : badge("En ligne", "outline")}</div>${h("Mes tâches")}
+      return `<div class="row between"><span class="muted">${esc(M.staff)}</span>${M.offline ? badge("Hors ligne", "bad") : badge("En ligne", "outline")}</div>${h("Mes tâches")}
         <div class="list">${mineRooms().map((r) => { const o = occupant(r.no)
-          return `<button onclick="${go2("s", "task:" + r.no)}"><strong>Ch. ${esc(r.no)}</strong> ${o && G(o.guest).vip ? badge("VIP", "on") : ""}<div class="muted">${o ? "Recouche" : "Nettoyage départ"} · ${esc(T(r.type).label)}</div></button>` }).join("") || `<p class="muted">Aucune chambre sale attribuée.</p>`}
+          return `<button onclick="${go2("s", "task:" + r.no)}"><strong>Ch. ${esc(r.no)}</strong> ${o && G(o.guest).vip ? badge("VIP", "ok") : ""}<div class="muted">${o ? "Recouche" : "Nettoyage départ"} · ${esc(T(r.type).label)}</div></button>` }).join("") || `<p class="muted">Aucune chambre sale attribuée.</p>`}
           ${reqs.map((x) => `<button onclick="A.mob.doneReq(${q(x.id)})"><strong>Demande ch. ${esc(x.room)}</strong> ${badge("Client", "outline")}<div>${esc(x.label)}</div>${x.tr ? `<div class="muted">${esc(x.tr)} (traduction IA simulée)</div>` : ""}<div class="muted">Toucher pour marquer livrée · ${esc(x.at)}</div></button>`).join("")}</div>
         <div style="margin-top:10px">${btn(M.offline ? "Revenir en ligne" : "Simuler la perte de réseau", "A.mob.toggleOffline()", "ghost sm")}${M.queue.length ? ` <span class="muted">${M.queue.length} action(s) en attente de synchronisation</span>` : ""}</div>
         ${cite("EF-MOB-008 · ENF-MOB-01 hors ligne")}${nav("s", SNAV, "tasks")}`
@@ -257,16 +257,16 @@
     alerts() {
       const vip = arrivals().filter((r) => G(r.guest).vip && r.status === "confirmee")
       return `${h("Alertes")}<div class="stack">
-        ${vip.map((r) => `<div class="card" style="padding:10px">${badge("VIP", "on")} <strong>Arrivée ${esc(G(r.guest).name)}</strong><div class="muted">${esc(T(r.type).label)}${r.request ? " · " + esc(r.request) : ""}</div></div>`).join("")}
-        ${M.alerts.map((a) => `<div class="card" style="padding:10px">${badge(a.kind, a.kind === "Chambre prête" ? "on" : a.kind === "Urgent" || a.kind === "Sécurité" ? "dark" : "outline")} <span class="muted">${esc(a.at)}</span><div>${esc(a.text)}</div></div>`).join("")}</div>
+        ${vip.map((r) => `<div class="card" style="padding:10px">${badge("VIP", "ok")} <strong>Arrivée ${esc(G(r.guest).name)}</strong><div class="muted">${esc(T(r.type).label)}${r.request ? " · " + esc(r.request) : ""}</div></div>`).join("")}
+        ${M.alerts.map((a) => `<div class="card" style="padding:10px">${badge(a.kind, a.kind === "Chambre prête" ? "ok" : a.kind === "Urgent" || a.kind === "Sécurité" ? "bad" : "outline")} <span class="muted">${esc(a.at)}</span><div>${esc(a.text)}</div></div>`).join("")}</div>
         <div style="margin-top:8px">${btn("Simuler une porte forcée (acc.door.forced)", "A.mob.doorForced()", "ghost sm")}</div>
         <p class="muted">Notifications push simulées : VIP, chambre prête, alarme de porte, ordre urgent.</p>${cite("EF-MOB-009")}${nav("s", SNAV, "alerts")}`
     },
     clock() {
       const shifts = ["8 h – 15 h", "8 h – 15 h", "Repos", "Repos", "13 h – 20 h", "13 h – 20 h", "8 h – 15 h"]
-      const LST = { en_attente: ["En attente", "outline"], approuvee: ["Approuvé", "on"], refusee: ["Refusé", "dark"] }
+      const LST = { en_attente: ["En attente", "warn"], approuvee: ["Approuvé", "ok"], refusee: ["Refusé", "bad"] }
       return `${h("Pointage et planning")}
-        <div class="card" style="padding:12px">${M.clock ? `${badge("Présent", "on")} depuis ${esc(M.clock)}<div class="muted">Position : dans le périmètre de l'hôtel (géolocalisation simulée)</div><div style="margin-top:8px">${btn("Pointer la sortie", "A.mob.clockOut()", "ghost sm")}</div>`
+        <div class="card" style="padding:12px">${M.clock ? `${badge("Présent", "ok")} depuis ${esc(M.clock)}<div class="muted">Position : dans le périmètre de l'hôtel (géolocalisation simulée)</div><div style="margin-top:8px">${btn("Pointer la sortie", "A.mob.clockOut()", "ghost sm")}</div>`
           : `<div class="muted">Non pointé</div>
             ${field("mob-pos", "Position du téléphone (simulée)", select("mob-pos", [["dans", "Dans l'hôtel (20 m)"], ["hors", "Hors périmètre (450 m)"]], M.position, `onchange="D.mob.position=this.value"`))}
             <div id="mob-clk-err"></div><div style="margin-top:8px">${btn("Pointer l'arrivée", "A.mob.clockIn()", "accent")}</div>`}</div>
@@ -281,7 +281,7 @@
       const b = M.badge
       return `${h("Badge mobile")}${b.supported
         ? `<div class="muted">Serrures compatibles : le téléphone sert de badge personnel. Actif uniquement pendant le service pointé.</div>
-          ${!M.clock ? `<p class="err">Pointez votre arrivée pour activer le badge.</p>` : badge("Badge actif", "on")}
+          ${!M.clock ? `<p class="err">Pointez votre arrivée pour activer le badge.</p>` : badge("Badge actif", "ok")}
           <div class="stack" style="margin-top:8px">${STAFF_DOORS.map((d) => btn(d, `A.mob.staffDoor(${q(d)})`, M.clock ? "sm" : "ghost sm")).join("")}</div>
           ${b.log.length ? `<h3>Mes passages</h3>${b.log.slice(0, 5).map((l) => `<div class="muted">${esc(l)}</div>`).join("")}` : ""}`
         : `<p class="err">Le fabricant de serrures configuré ne prend pas en charge le badge mobile du personnel : utilisez votre carte.</p><div class="muted">Activable dans le back-office (Appareils et clés) si le fabricant le supporte.</div>`}
@@ -307,7 +307,13 @@
       const tab = p[0] || "apps"
       syncKeys()
       return pageHead("Applications mobiles", "Aperçu cliquable de l'app client et de l'app personnel, et de leurs effets dans l'hôtel. Clé BLE/NFC, push, paiement et géolocalisation simulés.")
-        + subtabs("mob-apps", [["apps", "Aperçu des apps"], ["appareils", "Appareils et clés"], ["pilotage", "Indicateurs et marque"]], tab)
+        + `<div class="grid g4">
+            ${stat({ label: "Clés mobiles actives", value: M.keys.filter((k) => k.status === "active").length, icon: "key", hint: `sur ${M.keys.length} émises`, route: "mob-apps/appareils" })}
+            ${stat({ label: "Appareils enregistrés", value: M.devices.length, icon: "phone", hint: `${M.devices.filter((d) => d.push).length} avec notifications push`, route: "mob-apps/appareils" })}
+            ${stat({ label: "Demandes via l'app", value: M.requests.length, icon: "message", hint: `${M.requests.filter((x) => x.status !== "terminee").length} en cours` })}
+            ${stat({ label: "Taux de check-in mobile", value: "34 %", icon: "trend", delta: 6.3, hint: "des arrivées du mois · vs mois précédent (exemple)", trend: [22, 25, 27, 29, 32, 34], route: "mob-apps/pilotage" })}
+          </div>`
+        + `<div style="margin-top:16px">${subtabs("mob-apps", [["apps", "Aperçu des apps"], ["appareils", "Appareils et clés"], ["pilotage", "Indicateurs et marque"]], tab)}</div>`
         + ({ apps, appareils, pilotage }[tab] || apps)()
     },
   }
@@ -330,7 +336,7 @@
   function appareils() {
     return `<h2>Clés mobiles</h2>
       ${tbl(["Clé", "Titulaire", "Appareil", "Chambre", "Type", "Statut", ""], M.keys.map((k) => [esc(k.id), esc(k.holder), esc(k.device), esc(k.room), k.shared ? "Partagée" : "Principale",
-        badge(k.status === "active" ? "Active" : k.status === "suspendue" ? "Suspendue" : "Révoquée", k.status === "active" ? "on" : "outline"),
+        badge(k.status === "active" ? "Active" : k.status === "suspendue" ? "Suspendue" : "Révoquée", k.status === "active" ? "ok" : k.status === "suspendue" ? "warn" : "bad"),
         k.status === "active" ? btn("Révoquer", `A.mob.revoke(${q(k.id)})`, "ghost sm") : ""]), "Aucune clé mobile.")}
       <div class="row" style="margin-top:10px">${btn(`Simuler un changement d'appareil (${G(M.guest).name})`, "A.mob.changeDevice()", "ghost")}</div>
       <p class="muted">Clé liée à un appareil enregistré, stockée de façon sécurisée ; révocation automatique au départ (check-out réception ou express). Détection root/jailbreak simulée.</p>
@@ -338,16 +344,22 @@
       <label class="row" style="color:var(--ink)"><input type="checkbox" id="mob-badge-sup" ${M.badge.supported ? "checked" : ""} onchange="A.mob.badgeSupport(this.checked)"> Le fabricant de serrures prend en charge le badge mobile du personnel (simulé)</label>
       <p class="muted">EF-MOB-011 · ${M.badge.log.length} passage(s) badgé(s) par l'app personnel.</p>
       <h2>Appareils enregistrés</h2>
-      ${tbl(["Utilisateur", "Type", "Plateforme", "Enregistré le", "Push"], M.devices.map((d) => [esc(d.user), esc(d.kind), esc(d.platform), fd(d.registered), d.push ? badge("Activé", "on") : badge("Refusé", "outline")]))}`
+      ${tbl(["Utilisateur", "Type", "Plateforme", "Enregistré le", "Push"], M.devices.map((d) => [esc(d.user), esc(d.kind), esc(d.platform), fd(d.registered), d.push ? badge("Activé", "ok") : badge("Refusé", "outline")]))}`
   }
   function pilotage() {
     const appRev = M.appRevenue + M.requests.filter((x) => x.app).reduce((s, x) => s + (x.price || 0), 0)
-    return `<div class="grid">
-        ${kpi("Téléchargements", "1 240", "depuis le lancement (exemple)")}
-        ${kpi("Utilisateurs actifs", "410", "30 derniers jours (exemple)")}
-        ${kpi("Taux de check-in mobile", "34 %", "des arrivées du mois (exemple)")}
-        ${kpi("Revenus via l'app", money(appRev), "mois, services commandés inclus")}
-        ${kpi("Note des stores", "4,5 / 5", "moyenne iOS et Android (exemple)")}
+    const months = ["Juin", "Juil.", "Août", "Sept.", "Oct.", "Nov."], dl = [610, 720, 840, 960, 1100, 1240], act = [190, 230, 270, 320, 370, 410]
+    const plat = [...new Set(M.devices.map((d) => d.platform))].map((pl) => ({ label: pl, value: M.devices.filter((d) => d.platform === pl).length }))
+    return `<div class="grid g4">
+        ${stat({ label: "Téléchargements", value: "1 240", icon: "upload", delta: 12.7, hint: "depuis le lancement · vs octobre (exemple)", trend: dl })}
+        ${stat({ label: "Utilisateurs actifs", value: "410", icon: "users", delta: 10.8, hint: "30 derniers jours (exemple)", trend: act })}
+        ${stat({ label: "Taux de check-in mobile", value: "34 %", icon: "key", hint: "des arrivées du mois (exemple)" })}
+        ${stat({ label: "Revenus via l'app", value: money(appRev), icon: "coins", hint: "mois, services commandés inclus" })}
+        ${stat({ label: "Note des stores", value: "4,5 / 5", icon: "star", hint: "moyenne iOS et Android (exemple)" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Adoption de l'app (6 mois, exemple)", lineChart(months, [{ name: "Téléchargements cumulés", values: dl }, { name: "Utilisateurs actifs", values: act }], { fmt: (v) => Math.round(v).toLocaleString("fr-FR") }))}</div>
+        <div class="w4">${section("Appareils par plateforme", donut(plat, { fmt: (v) => v, center: String(M.devices.length), sub: "appareils" }))}</div>
       </div>
       <h2>Marque blanche</h2>
       <div class="card">${form([

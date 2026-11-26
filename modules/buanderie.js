@@ -121,9 +121,9 @@
   const PG = (id) => B.programs.find((p) => p.id === id)
   const PO = (id) => B.orders.find((o) => o.id === id)
   const SVC = { lavage: "Lavage", repassage: "Repassage", sec: "Nettoyage à sec" }
-  const OST = { prise: ["Prise", ""], traitement: ["En traitement", "outline"], prete: ["Prête", "on"], livree: ["Livrée", "dark"] }
-  const RES = { conforme: ["Conforme", "on"], relaver: ["À relaver", "outline"], tache: ["Taché", ""], reforme: ["Réformé", "dark"] }
-  const MST = { disponible: ["Disponible", "on"], en_cycle: ["En cycle", "outline"], maintenance: ["Maintenance", "dark"] }
+  const OST = { prise: ["Prise", "warn"], traitement: ["En traitement", "info"], prete: ["Prête", "ok"], livree: ["Livrée", "outline"] }
+  const RES = { conforme: ["Conforme", "ok"], relaver: ["À relaver", "warn"], tache: ["Taché", "warn"], reforme: ["Réformé", "bad"] }
+  const MST = { disponible: ["Disponible", "ok"], en_cycle: ["En cycle", "info"], maintenance: ["Maintenance", "bad"] }
   const b2 = (m, k) => badge(m[k][0], m[k][1])
   const qty = (loc, c) => (B.stock[loc] || {})[c] || 0
   const unitPrice = (art, svc) => (B.prices.find((p) => p.art === art) || {})[svc] || 0
@@ -132,7 +132,7 @@
   const offices = ["Office étage 1", "Office étage 2", "Office étage 3"]
   const CHANNELS = ["Chambre (téléphone)", "Réception", "Application client", "Concierge IA"]
   const taxOf = (ttc) => Math.round(ttc - ttc / (1 + B.vat))
-  const BQ = { reserve: ["Réservé", "outline"], sorti: ["Sorti", "on"], rendu: ["Rendu", "dark"] }
+  const BQ = { reserve: ["Réservé", "info"], sorti: ["Sorti", "warn"], rendu: ["Rendu", "ok"] }
   const evtFns = () => ((D.evt && D.evt.events) || []).filter((e) => e.status !== "annule").flatMap((e) => (e.fns || []).filter((f) => ["banquet", "cocktail"].includes(f.config) && f.date >= today).map((f) => ({ e, f })))
   const reserved = (c) => B.banquets.filter((b) => b.status === "reserve").reduce((t, b) => t + (b.lines[c] || 0), 0)
 
@@ -145,21 +145,33 @@
     return need
   }
 
+  const statRow = (items) => `<div class="grid g4" style="margin-bottom:16px">${items.map(stat).join("")}</div>`
+  const locTotal = (loc) => Object.values(B.stock[loc] || {}).reduce((t, n) => t + n, 0)
+  const spread = () => [["Lingerie centrale", ["Lingerie centrale"]], ["Offices d'étage", offices], ["Restaurant, spa, banquets", ["Restaurant", "Spa", "Banquets et événements"]], ["En lavage", ["En lavage"]], ["Chez le prestataire", ["Chez le prestataire"]], ["Réserve neuve", ["Réserve neuve"]]]
+    .map(([label, locs]) => ({ label, value: locs.reduce((s, l) => s + locTotal(l), 0) })).filter((x) => x.value)
+
   // ---------- Écran 1 : Linge et buanderie ----------
   function linge(p) {
     const tab = p[0] || "stocks"
     const inUse = Object.values(B.stock).reduce((s, l) => s + Object.values(l).reduce((t, n) => t + n, 0), 0)
     const below = offices.flatMap((o) => Object.keys(B.par[o]).filter((c) => qty(o, c) < Math.ceil(B.par[o][c] * 0.6)))
     return pageHead("Linge et buanderie", "Stocks et dotations par lieu, besoin du jour, production interne, sous-traitance, pertes et uniformes. Données d'exemple ; compteurs et RFID simulés.")
-      + cards([kpi("Pièces en circulation", inUse.toLocaleString("fr-FR"), "tous lieux"), kpi("Lots en cours", B.batches.filter((b) => b.status === "en_cours").length, `${B.machines.filter((m) => m.state === "disponible").length} machine(s) disponible(s)`),
-        kpi("Offices sous le minimum", below.length, "réassort à servir"), kpi("Pertes du mois", money(B.losses.filter((l) => l.date >= "2026-11-01").reduce((s, l) => s + lossValue(l), 0)), "valorisées au coût")])
+      + (() => {
+        const month = today.slice(0, 8) + "01", d14 = Array.from({ length: 14 }, (_, i) => addDays(today, i - 13))
+        const cumLoss = d14.map((d) => B.losses.filter((l) => l.date >= month && l.date <= d).reduce((s, l) => s + lossValue(l), 0))
+        return statRow([
+          { label: "Pièces en circulation", value: inUse.toLocaleString("fr-FR"), icon: "layers", hint: `${B.locations.length} lieux · ${locTotal("En lavage")} en lavage` },
+          { label: "Lots en cours", value: String(B.batches.filter((b) => b.status === "en_cours").length), icon: "refresh", hint: `${B.machines.filter((m) => m.state === "disponible").length} machine(s) disponible(s)`, route: "bln-linge/production" },
+          { label: "Offices sous le minimum", value: String(below.length), icon: "alert", hint: "article(s) à réassortir", route: "bln-linge/besoin" },
+          { label: "Pertes du mois", value: money(cumLoss[13]), icon: "wallet", hint: "valorisées au coût · cumul 14 jours", trend: cumLoss, route: "bln-linge/pertes" }])
+      })()
       + subtabs("bln-linge", [["stocks", "Stocks et pars"], ["catalogue", "Catalogue"], ["besoin", "Besoin du jour"], ["production", "Production"], ["banquets", "Banquets"], ["rfid", "RFID"], ["tablette", "Poste tablette"], ["soustraitance", "Sous-traitance"], ["pertes", "Pertes et réformes"], ["uniformes", "Uniformes"], ["kpi", "Indicateurs"]], tab)
       + ({ stocks: tabStock, catalogue: tabCatalog, besoin: tabNeed, production: tabProd, banquets: tabBanquets, rfid: tabRfid, tablette: tabTablet, soustraitance: tabOut, pertes: tabLoss, uniformes: tabUniforms, kpi: tabKpi }[tab] || tabStock)(p.slice(1))
   }
 
   function tabStock() {
     const cols = B.items.map((i) => i.code)
-    return `<p class="muted">Stock propre par lieu ; entre parenthèses la dotation cible (par). En gras : sous 60 % du par, ce qui déclenche une demande de réassort ${muted("EF-BLN-002 · RG-BLN-06")}</p>`
+    return `<div class="dash"><div class="w12">${section("Stock propre par lieu", `<p class="muted" style="margin-top:0">Stock propre par lieu ; entre parenthèses la dotation cible (par). En gras : sous 60 % du par, ce qui déclenche une demande de réassort ${muted("EF-BLN-002 · RG-BLN-06")}</p>`
       + `<div class="tablewrap"><table><thead><tr><th>Lieu</th>${B.items.map((i) => `<th class="num" title="${esc(i.label)}">${esc(i.label)}</th>`).join("")}</tr></thead><tbody>`
       + B.locations.map((loc) => `<tr><td>${esc(loc)}</td>${cols.map((c) => {
         const n = qty(loc, c), par = B.par[loc] && B.par[loc][c]
@@ -167,17 +179,18 @@
         const low = par && n < Math.ceil(par * 0.6)
         return `<td class="num">${low ? `<strong>${n}</strong>` : n}${par ? ` <span class="muted">(${par})</span>` : ""}</td>`
       }).join("")}</tr>`).join("")
-      + `<tr><td><strong>Total</strong></td>${cols.map((c) => `<td class="num"><strong>${B.locations.reduce((s, l) => s + qty(l, c), 0)}</strong></td>`).join("")}</tr></tbody></table></div>`
-      + `<h2>Collecte du linge sale et retour propre ${muted("EF-BLN-004")}</h2>`
-      + tbl(["Collecte", "Lieu", "#Pièces sorties", "#Poids", "#Rentrées propres", "Écart"], B.collect.map((c, i) => [dt(c.date), esc(c.loc), c.pcs, c.kg.toFixed(1).replace(".", ",") + " kg", c.back || "en cours",
-        c.back ? (c.back === c.pcs ? badge("0", "outline") : badge(`${c.back - c.pcs} pièce(s)`, "on")) : btn("Retour propre", `A.bln.collectBack(${i})`, "ghost sm")]))
-      + card("Enregistrer une collecte", `<div class="row" style="flex-wrap:nowrap">${select("c-loc", [...offices, "Restaurant", "Spa"], "Office étage 3")}${input("c-pcs", "", 'type="number" min="1" placeholder="Pièces" style="max-width:110px"')}${input("c-kg", "", 'type="number" min="0" step="0.1" placeholder="kg" style="max-width:90px"')}${btn("Enregistrer", "A.bln.collect()", "ghost")}</div>`)
+      + `<tr><td><strong>Total</strong></td>${cols.map((c) => `<td class="num"><strong>${B.locations.reduce((s, l) => s + qty(l, c), 0)}</strong></td>`).join("")}</tr></tbody></table></div>`)}</div>
+      <div class="w8">${section("Collecte du linge sale et retour propre · EF-BLN-004", tbl(["Collecte", "Lieu", "#Pièces sorties", "#Poids", "#Rentrées propres", "Écart"], B.collect.map((c, i) => [dt(c.date), esc(c.loc), c.pcs, c.kg.toFixed(1).replace(".", ",") + " kg", c.back || "en cours",
+        c.back ? (c.back === c.pcs ? badge("0", "ok") : badge(`${c.back - c.pcs} pièce(s)`, "warn")) : btn("Retour propre", `A.bln.collectBack(${i})`, "ghost sm")]))
+        + `<h3>Enregistrer une collecte</h3><div class="row">${select("c-loc", [...offices, "Restaurant", "Spa"], "Office étage 3")}${input("c-pcs", "", 'type="number" min="1" placeholder="Pièces" style="max-width:110px"')}${input("c-kg", "", 'type="number" min="0" step="0.1" placeholder="kg" style="max-width:90px"')}${btn("Enregistrer", "A.bln.collect()", "ghost")}</div>`)}</div>
+      <div class="w4">${section("Répartition du linge", donut(spread(), { fmt: (v) => v.toLocaleString("fr-FR") + " pièces", center: shortNum(spread().reduce((s, x) => s + x.value, 0)), sub: "pièces" }))}
+        <div style="margin-top:16px">${section("Poids des dernières collectes (kg)", columns(B.collect.slice(0, 6).reverse().map((c) => c.loc.replace("Office étage ", "Ét. ")), B.collect.slice(0, 6).reverse().map((c) => c.kg), (v) => String(v).replace(".", ",")))}</div></div></div>`
   }
 
   function tabCatalog() {
     return `<p class="muted">Articles de linge : poids unitaire, coût, durée de vie cible et nombre de lavages maximal ; le coût par lavage sert au coût du linge par chambre ${muted("EF-BLN-001")}</p>`
       + tbl(["Code", "Article", "Catégorie", "#Poids", "#Coût", "#Durée de vie", "#Lavages max", "#Coût / lavage", "En stock", ""], B.items.map((i) => [esc(i.code), esc(i.label), esc(i.cat), i.kg.toFixed(2).replace(".", ",") + " kg", money(i.cost), i.life + " mois", i.maxWash, money(i.cost / i.maxWash),
-        B.locations.reduce((t, l) => t + qty(l, i.code), 0), i.inactive ? badge("Retiré", "dark") : btn("Retirer", `A.bln.toggleItem(${q(i.code)})`, "ghost sm")]))
+        B.locations.reduce((t, l) => t + qty(l, i.code), 0), i.inactive ? badge("Retiré", "outline") : btn("Retirer", `A.bln.toggleItem(${q(i.code)})`, "ghost sm")]))
       + card("Nouvel article de linge", form([
         field("it-code", "Code (3 lettres)", input("it-code", "", 'maxlength="3" placeholder="Ex. TPS"')),
         field("it-label", "Libellé", input("it-label", "", 'placeholder="Ex. Tapis de bain"')),
@@ -196,7 +209,7 @@
     return `<p class="muted">Nappage réservé par prestation d'événement (salles, banquets, cocktails), sorti de la lingerie la veille et compté au retour ; le manquant est valorisé en perte ${muted("EF-BLN-015")}</p>`
       + tbl(["Événement", "Prestation", "Date", "#Couverts", "Linge", "Statut", ""], fns.map(({ e, f }) => {
         const b = B.banquets.find((x) => x.evt === e.id && x.fn === f.id)
-        return [esc(e.name) + " " + muted(e.org), esc(f.label), fd(f.date), f.covers, b ? esc(Object.entries(b.lines).map(([c, n]) => `${IT(c).label} × ${n}`).join(", ")) + (b.status === "rendu" && b.missing ? " " + badge(`${b.missing} manquant(s)`, "on") : "") : muted(`proposé : ${Math.ceil(f.covers / 8) + 2} nappes, ${Math.ceil(f.covers * 1.1)} serviettes`),
+        return [esc(e.name) + " " + muted(e.org), esc(f.label), fd(f.date), f.covers, b ? esc(Object.entries(b.lines).map(([c, n]) => `${IT(c).label} × ${n}`).join(", ")) + (b.status === "rendu" && b.missing ? " " + badge(`${b.missing} manquant(s)`, "bad") : "") : muted(`proposé : ${Math.ceil(f.covers / 8) + 2} nappes, ${Math.ceil(f.covers * 1.1)} serviettes`),
           b ? b2(BQ, b.status) : badge("Non réservé", "outline"),
           !b ? btn("Réserver le nappage", `A.bln.bqReserve(${q(e.id)}, ${q(f.id)})`, "sm") : b.status === "reserve" ? btn("Sortir de la lingerie", `A.bln.bqOut(${q(e.id)}, ${q(f.id)})`, "ghost sm") : b.status === "sorti" ? btn("Enregistrer le retour", `A.bln.bqBack(${q(e.id)}, ${q(f.id)})`, "ghost sm") : ""]
       }), "Aucune prestation de banquet à venir.")
@@ -210,7 +223,7 @@
       + (R0.on ? card("Lancer un comptage", `<div class="row" style="flex-wrap:nowrap">${select("rf-gate", R0.gates.map(([id, l]) => [id, l]), "G1")}${btn("Passer le chariot au portique", "A.bln.rfidScan()")}</div>`)
         : `<p class="err">RFID désactivé : comptage manuel par lieu (onglet Stocks).</p>`)
       + tbl(["Lecture", "Portique", "Lieu", "#Lues", "#Théorique", "Écart", "Détail", ""], R0.reads.map((r, i) => [dt(r.at), esc((R0.gates.find((g) => g[0] === r.gate) || [, r.gate])[1]), esc(r.loc), r.read, r.expected,
-        r.read === r.expected ? badge("0", "outline") : badge(`${r.read - r.expected}`, "on"),
+        r.read === r.expected ? badge("0", "ok") : badge(`${r.read - r.expected}`, "warn"),
         `<span class="muted">${esc(Object.entries(r.lines).filter(([, [a, b]]) => a !== b).map(([c, [a, b]]) => `${IT(c).label} : ${b} lus / ${a}`).join(" ; ") || "conforme")}</span>`,
         r.applied ? muted("stock ajusté") : r.read !== r.expected ? btn("Ajuster le stock sur la lecture", `A.bln.rfidApply(${i})`, "ghost sm") : ""]), "Aucune lecture.")
   }
@@ -220,7 +233,7 @@
     const big = 'style="min-height:56px;font-size:16px;flex:1"'
     return `<p class="muted">Poste tablette de la buanderie : gros boutons, saisie en un geste, fonctionne sans réseau et synchronise au retour ${muted("EF-BLN-017")}</p>
       <div class="card" style="max-width:760px;border-width:10px;border-radius:22px">
-        <div class="row between"><strong>Buanderie — poste 1</strong>${tb.offline ? badge(`Hors ligne · ${tb.queue.length} en file`, "dark") : badge("En ligne", "on")}</div>
+        <div class="row between"><strong>Buanderie — poste 1</strong>${tb.offline ? badge(`Hors ligne · ${tb.queue.length} en file`, "warn") : badge("En ligne", "ok")}</div>
         <h3>Collecte rapide</h3>
         <div class="row" style="flex-wrap:nowrap">${select("tb-loc", [...offices, "Restaurant", "Spa"], "Office étage 1")}${input("tb-pcs", "20", 'type="number" min="1" style="max-width:110px" aria-label="Pièces"')}</div>
         <div class="row" style="margin-top:8px"><button class="btn" ${big} onclick="A.bln.tabletCollect()">Enregistrer la collecte</button></div>
@@ -271,7 +284,7 @@
         const sent = Object.values(s.lines).reduce((t, [a]) => t + a, 0)
         const back = Object.values(s.lines).every(([, b]) => b != null) ? Object.values(s.lines).reduce((t, [, b]) => t + b, 0) : null
         const gapPct = back == null ? 0 : ((sent - back) / sent) * 100
-        return card("", `<div class="row between"><strong>${esc(s.id)} · ${esc(s.provider)}</strong>${s.status === "envoye" ? badge("Chez le prestataire", "outline") : s.status === "litige" ? badge("Litige", "dark") : badge(s.paid ? "Facture validée" : "Contrôlé", "on")}</div>
+        return card("", `<div class="row between"><strong>${esc(s.id)} · ${esc(s.provider)}</strong>${s.status === "envoye" ? badge("Chez le prestataire", "info") : s.status === "litige" ? badge("Litige", "bad") : badge(s.paid ? "Facture validée" : "Contrôlé", "ok")}</div>
           <p class="muted" style="margin:4px 0">Envoyé le ${fd(s.sent)} · retour attendu le ${fd(s.due)} · facture ${money(s.invoice)}</p>
           ${tbl(["Article", "#Envoyé", "#Retourné"], Object.entries(s.lines).map(([c, [a, b]], i) => [esc(IT(c).label), a, s.status === "envoye" ? input(`sh-${s.id}-${i}`, a, 'type="number" min="0" style="max-width:90px"') : b]))}
           ${s.status === "envoye" ? `<div class="row" style="margin-top:8px">${btn("Enregistrer le retour", `A.bln.receiveShipment(${q(s.id)})`, "sm")}</div>`
@@ -289,7 +302,7 @@
       `<div class="full row">${btn("Enregistrer et valoriser", "A.bln.addLoss()")}${muted("Sortie du stock, perte transmise à la comptabilité (simulé). EF-BLN-009")}</div>`,
     ]))
       + `<h2>Pièces à réformer (suivi RFID, simulé) ${muted("RG-BLN-05")}</h2>`
-      + tbl(["Pièce", "Puce", "#Lavages", "#Max", ""], B.worn.map((w, i) => [esc(IT(w.item).label), esc(w.tag), w.washes, IT(w.item).maxWash, w.washes >= IT(w.item).maxWash ? btn("Réformer", `A.bln.retire(${i})`, "ghost sm") : badge("Bientôt", "outline")]), "Aucune pièce en fin de vie.")
+      + tbl(["Pièce", "Puce", "#Lavages", "#Max", ""], B.worn.map((w, i) => [esc(IT(w.item).label), esc(w.tag), w.washes, IT(w.item).maxWash, w.washes >= IT(w.item).maxWash ? btn("Réformer", `A.bln.retire(${i})`, "ghost sm") : badge("Bientôt", "warn")]), "Aucune pièce en fin de vie.")
       + `<h2>Historique</h2>`
       + tbl(["Date", "Article", "#Qté", "Motif", "Lieu", "#Valeur"], B.losses.map((l) => [fd(l.date), esc(IT(l.item).label), l.qty, esc(l.reason), esc(l.loc), money(lossValue(l))]))
       + aiBox("Détection de pertes anormales", "Office étage 2 : 3 déclarations de perte de serviettes en 15 jours, soit 2,4 fois la moyenne des autres étages. Écart de comptage répété chez Blanchisserie Akwaba Exemple (nappes). Alerte transmise au responsable buanderie.")
@@ -298,7 +311,7 @@
   function tabUniforms() {
     return `<p class="muted">Dotation par employé, échanges et restitution au départ (lien RH) ${muted("EF-BLN-016 · RG-BLN-07")}</p>`
       + tbl(["Employé", "Service", "Dotation", "Remis le", "Statut", ""], B.uniforms.map((u, i) => [esc(u.emp), esc(u.dept), esc(u.items.map(([a, t, n]) => `${a} ${t} × ${n}`).join(", ")) + (u.exchanges ? " " + muted(`${u.exchanges} échange(s)`) : ""), fd(u.issued) + "/" + u.issued.slice(2, 4),
-        u.status === "actif" ? badge("Actif", "outline") : u.status === "a_restituer" ? badge(`Départ le ${fd(u.leave)} — à restituer`, "on") : badge(u.missing ? `Restitué, ${u.missing} manquant(s)` : "Restitué", "dark"),
+        u.status === "actif" ? badge("Actif", "ok") : u.status === "a_restituer" ? badge(`Départ le ${fd(u.leave)} — à restituer`, "warn") : badge(u.missing ? `Restitué, ${u.missing} manquant(s)` : "Restitué", u.missing ? "bad" : "outline"),
         u.status === "actif" ? btn("Échanger", `A.bln.exchange(${i})`, "ghost sm") : u.status === "a_restituer" ? btn("Enregistrer la restitution", `A.bln.restitute(${i})`, "ghost sm") : ""]))
       + `<p class="muted">Un manquant peut donner lieu à retenue uniquement si la loi et le contrat le permettent : décision RH, pas automatique.</p>`
   }
@@ -313,11 +326,18 @@
     const onTime = delivered.filter((o) => o.delivered <= o.promised).length
     const revenue = delivered.reduce((s, o) => s + o.amount, 0)
     return `<p class="muted">Indicateurs §17.12 sur les données d'exemple (coûts de production : valeurs d'exemple du mois).</p>`
-      + cards([kpi("Coût du linge / chambre occupée", money(2350), "production + pertes + prestataire"), kpi("Coût par kg lavé", money(410), "main-d'œuvre, produits, énergie, eau, amortissement"),
-        kpi("Taux de perte et de réforme", pct((lossM.reduce((s, l) => s + l.qty, 0) / circ) * 100), "pièces du mois / en circulation"), kpi("Taux de relavage", pct((rewash / Math.max(1, done.length)) * 100), `${rewash} lot(s) sur ${done.length}`),
-        kpi("Délai pressing respecté", delivered.length ? pct((onTime / delivered.length) * 100) : "—", `${delivered.length} commande(s) livrée(s)`), kpi("Revenu pressing", money(revenue), `${money(revenue / occ)} par chambre occupée`)])
-      + cards([card("Pertes valorisées par motif", bars([...new Set(B.losses.map((l) => l.reason))].map((r) => ({ label: r, value: B.losses.filter((l) => l.reason === r).reduce((s, l) => s + lossValue(l), 0) })), money)),
-        card("Kg lavés par jour", columns(["22/11", "23/11", "24/11", "25/11", "26/11"], [148, 162, 139, 175, B.batches.filter((b) => b.start.startsWith(today)).reduce((s, b) => s + b.kg, 0)], (v) => v + " kg"))])
+      + `<div class="grid g4">${[
+        { label: "Coût du linge / chambre occupée", value: money(2350), icon: "bed", delta: -3.2, good: false, hint: "production + pertes + prestataire · vs mois précédent (exemple)", trend: [2520, 2480, 2440, 2460, 2400, 2350] },
+        { label: "Coût par kg lavé", value: money(410), icon: "coins", hint: "main-d'œuvre, produits, énergie, eau, amortissement (exemple)" },
+        { label: "Taux de perte et de réforme", value: pct((lossM.reduce((s, l) => s + l.qty, 0) / circ) * 100), icon: "alert", hint: "pièces du mois / en circulation" },
+        { label: "Taux de relavage", value: pct((rewash / Math.max(1, done.length)) * 100), icon: "refresh", hint: `${rewash} lot(s) sur ${done.length}` },
+        { label: "Délai pressing respecté", value: delivered.length ? pct((onTime / delivered.length) * 100) : "—", icon: "clock", hint: `${delivered.length} commande(s) livrée(s)`, route: "bln-pressing" },
+        { label: "Revenu pressing", value: money(revenue), icon: "wallet", hint: `${money(revenue / occ)} par chambre occupée` }].map(stat).join("")}</div>`
+      + `<div class="dash" style="margin-top:16px">
+          <div class="w8">${section("Kg lavés par jour", (() => { const d = Array.from({ length: 5 }, (_, i) => addDays(today, i - 4)); return columns(d.map(fd), [148, 162, 139, 175, B.batches.filter((b) => b.start.startsWith(today)).reduce((s, b) => s + b.kg, 0)], (v) => v + " kg") })() + `<p class="muted" style="margin:8px 0 0">Jours précédents : exemple ; aujourd'hui : lots lancés.</p>`)}</div>
+          <div class="w4">${section("Résultat des lots", donut(Object.keys(RES).map((k) => ({ label: RES[k][0], value: done.filter((b) => b.result === k).length })).filter((x) => x.value), { fmt: (v) => v + " lot(s)", center: String(done.length), sub: "lots terminés" }))}</div>
+          <div class="w12">${section("Pertes valorisées par motif", bars([...new Set(B.losses.map((l) => l.reason))].map((r) => ({ label: r, value: B.losses.filter((l) => l.reason === r).reduce((s, l) => s + lossValue(l), 0) })).sort((a, b) => b.value - a.value), money))}</div>
+        </div>`
   }
 
   // ---------- Écran 2 : Pressing client ----------
@@ -325,20 +345,32 @@
     const tab = p[0] || "commandes"
     return pageHead("Pressing client", "Commandes de pressing des clients, suivi jusqu'à la livraison en chambre, imputation au folio à la livraison. Tarifs d'exemple TTC.",
       btn("Nouvelle commande", "go('bln-pressing/nouvelle')"))
+      + (() => {
+        const live = B.orders.filter((o) => o.status !== "livree"), late = live.filter((o) => o.promised < NOW), dl = B.orders.filter((o) => o.status === "livree")
+        return statRow([
+          { label: "Commandes en cours", value: String(live.length), icon: "shirt", hint: `${live.filter((o) => o.express).length} express`, route: "bln-pressing/commandes" },
+          { label: "Prêtes à livrer", value: String(live.filter((o) => o.status === "prete").length), icon: "check", hint: "imputées au folio à la livraison" },
+          { label: "En retard", value: String(late.length), icon: "clock", hint: late.length ? "heure promise dépassée" : "délais tenus" },
+          { label: "Revenu pressing", value: money(dl.reduce((s, o) => s + (o.amount ?? orderAmount(o)), 0)), icon: "wallet", hint: `${dl.length} commande(s) livrée(s) · TTC` }])
+      })()
       + subtabs("bln-pressing", [["commandes", "Commandes"], ["nouvelle", "Nouvelle commande"], ["tarifs", "Tarifs"], ["reclamations", "Réclamations"]], tab)
       + ({ commandes: tabOrders, nouvelle: tabNew, tarifs: tabPrices, reclamations: tabClaims }[tab] || tabOrders)(p.slice(1))
   }
 
   function tabOrders() {
     const next = { prise: ["traitement", "Mettre en traitement"], traitement: ["prete", "Marquer prête"], prete: ["livree", "Livrer et imputer au folio"] }
-    return `<p class="muted">Commandes prises en chambre, à la réception, depuis l'application ou par le concierge IA ${muted("EF-BLN-011 · EF-BLN-013")}</p>` + tbl(["Ticket", "Canal", "Chambre / client", "Articles", "Option", "Promis pour", "#Montant TTC", "Statut", ""], B.orders.map((o) => {
+    const bySvc = Object.keys(SVC).map((k) => ({ label: SVC[k], value: B.orders.reduce((s, o) => s + o.lines.filter((l) => l.svc === k).reduce((t, l) => t + unitPrice(l.art, l.svc) * l.qty, 0), 0) }))
+    return `<div class="dash"><div class="w12">${section("Commandes", `<p class="muted" style="margin-top:0">Commandes prises en chambre, à la réception, depuis l'application ou par le concierge IA ${muted("EF-BLN-011 · EF-BLN-013")}</p>` + tbl(["Ticket", "Canal", "Chambre / client", "Articles", "Option", "Promis pour", "#Montant TTC", "Statut", ""], B.orders.map((o) => {
       const r = R(o.res), late = o.status !== "livree" && o.promised < NOW
       return [`<strong>${esc(o.id)}</strong>`, esc(o.channel || "Réception"), r ? `Ch. ${esc(r.room)} · ${esc(G(r.guest).name)}` : `${esc(o.ext)} ${muted("externe, payé")}`, esc(o.lines.map((l) => `${l.art} × ${l.qty} (${SVC[l.svc].toLowerCase()})`).join(", ")),
-        o.express ? badge("Express", "on") : "Normal", dt(o.promised) + (late ? " " + badge("En retard", "dark") : ""), money(o.amount ?? orderAmount(o)) + "<br>" + muted(`dont TVA ${money(taxOf(o.amount ?? orderAmount(o)))}`),
+        o.express ? badge("Express", "info") : "Normal", dt(o.promised) + (late ? " " + badge("En retard", "bad") : ""), money(o.amount ?? orderAmount(o)) + "<br>" + muted(`dont TVA ${money(taxOf(o.amount ?? orderAmount(o)))}`),
         b2(OST, o.status) + (o.charged ? " " + muted("imputé au folio") : o.ext ? " " + muted(`encaissé ${o.payMode}`) : ""),
         next[o.status] ? btn(next[o.status][1], `A.bln.advance(${q(o.id)})`, o.status === "prete" ? "sm" : "ghost sm") : btn("Réclamation", `A.bln.claim(${q(o.id)})`, "ghost sm")]
     }))
-      + `<p class="muted">La prestation est imputée au folio à la livraison, jamais à la prise de commande (RG-BLN-02). Étiquetage par ticket ou code-barres (EF-BLN-012).</p>`
+      + `<p class="muted">La prestation est imputée au folio à la livraison, jamais à la prise de commande (RG-BLN-02). Étiquetage par ticket ou code-barres (EF-BLN-012).</p>`)}</div>
+      <div class="w4">${section("Commandes par statut", donut(Object.keys(OST).map((k) => ({ label: OST[k][0], value: B.orders.filter((o) => o.status === k).length })).filter((x) => x.value), { fmt: (v) => v, center: String(B.orders.length), sub: "commandes" }))}</div>
+        <div class="w4">${section("Montant par service (hors express)", bars(bySvc, money))}</div>
+        <div class="w4">${section("Commandes par canal", bars(CHANNELS.map((c) => ({ label: c, value: B.orders.filter((o) => (o.channel || "Réception") === c).length })), (v) => v))}</div></div>`
   }
 
   function tabNew() {
@@ -369,7 +401,7 @@
     return `<p class="muted">Article abîmé ou perdu : dédommagement validé par le responsable, puis imputé en avoir sur le folio ${muted("EF-BLN-014")}</p>`
       + tbl(["Ticket", "Client", "Motif", "#Dédommagement", "Statut", ""], B.claims.map((c, i) => {
         const r = R(PO(c.order).res)
-        return [esc(c.order), esc(r ? G(r.guest).name : PO(c.order).ext), esc(c.reason), money(c.amount), c.ok ? badge("Validé, imputé", "on") : badge("À valider", "outline"),
+        return [esc(c.order), esc(r ? G(r.guest).name : PO(c.order).ext), esc(c.reason), money(c.amount), c.ok ? badge("Validé, imputé", "ok") : badge("À valider", "warn"),
           c.ok ? "" : btn("Valider le dédommagement", `A.bln.validateClaim(${i})`, "ghost sm")]
       }), "Aucune réclamation. Une réclamation se déclare depuis une commande livrée.")
   }
@@ -388,7 +420,7 @@
       const bad = f.lines.find((l) => !unitPrice(l.art, l.svc))
       if (bad) return (el.innerHTML = `<div class="err">${esc(SVC[bad.svc])} non proposé pour : ${esc(bad.art)}.</div>`)
       const total = orderAmount({ lines: f.lines, express: f.express })
-      el.innerHTML = `<div class="card"><strong>Prix : ${esc(money(total))}</strong> <span class="muted">dont TVA ${esc(money(taxOf(total)))}</span> ${f.express ? badge("Express +" + B.expressRate * 100 + " %", "on") : ""} <span class="muted">· retour promis ${esc(dt(promisedAt(f.hours)))}</span></div>`
+      el.innerHTML = `<div class="card"><strong>Prix : ${esc(money(total))}</strong> <span class="muted">dont TVA ${esc(money(taxOf(total)))}</span> ${f.express ? badge("Express +" + B.expressRate * 100 + " %", "info") : ""} <span class="muted">· retour promis ${esc(dt(promisedAt(f.hours)))}</span></div>`
     },
     createOrder() {
       const f = readOrderForm(), res = val("pr-res")

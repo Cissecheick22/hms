@@ -164,6 +164,7 @@
     return X.capPolicy === "bloquer" ? { ok: false, why: `plafond ${over} atteint` } : { ok: true, degraded: true, why: `plafond ${over} atteint` }
   }
   const MODE = { desactive: "Désactivé", conseil: "Conseil (validation humaine)", auto: "Automatique borné" }
+  const st = (label, value, hint, icon = "brain", extra = {}) => stat({ label, value: String(value), hint, icon, ...extra })
   const pctTxt = (n) => Math.round(n * 100) + " %"
   const disabledNote = (c) => UC(c).mode === "desactive"
     ? `<div class="err" style="margin-bottom:14px">Fonction IA désactivée pour cet établissement : repli non-IA actif (${esc(FALLBACK[c])}). Réactivation dans « Modèles et gouvernance ».</div>` : ""
@@ -220,24 +221,29 @@
   function rmRecos() {
     const pend = X.recos.filter((r) => r.status === "proposee")
     const done = X.recos.filter((r) => r.status !== "proposee")
-    return disabledNote("rm.pricing") + `<div class="grid">
-        ${kpi("Recommandations à traiter", pend.length, "proposées ce matin")}
-        ${kpi("Taux d'acceptation", pctTxt(acceptRate()), "acceptées / traitées")}
-        ${kpi("Précision de la prévision", "MAPE 8,4 %", "modèle M-DEM v3.2 (exemple)")}
-        ${kpi("RevPAR vs concurrents", "+4,1 %", "ensemble concurrentiel simulé")}
+    const f = forecast(), acc = done.filter((r) => r.status === "acceptee").length
+    return disabledNote("rm.pricing") + `<div class="grid g4">
+        ${st("Recommandations à traiter", pend.length, "proposées ce matin", "tag")}
+        ${st("Taux d'acceptation", pctTxt(acceptRate()), "acceptées / traitées", "check")}
+        ${st("Précision de la prévision", "MAPE 8,4 %", "modèle M-DEM v3.2 (exemple)", "chart", { trend: [11.2, 10.4, 9.8, 9.1, 8.7, 8.4] })}
+        ${st("RevPAR vs concurrents", "+4,1 %", "ensemble concurrentiel simulé", "trend", { delta: 4.1 })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Occupation prévue et portefeuille — 14 jours", lineChart(f.map((x) => fd(x.d)), [{ name: "Prévision", values: f.map((x) => x.occ) }, { name: "En portefeuille", values: f.map((x) => (x.otb / sellable()) * 100) }, { name: "N-1", values: f.map((x) => x.ly) }], { fmt: (v) => Math.round(v) + " %", max: 100 }), btn("Prévision", "go('aip-rm/prevision')", "ghost sm"))}</div>
+        <div class="w4">${section("Décisions sur les recommandations", donut([{ label: "Acceptées", value: acc }, { label: "Refusées", value: done.length - acc }, { label: "En attente", value: pend.length }], { fmt: (v) => v, center: String(X.recos.length), sub: "propositions" }))}</div>
       </div>
       <p class="muted">Mode ${esc(X.rmMode === "auto" ? "automatique borné : les propositions dans les bornes et ≤ 10 % sont appliquées seules, les autres restent à valider" : "conseil : chaque prix est validé par un humain, ici le directeur (RG-AIP-03)")}. Bornes plancher/plafond par type, variation maximale ${MAXVAR * 100} %. Repli : dernier prix validé.</p>
-      <h2>À valider</h2>
+      <h2>À valider ${pend.length ? badge(pend.length + " en attente", "warn") : ""}</h2>
       ${pend.length ? `<div class="grid">${pend.map(recoCard).join("")}</div>` : `<p class="muted">Aucune recommandation en attente.</p>`}
       <h2>Historique</h2>
       ${tbl(["Réf.", "Type", "Période", "#Prix actuel", "#Proposé", "Décision", "Par"], done.map((r) => [esc(r.id), esc(T(r.type).label), `${fd(r.from)} → ${fd(r.to)}`, money(r.current), money(r.proposed),
-        badge(r.status === "acceptee" ? "Acceptée" : "Refusée", r.status === "acceptee" ? "on" : "outline"), esc(r.by || "—")]))}
+        badge(r.status === "acceptee" ? "Acceptée" : "Refusée", r.status === "acceptee" ? "ok" : "bad"), esc(r.by || "—")]))}
       <p class="muted">EF-AIP-013 explicabilité · RG-AIP-03 validation humaine · événement aip.pricing.recommendation-generated</p>`
   }
   function recoCard(r) {
     const issues = recoIssues(r), v = recoVar(r)
     return `<div class="card">
-      <div class="row between"><strong>${esc(T(r.type).label)} · ${fd(r.from)} → ${fd(r.to)}</strong>${badge(v > 0 ? "Hausse" : "Baisse", "outline")}</div>
+      <div class="row between"><strong>${esc(T(r.type).label)} · ${fd(r.from)} → ${fd(r.to)}</strong>${badge(v > 0 ? "Hausse" : "Baisse", "info")}</div>
       <div class="row" style="margin:8px 0"><span class="big">${money(r.proposed)}</span><span class="muted">au lieu de ${money(r.current)} (${v > 0 ? "+" : ""}${pct(v * 100)})</span></div>
       <div class="muted">Facteurs principaux (contribution)</div>
       ${bars(r.factors.map(([l, w]) => ({ label: l, value: Math.round(w * 100) })), (x) => x + " %")}
@@ -248,13 +254,12 @@
   function rmForecast() {
     const f = forecast(), n = sellable()
     return disabledNote("rm.pricing") + `<div class="grid">
-        ${kpi("Occupation prévue 7 j", pct(f.slice(0, 7).reduce((s, x) => s + x.occ, 0) / 7), "moyenne, exemple")}
-        ${kpi("Occupation prévue 14 j", pct(f.reduce((s, x) => s + x.occ, 0) / 14), "moyenne, exemple")}
-        ${kpi("Nuitées en portefeuille", f.reduce((s, x) => s + x.otb, 0), "réservations confirmées (data.js)")}
-        ${kpi("Chambres vendables", n, "hors chambres hors commande")}
+        ${st("Occupation prévue 7 j", pct(f.slice(0, 7).reduce((s, x) => s + x.occ, 0) / 7), "moyenne, exemple", "bed", { trend: f.slice(0, 7).map((x) => x.occ) })}
+        ${st("Occupation prévue 14 j", pct(f.reduce((s, x) => s + x.occ, 0) / 14), "moyenne, exemple", "calendar", { trend: f.map((x) => x.occ) })}
+        ${st("Nuitées en portefeuille", f.reduce((s, x) => s + x.otb, 0), "réservations confirmées (data.js)", "moon")}
+        ${st("Chambres vendables", n, "hors chambres hors commande", "key")}
       </div>
-      <h2>Occupation prévue — 14 jours</h2>
-      ${card("", columns(f.map((x) => fd(x.d)), f.map((x) => Math.round(x.occ)), (v) => v + " %"))}
+      <div style="margin:16px 0">${section("Occupation prévue — 14 jours", lineChart(f.map((x) => fd(x.d)), [{ name: "Prévision", values: f.map((x) => x.occ) }, { name: "N-1", values: f.map((x) => x.ly) }], { fmt: (v) => Math.round(v) + " %", max: 100 }))}</div>
       ${tbl(["Date", "#En portefeuille", "#Prévision", "#Intervalle", "#Occupation prévue", "#N-1"], f.map((x) => [`${esc(wd(x.d))} ${fd(x.d)}`, x.otb, x.fc, `${x.low} – ${x.high}`, pct(x.occ), pct(x.ly)]))}
       ${aiBox("Lecture de la prévision", "La demande remonte en fin de semaine prochaine (événement local d'exemple). Le portefeuille est en retard sur N-1 en début de période : une baisse ciblée sur les Standard est proposée.", btn("Voir les recommandations", "go('aip-rm/recommandations')", "ghost sm"))}`
   }
@@ -262,27 +267,35 @@
     const list = D.reservations.filter((r) => r.status === "confirmee").map((r) => ({ r, ...noshow(r) })).sort((a, b) => b.score - a.score)
     const expected = list.filter((x) => x.r.from === today).reduce((s, x) => s + x.score / 100, 0)
     return disabledNote("res.noshow") + `<div class="grid">
-        ${kpi("No-shows attendus ce soir", expected.toFixed(1).replace(".", ","), "somme des probabilités")}
-        ${kpi("Réservations à risque", list.filter((x) => x.score >= 30).length, "probabilité ≥ 30 %")}
-        ${kpi("AUC du modèle", "0,81", "M-NSH v2.1 (exemple)")}
+        ${st("No-shows attendus ce soir", expected.toFixed(1).replace(".", ","), "somme des probabilités", "moon")}
+        ${st("Réservations à risque", list.filter((x) => x.score >= 30).length, "probabilité ≥ 30 %", "alert")}
+        ${st("AUC du modèle", "0,81", "M-NSH v2.1 (exemple)", "chart")}
       </div>
       <p class="muted">Information uniquement : aucun refus ni annulation automatique. La nationalité est exclue des variables du modèle. Repli : taux historiques par segment.</p>
       ${tbl(["Réf.", "Client", "Arrivée", "Garantie", "#Risque", "Facteurs", ""], list.map(({ r, score, factors }) => [
-        esc(r.id), guestLink(r.guest), fd(r.from), esc(r.guarantee), score >= 30 ? badge(score + " %", "on") : score + " %", `<span class="muted">${esc(factors.join(" · "))}</span>`,
-        X.relances[r.id] ? badge("Relancé", "outline") : btn("Relancer (SMS simulé)", `A.aip.relance(${q(r.id)})`, "ghost sm")]))}`
+        esc(r.id), guestLink(r.guest), fd(r.from), esc(r.guarantee), score >= 30 ? badge(score + " %", "warn") : score + " %", `<span class="muted">${esc(factors.join(" · "))}</span>`,
+        X.relances[r.id] ? badge("Relancé", "ok") : btn("Relancer (SMS simulé)", `A.aip.relance(${q(r.id)})`, "ghost sm")]))}`
   }
 
   function synthese() {
     const c = concierge(), s = spent()
-    return `<div class="grid">
-        ${kpi("Résolution concierge sans humain", pctTxt(c.rate), "conversations résolues / total")}
-        ${kpi("Satisfaction des conversations", c.sat.toFixed(1).replace(".", ",") + " / 5", "note moyenne")}
-        ${kpi("Précision des prévisions", "MAPE 8,4 %", "modèle de demande (exemple)")}
-        ${kpi("Coût IA par chambre occupée", money(s / X.roomNights), `${money(s)} ce mois`)}
-        ${kpi("Acceptation des recommandations", pctTxt(acceptRate()), "acceptées / proposées traitées")}
+    const bud = X.useCases.reduce((t, u) => t + u.budget, 0), modes = Object.keys(MODE).map((m) => ({ label: MODE[m], value: X.useCases.filter((u) => u.mode === m).length })).filter((x) => x.value)
+    return `<div class="grid g4">
+        ${st("Résolution concierge sans humain", pctTxt(c.rate), "conversations résolues / total", "message", { route: "aip-ia/concierge" })}
+        ${st("Satisfaction des conversations", c.sat.toFixed(1).replace(".", ",") + " / 5", "note moyenne", "star")}
+        ${st("Précision des prévisions", "MAPE 8,4 %", "modèle de demande (exemple)", "chart", { trend: [11.2, 10.4, 9.8, 9.1, 8.7, 8.4], route: "aip-rm/prevision" })}
+        ${st("Coût IA par chambre occupée", money(s / X.roomNights), `${money(s)} ce mois`, "coins")}
+        ${st("Acceptation des recommandations", pctTxt(acceptRate()), "acceptées / proposées traitées", "check", { route: "aip-rm/recommandations" })}
+        ${st("Alertes d'anomalie ouvertes", X.anomalies.filter((a) => ["nouvelle", "analyse", "bloquee"].includes(a.status)).length, "fraude et anomalies", "shield", { route: "aip-ia/anomalies" })}
+        ${st("Équipements à risque", X.equipment.filter((e) => e.status === "proposee" && e.risk >= 0.5).length, "maintenance prédictive", "wrench", { route: "aip-ia/predictif" })}
+        ${st("Budget IA consommé", pctTxt(s / (bud || 1)), `${money(s)} / ${money(bud)}`, "wallet")}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Consommation par cas d'usage", bars(X.useCases.map((u) => ({ label: u.label, value: u.used })).sort((a, b) => b.value - a.value), money))}</div>
+        <div class="w4">${section("Modes de fonctionnement", donut(modes, { fmt: (v) => v + " cas", center: String(X.useCases.length), sub: "cas d'usage" }))}</div>
       </div>
       <h2>Cas d'usage actifs</h2>
-      ${tbl(["Cas d'usage", "Module", "Mode", "#Consommé"], X.useCases.map((u) => [esc(u.label), esc(u.module), u.mode === "desactive" ? badge("Désactivé", "dark") : badge(MODE[u.mode], u.mode === "auto" ? "on" : ""), `${money(u.used)} / ${money(u.budget)}`]))}
+      ${tbl(["Cas d'usage", "Module", "Mode", "#Consommé"], X.useCases.map((u) => [esc(u.label), esc(u.module), u.mode === "desactive" ? badge("Désactivé", "outline") : badge(MODE[u.mode], u.mode === "auto" ? "ok" : "info"), `${money(u.used)} / ${money(u.budget)}`]))}
       <div class="cols">
         <section><h2>À traiter</h2>
           <div class="list">
@@ -292,7 +305,7 @@
             <button onclick="go('aip-ia/predictif')"><strong>${X.equipment.filter((e) => e.status === "proposee" && e.risk >= 0.5).length} équipement(s) à risque élevé</strong><div class="muted">Maintenance prédictive</div></button>
           </div></section>
         <section><h2>Passerelle de modèles</h2>
-          ${tbl(["Fournisseur", "Rôle", "État", "#Latence p95"], X.gateway.map((g) => [esc(g.name), esc(g.role), badge(g.state, "on"), esc(g.latency)]))}
+          ${tbl(["Fournisseur", "Rôle", "État", "#Latence p95"], X.gateway.map((g) => [esc(g.name), esc(g.role), badge(g.state, "ok"), esc(g.latency)]))}
           <p class="muted">Routage par cas d'usage, bascule automatique, cache sémantique, masquage des données personnelles (EF-AIP-001, EF-AIP-009). Aucune donnée client n'est utilisée par les fournisseurs pour leur entraînement (RG-AIP-02).</p></section>
       </div>
       ${aiBox("Résumé du jour", "Le concierge a traité 5 conversations cette nuit, dont 1 réclamation escaladée (climatisation ch. 202). La même climatisation présente un risque de panne de 68 % : un ordre préventif est proposé.", btn("Voir la maintenance prédictive", "go('aip-ia/predictif')", "ghost sm"))}`
@@ -353,12 +366,12 @@
 
   function conciergeTab() {
     const c = X.convs.find((x) => x.id === ui.aipConv) || X.convs[0], k = concierge()
-    const ST = { resolue: ["Résolue", "outline"], escaladee: ["Escaladée", "on"], encours: ["En cours", ""] }
+    const ST = { resolue: ["Résolue", "ok"], escaladee: ["Escaladée", "warn"], encours: ["En cours", "info"] }
     return disabledNote("concierge") + `<div class="grid">
-        ${kpi("Taux de résolution sans humain", pctTxt(k.rate), "résolues / total")}
-        ${kpi("Satisfaction", k.sat.toFixed(1).replace(".", ",") + " / 5", "note moyenne des clients")}
-        ${kpi("Délai de première réponse", "1,6 s", "p95 simulé (cible < 2 s)")}
-        ${kpi("Escalades", X.convs.filter((x) => x.escal).length, "réclamation, urgence ou confiance faible")}
+        ${st("Taux de résolution sans humain", pctTxt(k.rate), "résolues / total", "check")}
+        ${st("Satisfaction", k.sat.toFixed(1).replace(".", ",") + " / 5", "note moyenne des clients", "star")}
+        ${st("Délai de première réponse", "1,6 s", "p95 simulé (cible < 2 s)", "zap")}
+        ${st("Escalades", X.convs.filter((x) => x.escal).length, "réclamation, urgence ou confiance faible", "alert")}
       </div>
       <h2>Simuler un message entrant</h2>
       <div class="card">${form([
@@ -381,7 +394,7 @@
             <div class="muted">${who === "ia" ? "Concierge IA" : who === "humain" ? "Réception (humain)" : "Client"}</div>
             <span class="pill ${who === "humain" ? "dark" : who === "ia" ? "outline" : ""}" style="white-space:normal;text-align:left">${esc(t)}</span></div>`).join("")}</div>
           ${c.tools.length ? `<h3>Actions via outils contrôlés</h3>${tbl(["Action", "Statut", ""], c.tools.map((t, i) => [esc(t.label),
-            t.status === "confirmee" ? badge("Confirmée par le client", "on") : badge("En attente de confirmation client", "outline"),
+            t.status === "confirmee" ? badge("Confirmée par le client", "ok") : badge("En attente de confirmation client", "warn"),
             t.status === "attente" ? btn("Simuler la confirmation", `A.aip.confirmTool(${q(c.id)},${i})`, "ghost sm") : ""]))}` : ""}
           ${c.sources.length ? `<p class="muted">Sources citées : ${esc(c.sources.join(" · "))}</p>` : ""}
           <div class="row" style="margin-top:12px;flex-wrap:nowrap">${input("aip-reply", "", `placeholder="Répondre en tant que réception…"`)}${btn("Prendre la main", `A.aip.humanReply(${q(c.id)})`)}</div>
@@ -396,12 +409,12 @@
   }
 
   function anomalies() {
-    const ST = { nouvelle: ["Nouvelle", "on"], analyse: ["En analyse", ""], confirmee: ["Fraude confirmée", "dark"], faux: ["Faux positif", "outline"], bloquee: ["Bloquée automatiquement", "dark"] }
+    const ST = { nouvelle: ["Nouvelle", "warn"], analyse: ["En analyse", "info"], confirmee: ["Fraude confirmée", "bad"], faux: ["Faux positif", "outline"], bloquee: ["Bloquée automatiquement", "bad"] }
     const treated = X.anomalies.filter((a) => ["confirmee", "faux"].includes(a.status))
     return disabledNote("fraude") + `<div class="grid">
-        ${kpi("Alertes ouvertes", X.anomalies.filter((a) => ["nouvelle", "analyse", "bloquee"].includes(a.status)).length, "à analyser par un humain")}
-        ${kpi("Fraudes confirmées", X.anomalies.filter((a) => a.status === "confirmee").length, "ce mois (exemple)")}
-        ${kpi("Taux de faux positifs", treated.length ? pctTxt(treated.filter((a) => a.status === "faux").length / treated.length) : "—", "sur alertes traitées")}
+        ${st("Alertes ouvertes", X.anomalies.filter((a) => ["nouvelle", "analyse", "bloquee"].includes(a.status)).length, "à analyser par un humain", "alert")}
+        ${st("Fraudes confirmées", X.anomalies.filter((a) => a.status === "confirmee").length, "ce mois (exemple)", "shield")}
+        ${st("Taux de faux positifs", treated.length ? pctTxt(treated.filter((a) => a.status === "faux").length / treated.length) : "—", "sur alertes traitées", "filecheck")}
       </div>
       <p class="muted">Blocage automatique uniquement au-delà des seuils critiques paramétrés ; toutes les autres alertes sont analysées par un humain. Le personnel est informé de cette surveillance. Repli : règles statiques.</p>
       <div class="grid">${X.anomalies.map((a) => `<div class="card">
@@ -418,21 +431,22 @@
     const hkTime = 31, planned = X.staffing
     return disabledNote("maint") + `<h2>Maintenance prédictive</h2>
       <div class="grid">
-        ${kpi("Équipements surveillés", X.equipment.length, "capteurs IoT simulés")}
-        ${kpi("Risque élevé", X.equipment.filter((e) => e.risk >= 0.5 && e.status === "proposee").length, "probabilité ≥ 50 %")}
-        ${kpi("Pannes évitées", 3, "sur 90 jours (exemple)")}
-        ${kpi("MTTR", "5,2 h", "temps moyen de réparation (exemple)")}
+        ${st("Équipements surveillés", X.equipment.length, "capteurs IoT simulés", "plug")}
+        ${st("Risque élevé", X.equipment.filter((e) => e.risk >= 0.5 && e.status === "proposee").length, "probabilité ≥ 50 %", "alert")}
+        ${st("Pannes évitées", 3, "sur 90 jours (exemple)", "check")}
+        ${st("MTTR", "5,2 h", "temps moyen de réparation (exemple)", "wrench")}
       </div>
+      <div style="margin:16px 0">${section("Probabilité de panne par équipement", bars([...X.equipment].sort((a, b) => b.risk - a.risk).map((e) => ({ label: e.name, value: Math.round(e.risk * 100) })), (v) => v + " %"))}</div>
       ${tbl(["Équipement", "Zone", "#Risque", "Horizon", "Signaux capteurs", "Action proposée", ""], [...X.equipment].sort((a, b) => b.risk - a.risk).map((e) => [
-        `<strong>${esc(e.name)}</strong>`, esc(e.zone), e.risk >= 0.5 ? badge(pctTxt(e.risk), "on") : pctTxt(e.risk), esc(e.horizon),
+        `<strong>${esc(e.name)}</strong>`, esc(e.zone), e.risk >= 0.5 ? badge(pctTxt(e.risk), "bad") : pctTxt(e.risk), esc(e.horizon),
         `<span class="muted">${esc(e.signals.join(" · "))}</span>`, esc(e.action),
-        e.status === "ot" ? badge("Ordre créé", "outline") : btn("Créer un ordre préventif", `A.aip.workOrder(${q(e.id)})`, "ghost sm")]))}
+        e.status === "ot" ? badge("Ordre créé", "ok") : btn("Créer un ordre préventif", `A.aip.workOrder(${q(e.id)})`, "ghost sm")]))}
       <p class="muted">Propositions validées par le responsable technique. Repli : maintenance calendaire.</p>
       <h2>Housekeeping et effectifs</h2>
       <div class="grid">
-        ${kpi("Minutes par chambre", hkTime + " min", "moyenne 7 jours (exemple)")}
-        ${kpi("Écart besoin / planifié", planned.reduce((s, x) => s + x.need - x.planned, 0) + " pers.", "demain")}
-        ${kpi("Coût de personnel / chambre", money(9800), "exemple")}
+        ${st("Minutes par chambre", hkTime + " min", "moyenne 7 jours (exemple)", "clock")}
+        ${st("Écart besoin / planifié", planned.reduce((s, x) => s + x.need - x.planned, 0) + " pers.", "demain", "users")}
+        ${st("Coût de personnel / chambre", money(9800), "exemple", "wallet")}
       </div>
       ${UC("effectifs").mode === "desactive" ? `<p class="muted">La planification des effectifs par IA est désactivée : le planning suit les ratios standards (repli). Elle s'active dans « Modèles et gouvernance ».</p>` : ""}
       ${tbl(["Service", "Tranche", "#Besoin prévu", "#Planifié", "Facteurs"], planned.map((x) => [esc(x.service), esc(x.slot), x.need, x.need > x.planned ? `<strong>${x.planned}</strong>` : x.planned, `<span class="muted">${esc(x.factors)}</span>`]))}
@@ -448,7 +462,7 @@
         `<strong>${esc(u.label)}</strong><div class="muted">${esc(u.code)}</div>`, esc(u.module), esc(u.model),
         select("aip-m-" + u.code.replace(".", "-"), u.modes.map((m) => [m, MODE[m]]), u.mode, `onchange="A.aip.setMode(${q(u.code)},this.value)" aria-label="Mode ${esc(u.label)}"`),
         `<input type="number" id="aip-b-${esc(u.code.replace(".", "-"))}" value="${u.budget}" min="0" step="1000" style="text-align:right;min-width:100px" aria-label="Budget ${esc(u.label)}">`,
-        `${money(u.used)} ${u.used >= u.budget ? badge("Plafond atteint", "dark") : u.used / u.budget >= 0.8 ? badge(pctTxt(u.used / u.budget), "on") : pctTxt(u.used / u.budget)}`, `<span class="muted">${esc(FALLBACK[u.code])}</span>`]))}
+        `${money(u.used)} ${u.used >= u.budget ? badge("Plafond atteint", "bad") : u.used / u.budget >= 0.8 ? badge(pctTxt(u.used / u.budget), "warn") : pctTxt(u.used / u.budget)}`, `<span class="muted">${esc(FALLBACK[u.code])}</span>`]))}
       <div class="cols">
         <section><h2>Maîtrise des coûts</h2>
           ${card("", `<div class="row between"><span>Plafond du tenant (Hôtel Exemple) ce mois</span><strong>${money(s)} / ${money(X.budget)}</strong></div>
@@ -463,14 +477,14 @@
         </section>
         <section><h2>Prompts versionnés</h2>
           ${tbl(["Prompt", "Version active", "#Score d'évaluation", ""], X.prompts.map((pr) => { const i = pr.versions.findIndex((v) => v[0] === pr.active)
-            return [esc(pr.code), badge(pr.active, "on"), pctTxt(pr.versions[i][1]), i > 0 ? btn(`Revenir à ${pr.versions[i - 1][0]}`, `A.aip.rollback(${q(pr.code)})`, "ghost sm") : `<span class="muted">première version</span>`] }))}
+            return [esc(pr.code), badge(pr.active, "ok"), pctTxt(pr.versions[i][1]), i > 0 ? btn(`Revenir à ${pr.versions[i - 1][0]}`, `A.aip.rollback(${q(pr.code)})`, "ghost sm") : `<span class="muted">première version</span>`] }))}
           <p class="muted">Jeux d'évaluation exécutés à chaque nouvelle version (EF-AIP-002).</p>
         </section>
       </div>
       <h2>Registre des modèles</h2>
       ${tbl(["Modèle", "Type", "Version", "Métrique", "Dernière évaluation", "Statut", "Périmètre de données", ""], X.models.map((m) => [
         `<strong>${esc(m.name)}</strong><div class="muted">${esc(m.id)}</div>`, esc(m.type), esc(m.version), esc(m.metric), fd(m.evalAt),
-        badge(m.status, m.status === "production" ? "on" : "outline"), esc(m.scope), btn("Réévaluer", `A.aip.evalModel(${q(m.id)})`, "ghost sm")]))}
+        badge(m.status, m.status === "production" ? "ok" : "info"), esc(m.scope), btn("Réévaluer", `A.aip.evalModel(${q(m.id)})`, "ghost sm")]))}
       <p class="muted">Aucune donnée de ce tenant n'entraîne un modèle d'un autre tenant sans accord et anonymisation (RG-AIP-01). Supervision de la dérive et des retours utilisateurs (EF-AIP-011).</p>`
   }
 
@@ -481,14 +495,14 @@
       "F-GUAR": g ? `${g.guarantee} (${g.id})` : "—", "F-VIB": "+35 % (EQ-1)", "F-RFD": "6,0 × (AN-41)" }[id] || "—"
   }
   const freshTxt = (m) => (m < 60 ? m + " min" : m < 1440 ? Math.round(m / 60) + " h" : Math.round(m / 1440) + " j")
-  const RUNST = { entraine: ["Entraîné", ""], valide: ["Validé", "outline"], canari: ["Canari 10 %", "outline"], production: ["En production", "on"], rejete: ["Rejeté", "dark"], retire: ["Retiré", "dark"] }
+  const RUNST = { entraine: ["Entraîné", "outline"], valide: ["Validé", "info"], canari: ["Canari 10 %", "warn"], production: ["En production", "ok"], rejete: ["Rejeté", "bad"], retire: ["Retiré", "outline"] }
   function mlops() {
     const stale = X.features.filter((f) => f.fresh > f.sla)
     return `<h2>Feature store <span class="muted" style="font-size:12px">EF-AIP-003</span></h2>
       <p class="muted">Variables calculées une fois et partagées par les modèles : stockage hors ligne (entraînement, lakehouse) et en ligne (prédiction en temps réel, alimenté par les événements). Valeurs servies calculées sur les données de la maquette.</p>
       ${stale.length ? `<p class="err">${stale.length} variable(s) au-delà de leur objectif de fraîcheur : ${esc(stale.map((f) => f.name).join(", "))}. Les prédictions qui les utilisent sont marquées « données anciennes ».</p>` : ""}
-      ${tbl(["Variable", "Entité", "Source", "En ligne", "Hors ligne", "Fraîcheur", "Valeur servie", "Modèles", ""], X.features.map((f) => [`<code>${esc(f.name)}</code>`, esc(f.entity), esc(f.src), f.online ? badge("Oui", "on") : "—", f.offline ? badge("Oui", "outline") : "—",
-        f.fresh > f.sla ? badge(`${freshTxt(f.fresh)} > ${freshTxt(f.sla)}`, "dark") : `${freshTxt(f.fresh)} <span class="muted">/ ${freshTxt(f.sla)}</span>`, esc(featureValue(f.id)), esc(f.used.join(", ")), btn("Rematérialiser", `A.aip.refreshFeature(${q(f.id)})`, "ghost sm")]))}
+      ${tbl(["Variable", "Entité", "Source", "En ligne", "Hors ligne", "Fraîcheur", "Valeur servie", "Modèles", ""], X.features.map((f) => [`<code>${esc(f.name)}</code>`, esc(f.entity), esc(f.src), f.online ? badge("Oui", "ok") : "—", f.offline ? badge("Oui", "ok") : "—",
+        f.fresh > f.sla ? badge(`${freshTxt(f.fresh)} > ${freshTxt(f.sla)}`, "bad") : `${freshTxt(f.fresh)} <span class="muted">/ ${freshTxt(f.sla)}</span>`, esc(featureValue(f.id)), esc(f.used.join(", ")), btn("Rematérialiser", `A.aip.refreshFeature(${q(f.id)})`, "ghost sm")]))}
       <div class="row" style="margin-top:10px">${btn("Rematérialiser tout le store", "A.aip.refreshFeature('*')", "ghost")}</div>
       <h2>Pipeline MLOps <span class="muted" style="font-size:12px">EF-AIP-004</span></h2>
       <div class="card">${form([
