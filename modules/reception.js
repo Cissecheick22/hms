@@ -38,13 +38,13 @@
     // #2 Réservations
     reservations(p) {
       const editing = p[0] === "new" ? {} : p[0] === "edit" ? R(p[1]) : null
-      const filters = { actives: ["confirmee", "arrivee"], toutes: Object.keys(STATUS), annulee: ["annulee"] }
+      const filters = { actives: ["confirmee", "arrivee"], toutes: Object.keys(STATUS), annulee: ["annulee", "noshow", "deloge"] }
       const list = D.reservations.filter((r) => filters[ui.resFilter].includes(r.status)).sort((a, b) => a.from.localeCompare(b.from))
       const days = Array.from({ length: 14 }, (_, i) => addDays(today, i))
       return `<div class="row between"><h1>Réservations</h1>${editing ? "" : `<button class="btn" onclick="go('reservations/new')">Nouvelle réservation</button>`}</div>
         <p class="lead">Créer, modifier ou annuler une réservation. La saisie est bloquée si le type de chambre est complet sur une des nuits.</p>
         ${editing ? resForm(editing) : ""}
-        <div class="chips">${Object.entries({ actives: "À venir et en séjour", toutes: "Toutes", annulee: "Annulées" }).map(([k, l]) =>
+        <div class="chips">${Object.entries({ actives: "À venir et en séjour", toutes: "Toutes", annulee: "Annulées, no-shows, délogés" }).map(([k, l]) =>
           `<button aria-pressed="${ui.resFilter === k}" onclick="ui.resFilter='${k}';render()">${l}</button>`).join("")}</div>
         ${tbl(["Réf.", "Client", "Arrivée", "Départ", "#Nuits", "Type", "#Tarif/nuit", "Garantie", "Statut", ""], list.map((r) => [
           esc(r.id), guestLink(r.guest) + vip(G(r.guest)), fd(r.from), fd(r.to), nights(r.from, r.to), esc(T(r.type).label), money(r.rate), esc(r.guarantee), pill(STATUS, r.status),

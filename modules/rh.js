@@ -497,7 +497,7 @@
     const days = Array.from({ length: 7 }, (_, i) => addDays(today, i))
     const rows = days.map((d) => {
       const occ = D.reservations.filter((r) => ["confirmee", "arrivee"].includes(r.status) && r.from <= d && d < r.to).length
-      const arr = D.reservations.filter((r) => r.from === d && r.status !== "annulee").length, dep = D.reservations.filter((r) => r.to === d && r.status !== "annulee").length
+      const arr = D.reservations.filter((r) => r.from === d && !["annulee", "noshow", "deloge"].includes(r.status)).length, dep = D.reservations.filter((r) => r.to === d && !["annulee", "noshow", "deloge"].includes(r.status)).length
       const ia = ui.hrForecast === "ia"
       const hk = ia ? Math.max(1, Math.ceil((occ * 0.45 + dep * 0.5 + arr * 0.2) / 7)) : Math.max(1, Math.ceil(occ / 12))
       const fo = ia ? 2 + (arr + dep > 6 ? 1 : 0) : 3

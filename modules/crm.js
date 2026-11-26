@@ -95,7 +95,7 @@
   const tierRank = (code) => S.tiers.findIndex((t) => t.code === code)
   const tierFor = (ytd) => [...S.tiers].reverse().find((t) => ytd >= t.min).code
   const cons = (id) => S.consents[id] || { email: false, sms: false, whatsapp: false, groupe: false, ia: false, date: "—", source: "Aucun" }
-  const staysOf = (id) => D.reservations.filter((r) => r.guest === id && r.status !== "annulee")
+  const staysOf = (id) => D.reservations.filter((r) => r.guest === id && !["annulee", "noshow", "deloge"].includes(r.status))
   const doneStays = (id) => D.reservations.filter((r) => r.guest === id && r.status === "partie")
   const revenueOf = (id) => staysOf(id).reduce((s, r) => s + folio(r).total, 0)
   const CEDEAO = ["Côte d'Ivoire", "Sénégal", "Ghana", "Mali", "Burkina Faso", "Togo", "Bénin", "Niger", "Guinée", "Nigeria"]

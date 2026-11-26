@@ -62,6 +62,10 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 - Mobile : `phone(html, titre)` dessine un cadre de téléphone.
 - Formats : `money(n)` (FCFA), `fd("2026-11-26")` → 26/11, `fdLong`, `addDays`, `nights`, `pct`, `uid(préfixe)`.
 - Sécurité : tout texte issu des données passe par `esc()` ; argument chaîne dans un `onclick` : `q(valeur)`.
+- Date hôtelière : `today` (globale) ; seul l'audit de nuit l'avance via `setBusinessDate(d)`. Lire `today` au moment du rendu, ne pas le figer dans une constante.
+- Statuts de réservation (`STATUS`) : confirmee, arrivee, partie, annulee, noshow, deloge. Un séjour « valide » exclut annulee, noshow et deloge.
+- Retenues d'inventaire : `holdRooms((type, date) => n)` pour des chambres bloquées sans réservation nominative (blocs) ; `available()` les déduit.
+- Passerelles entre modules : `A.mnt.external({ title, target, desc, source })` crée un ordre de travail ; `A.prc.externalRequest(libellé, coût, service)` crée une demande d'achat.
 - Cœur hôtelier partagé : `D.rooms`, `D.guests`, `D.reservations`, `G(id)`, `R(id)`, `T(code)`, `inHouse()`, `occupant(no)`, `folio(r)`, `today`.
 
 ## Règles
@@ -76,4 +80,7 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 
 ```bash
 NODE_PATH=<node_modules contenant playwright> node tests/smoke.cjs [dossier-captures]
+node tests/parcours.cjs   # réservation → check-in → POS → check-out → clé → bloc → OT
+node tests/groupes.cjs    # bloc de groupe → génération → cut-off → audit de nuit
+# URL=https://cissecheick22.github.io/hms/ pour tester le site en ligne
 ```

@@ -18,7 +18,9 @@ const fd = (s) => s.slice(8, 10) + "/" + s.slice(5, 7)
 const fdLong = (s) => day(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
 const wd = (s) => day(s).toLocaleDateString("fr-FR", { weekday: "short" })
 const money = (n) => Math.round(n).toLocaleString("fr-FR") + " " + D.currency
-const today = D.today
+// Date hôtelière : globale, avancée par l'audit de nuit (setBusinessDate). Les modules lisent `today` au moment du rendu.
+let today = D.today
+const setBusinessDate = (d) => { D.today = today = d }
 
 // ---------- Accès aux données ----------
 const G = (id) => D.guests.find((g) => g.id === id)
@@ -46,7 +48,7 @@ const folio = (r) => {
   return { lines, total, paid, balance: total - paid }
 }
 
-const STATUS = { confirmee: ["Confirmée", ""], arrivee: ["En séjour", "on"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"] }
+const STATUS = { confirmee: ["Confirmée", ""], arrivee: ["En séjour", "on"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"], noshow: ["No-show", "dark"], deloge: ["Délogé", "outline"] }
 const HK = { propre: ["Propre", "on"], sale: ["Sale", ""], inspection: ["En inspection", "outline"], hs: ["Hors commande", "dark"] } // hs = hors commande : retirée de la vente (RG-ORG-02). Le « hors service » vendable est un statut d'exploitation (org-chambres)
 const pill = (map, k) => `<span class="pill ${map[k][1]}">${esc(map[k][0])}</span>`
 const vip = (g) => (g.vip ? ` <span class="pill on">VIP</span>` : "")
@@ -147,6 +149,7 @@ const loadState = () => {
     const saved = JSON.parse(localStorage.getItem(STORE) || "null")
     if (!saved || saved.fp !== fingerprint) return
     syncInPlace(D, saved.D)
+    today = D.today
     Object.assign(ui, saved.ui, { encoding: null, done: null })
   } catch (e) {}
 }
@@ -167,6 +170,7 @@ function render() {
   if (r) return go(r)
   const nav = s.navAs || name
   document.querySelectorAll("#tabs button[data-id]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.id === nav)))
+  $("#ctx").textContent = `${D.hotel} · date hôtelière : ${fd(today)}/${today.slice(0, 4)}`
   $("#app").innerHTML = s.view(params)
   s.after?.(params)
   document.body.classList.remove("menu-open")

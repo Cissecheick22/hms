@@ -447,7 +447,7 @@
       ${tbl(["Contrôle", "État", "Détail"], checks.map((c) => [esc(c.label), c.ok ? badge("OK", "on") : badge(c.block ? "Bloquant" : "Avertissement", c.block ? "dark" : "outline"), esc(c.hint)]))}
       <div class="row" style="margin-top:12px">${run ? "" : btn(`Lancer l'audit du ${fd(S.biz)}`, "A.sej.runAudit()", blocked ? "" : "accent")}${blocked ? `<span class="muted">Audit bloqué tant qu'un contrôle bloquant n'est pas levé.</span>` : ""}</div></section>
       <section><h2>Étapes</h2>${AUDIT_STEPS.map((s, i) => `<div class="step"><b class="n">${i + 1}</b><div><strong>${esc(s)}</strong> ${run ? (run.step > i ? badge("Fait", "on") : run.step === i ? badge("En cours", "outline") : "") : ""}${run && run.notes[i] ? `<div class="muted">${esc(run.notes[i])}</div>` : ""}</div></div>`).join("")}
-      ${run && run.step >= AUDIT_STEPS.length ? `<p style="margin-top:14px">${badge("Audit terminé", "on")} Nouvelle date hôtelière : <strong>${esc(fdLong(S.biz))}</strong> (simulation : les autres écrans restent au ${fd(today)}).</p>${btn("Fermer le compte rendu", "A.sej.closeAudit()", "ghost sm")}` : ""}</section></div>
+      ${run && run.step >= AUDIT_STEPS.length ? `<p style="margin-top:14px">${badge("Audit terminé", "on")} Nouvelle date hôtelière : <strong>${esc(fdLong(S.biz))}</strong> (toute la maquette passe à cette date).</p>${btn("Fermer le compte rendu", "A.sej.closeAudit()", "ghost sm")}` : ""}</section></div>
       <h2>Audits archivés</h2>${tbl(["Date hôtelière", "Terminé à", "Par", "#No-shows", "#Taxe publiée", "#Chambres"], S.audits.map((a) => [fd(a.date), esc(a.at), esc(a.by), a.noshows, money(a.tax), a.rooms]))}`
   }
 
@@ -468,10 +468,10 @@
 
   // ---------- Indicateurs §8.12 et §9.12 ----------
   function kpiTab() {
-    const all = D.reservations, canc = all.filter((r) => r.status === "annulee" && !r.noShow && !r.walked), ns = all.filter((r) => r.noShow)
-    const expected = all.filter((r) => r.from <= S.biz && (r.status !== "annulee" || r.noShow))
+    const all = D.reservations, canc = all.filter((r) => r.status === "annulee"), ns = all.filter((r) => r.noShow)
+    const expected = all.filter((r) => r.from <= S.biz && !["annulee", "noshow", "deloge"].includes(r.status))
     const lead = all.map((r) => nights(meta(r).booked, r.from)).filter((n) => n >= 0)
-    const valid = all.filter((r) => r.status !== "annulee")
+    const valid = all.filter((r) => !["annulee", "noshow", "deloge"].includes(r.status))
     const rev = (k) => { const m = {}; valid.forEach((r) => { const key = meta(r)[k]; m[key] = (m[key] || 0) + nights(r.from, r.to) * r.rate }); return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value) }
     const stays = all.filter((r) => meta(r).mode), mob = stays.filter((r) => meta(r).mode === "mobile")
     const done = S.log.filter((e) => e.type === "Demande client" && e.doneMin).map((e) => e.doneMin).sort((a, b) => a - b)
@@ -656,7 +656,7 @@
   // Un bloc de groupe retient ses chambres non encore converties en réservations, jusqu'au cut-off
   holdRooms((type, date) => S.groups.reduce((n, g) => {
     if (g.released || ui.holdSkip === g.id || !(g.from <= date && date < g.to)) return n
-    const made = D.reservations.filter((r) => r.group === g.id && r.type === type && r.status !== "annulee").length
+    const made = D.reservations.filter((r) => r.group === g.id && r.type === type && !["annulee", "noshow", "deloge"].includes(r.status)).length
     return n + Math.max(0, (g.block[type] || 0) - made)
   }, 0))
 
@@ -736,7 +736,7 @@
     walk() {
       const r = R(val("wk-res")), h = S.partners.find((x) => x.name === val("wk-hotel")), taxi = Number(val("wk-taxi")) || 0
       if (!confirm(`Déloger ${gname(r)} vers ${h.name} ?`)) return
-      Object.assign(r, { status: "annulee", walked: true })
+      Object.assign(r, { status: "deloge", walked: true })
       S.walks.unshift({ id: uid("W"), date: S.biz, name: gname(r), hotel: h.name, nights: 1, cost: h.rate + taxi, comp: val("wk-comp") })
       toast(`${gname(r)} délogé — réservation transmise à ${h.name} (simulé)`)
       render()
@@ -752,7 +752,7 @@
     noshow(id, silent) {
       const r = R(id), amount = penalty(r)
       if (!silent && !confirm(`Déclarer ${id} en no-show ? Pénalité : ${money(amount)} (${penaltyText(r)}).`)) return
-      Object.assign(r, { status: "annulee", noShow: true })
+      Object.assign(r, { status: "noshow", noShow: true })
       if (["Carte bancaire", "Compte société"].includes(r.guarantee)) {
         logPay({ resId: id, mode: r.guarantee === "Carte bancaire" ? "Carte (jeton PSP)" : "City ledger", amount, note: "Pénalité no-show", shift: undefined })
         D.payments[id] = (D.payments[id] || 0) + amount
@@ -841,7 +841,7 @@
         () => { const l = pendingArr(date); l.forEach((r) => sej.noshow(r.id, true)); res.noshows = l.length; return l.length ? `${l.length} no-show(s) : ${l.map((r) => r.id).join(", ")}` : "Aucun no-show." },
         () => { const l = inHouse().filter((r) => r.to > date); l.forEach((r) => (D.extras[r.id] = D.extras[r.id] || []).push({ label: `Taxe de séjour — nuit du ${fd(date)}`, amount: TAXE, code: "TAXE" })); res.rooms = l.length; res.tax = l.length * TAXE; return `${money(res.tax)} sur ${l.length} folio(s) (nuitées déjà valorisées au folio)` },
         () => "Rapport d'occupation, main courante, balance des folios et caisses archivés (PDF simulé).",
-        () => { S.biz = addDays(date, 1); S.audits.unshift({ date, at: nowT(), by: USER, ...res }); return `Date hôtelière : ${fd(S.biz)}` },
+        () => { S.biz = addDays(date, 1); setBusinessDate(S.biz); S.audits.unshift({ date, at: nowT(), by: USER, ...res }); return `Date hôtelière : ${fd(S.biz)}` },
       ]
       const next = () => {
         run.notes[run.step] = work[run.step]()
