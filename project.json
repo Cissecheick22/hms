@@ -7,7 +7,7 @@
     "owner": "Cissecheick22",
     "repo": "Cissecheick22/hms",
     "visibility": "public",
-    "project_number": null
+    "project_number": 7
   },
   "created": "2026-11-26",
   "cadrage": {
@@ -87,7 +87,8 @@
       "scope": "Maquette",
       "priority": "P1",
       "status": "Prêt",
-      "body": "Le réceptionniste voit en un écran les arrivées, départs, clients présents, chambres prêtes, VIP et demandes spéciales du jour.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "Le réceptionniste voit en un écran les arrivées, départs, clients présents, chambres prêtes, VIP et demandes spéciales du jour.\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 1
     },
     {
       "key": "ecran-2",
@@ -96,7 +97,8 @@
       "scope": "Maquette",
       "priority": "P1",
       "status": "Prêt",
-      "body": "Le réceptionniste crée, modifie et annule une réservation (dates, type de chambre, tarif, client, garantie) et consulte le planning des disponibilités.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "Le réceptionniste crée, modifie et annule une réservation (dates, type de chambre, tarif, client, garantie) et consulte le planning des disponibilités.\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 2
     },
     {
       "key": "ecran-3",
@@ -105,7 +107,8 @@
       "scope": "Maquette",
       "priority": "P1",
       "status": "Prêt",
-      "body": "Le réceptionniste attribue une chambre, vérifie l'identité du client puis encode sa carte d'accès en une seule action (simulée dans la maquette).\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "Le réceptionniste attribue une chambre, vérifie l'identité du client puis encode sa carte d'accès en une seule action (simulée dans la maquette).\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 3
     },
     {
       "key": "ecran-4",
@@ -114,7 +117,8 @@
       "scope": "Maquette",
       "priority": "P2",
       "status": "Prêt",
-      "body": "Le réceptionniste contrôle le folio du séjour, encaisse, édite la facture et révoque la clé du client.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "Le réceptionniste contrôle le folio du séjour, encaisse, édite la facture et révoque la clé du client.\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 4
     },
     {
       "key": "ecran-5",
@@ -123,7 +127,8 @@
       "scope": "Maquette",
       "priority": "P2",
       "status": "Prêt",
-      "body": "La gouvernante voit et met à jour l'état de chaque chambre (propre, sale, en inspection, hors service) et répartit les tâches des femmes de chambre.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "La gouvernante voit et met à jour l'état de chaque chambre (propre, sale, en inspection, hors service) et répartit les tâches des femmes de chambre.\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 5
     },
     {
       "key": "ecran-6",
@@ -132,7 +137,8 @@
       "scope": "Maquette",
       "priority": "P2",
       "status": "Prêt",
-      "body": "Le réceptionniste consulte et met à jour les coordonnées, l'historique des séjours et les préférences d'un client.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+      "body": "Le réceptionniste consulte et met à jour les coordonnées, l'historique des séjours et les préférences d'un client.\n\nDans index.html / data.js, données factices seulement (dépôt public).",
+      "issue": 6
     },
     {
       "key": "validation-maquette",
@@ -140,7 +146,8 @@
       "category": "Cheick",
       "scope": "Retours",
       "priority": "P1",
-      "body": "Parcourir la maquette publiée, noter les retours en commentaire. Une fois validée : passer en projet complet sur le même cadrage ; la maquette devient la maquette globale."
+      "body": "Parcourir la maquette publiée, noter les retours en commentaire. Une fois validée : passer en projet complet sur le même cadrage ; la maquette devient la maquette globale.",
+      "issue": 7
     }
   ]
 }
