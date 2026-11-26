@@ -57,5 +57,90 @@
       "Plus tard (spec phases 19-21) : applications mobiles, hub d'intégration, exploitation SaaS multi-tenant",
       "Plus tard : multi-établissements et vue groupe"
     ]
-  }
+  },
+  "checklist": {
+    "tools": "2026-11-26",
+    "new": "2026-11-26",
+    "gh-auth": "2026-11-26",
+    "idea": "2026-11-26",
+    "first-commit": "2026-11-26",
+    "mode": "2026-11-26",
+    "naming": "2026-11-26"
+  },
+  "board": {
+    "scopes": [
+      "Maquette",
+      "Retours"
+    ],
+    "categories": [
+      "Code",
+      "Cowork",
+      "VPS",
+      "Cheick"
+    ]
+  },
+  "first_tickets": [
+    {
+      "key": "ecran-1",
+      "title": "Écran : Tableau de bord de la réception",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P1",
+      "status": "Prêt",
+      "body": "Le réceptionniste voit en un écran les arrivées, départs, clients présents, chambres prêtes, VIP et demandes spéciales du jour.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "ecran-2",
+      "title": "Écran : Réservations",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P1",
+      "status": "Prêt",
+      "body": "Le réceptionniste crée, modifie et annule une réservation (dates, type de chambre, tarif, client, garantie) et consulte le planning des disponibilités.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "ecran-3",
+      "title": "Écran : Check-in avec émission de clé",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P1",
+      "status": "Prêt",
+      "body": "Le réceptionniste attribue une chambre, vérifie l'identité du client puis encode sa carte d'accès en une seule action (simulée dans la maquette).\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "ecran-4",
+      "title": "Écran : Check-out et facture",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P2",
+      "status": "Prêt",
+      "body": "Le réceptionniste contrôle le folio du séjour, encaisse, édite la facture et révoque la clé du client.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "ecran-5",
+      "title": "Écran : Statut des chambres (housekeeping)",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P2",
+      "status": "Prêt",
+      "body": "La gouvernante voit et met à jour l'état de chaque chambre (propre, sale, en inspection, hors service) et répartit les tâches des femmes de chambre.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "ecran-6",
+      "title": "Écran : Fiche client",
+      "category": "Code",
+      "scope": "Maquette",
+      "priority": "P2",
+      "status": "Prêt",
+      "body": "Le réceptionniste consulte et met à jour les coordonnées, l'historique des séjours et les préférences d'un client.\n\nDans index.html / data.js, données factices seulement (dépôt public)."
+    },
+    {
+      "key": "validation-maquette",
+      "title": "Validation de la maquette (specs)",
+      "category": "Cheick",
+      "scope": "Retours",
+      "priority": "P1",
+      "body": "Parcourir la maquette publiée, noter les retours en commentaire. Une fois validée : passer en projet complet sur le même cadrage ; la maquette devient la maquette globale."
+    }
+  ]
 }
