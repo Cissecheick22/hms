@@ -42,7 +42,8 @@
       { id: "SB-106", res: "R-2048", client: null, t: "S3", pr: "P1", cab: "CAB1", start: "16:00", pay: "forfait", status: "confirme", health: true },
       { id: "SB-107", res: "R-2051", client: null, t: "S5", pr: "P3", cab: "CAB3", start: "17:00", pay: "folio", status: "confirme", health: false },
     ],
-    access: [{ room: "203", until: "26/11 23:59", zone: "Spa, piscine" }, { room: "302", until: "28/11 12:00", zone: "Spa, piscine, gym (forfait)" }],
+    access: [{ room: "203", res: "R-2044", until: "26/11 23:59", zone: "Spa, piscine" }, { room: "302", res: "R-2048", until: "28/11 12:00", zone: "Spa, piscine, gym (forfait)" }],
+    accessLog: [], // droits retirés au check-out (carte #61)
     packages: [
       { id: "PK1", name: "Forfait Détente Lagune", rat: "Package tarifaire DETENTE-2N", incl: ["S6", "S3"], access: "Spa, piscine, gym pendant le séjour", stays: ["R-2048"] },
       { id: "PK2", name: "Escapade bien-être 1 nuit", rat: "Package tarifaire BIEN-1N", incl: ["S1"], access: "Spa et piscine le jour du soin", stays: [] },
@@ -91,6 +92,20 @@
   const AI_DONE = { promo: "Créneaux soin visage 15:00 et 16:00 mis en avant dans l'application client", grid: "Grille de demain recalée sur 75 min pour les massages" }
   const aiAct = (k, label) => (S.ai[k] ? badge("Appliqué", "on") + " " + muted(AI_DONE[k]) : btn(label, `A.spa.ai(${q(k)})`, "ghost sm"))
   const pkgOf = (resId) => S.packages.find((p) => p.stays.includes(resId))
+  // Décrément des stocks dans Achats (carte #61) : sans effet si l'API n'est pas chargée
+  const consume = (lines) => { A.prc && A.prc.consume && A.prc.consume(lines, "Spa") }
+  // Droits spa retirés quand le séjour n'est plus en cours (check-out, no-show, annulation, délogement)
+  const purgeAccess = () => {
+    if (!S.accessLog) S.accessLog = []
+    const keep = []
+    S.access.forEach((a) => {
+      const r = a.res ? R(a.res) : occupant(a.room)
+      if (r && ["arrivee", "confirmee"].includes(r.status)) keep.push(a)
+      else S.accessLog.unshift({ room: a.room, zone: a.zone, at: fd(today), reason: r ? `séjour ${r.id} : ${STATUS[r.status][0].toLowerCase()}` : "plus de séjour en cours" })
+    })
+    if (keep.length !== S.access.length) S.access.splice(0, S.access.length, ...keep)
+  }
+  purgeAccess()
 
   // Contrôle de disponibilité simultanée praticien + cabine + équipement (EF-SPA-002, RG-SPA-01)
   function conflicts(tId, start, prId, cabId, exceptId) {
@@ -122,11 +137,13 @@
   const TABS = [["agenda", "Agenda"], ["rdv", "Rendez-vous"], ["catalogue", "Catalogue"], ["forfaits", "Forfaits et abonnements"], ["boutique", "Boutique"], ["pilotage", "KPI et IA"]]
   const views = {
     spa(p) {
+      purgeAccess()
       const tab = p[0] || "agenda"
       return pageHead("Spa", `${fdLong(today)} · heure simulée ${S.now}. Données d'exemple ; badges et clés d'accès simulés (Contrôle d'accès).`, btn("Nouveau rendez-vous", "go('spa/rdv')"))
         + subtabs("spa", TABS, tab) + ({ agenda, rdv, catalogue, forfaits, boutique, pilotage }[tab] || agenda)(p.slice(1))
     },
     loisirs() {
+      purgeAccess()
       const ih = inHouse().sort((a, b) => a.room.localeCompare(b.room))
       const acts = [...S.activities].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
       return pageHead("Loisirs et services annexes", "Excursions, locations, navettes et golf avec gestion de capacité (EF-SPA-009). Prestataires partenaires et tarifs d'exemple.")
@@ -226,7 +243,8 @@
           return `<p style="margin:8px 0 0">Ch. ${esc(r.room)} · ${esc(G(r.guest).name)} : ${used.length}/${p.incl.length} soins planifiés (${used.filter((b) => b.status === "termine").length} effectué)</p>` }).join("") || `<p class="muted" style="margin-top:8px">Aucun séjour en cours avec ce forfait.</p>`}`)).join("")}</div>
       <h2>Accès aux installations (EF-SPA-005)</h2>
       ${tbl(["Chambre", "Zones", "Valable jusqu'au"], S.access.map((a) => [`Ch. ${esc(a.room)}`, esc(a.zone), esc(a.until)]))}
-      <p class="muted">Droits ajoutés automatiquement à la clé du client à la réservation d'un soin ou d'un forfait, retirés au check-out (simulé).</p>
+      <p class="muted">Droits ajoutés automatiquement à la clé du client à la réservation d'un soin ou d'un forfait, retirés dès que le séjour n'est plus en cours (check-out, no-show, annulation). Contrôle d'accès simulé.</p>
+      ${S.accessLog.length ? tbl(["Chambre", "Zones retirées", "Date", "Motif"], S.accessLog.slice(0, 8).map((x) => [`Ch. ${esc(x.room)}`, esc(x.zone), esc(x.at), esc(x.reason)])) : ""}
       <h2>Abonnements membres externes (EF-SPA-004)</h2>
       ${tbl(["Membre", "Formule", "#Cotisation", "Validité", "Badge", ""], S.members.map((m) => { const exp = m.until < today, soon = !exp && nights(today, m.until) <= 15
         return [`${esc(m.name)}<div class="muted">${esc(m.card)}</div>`, esc(m.formula), money(m.fee), `${fd(m.until)}/${m.until.slice(0, 4)} ${exp ? badge("Expiré", "dark") : soon ? badge("Expire bientôt", "outline") : ""}`,
@@ -294,7 +312,7 @@
       const id = "SB-" + S.seq++
       S.bookings.push({ id, res: resId || null, client: resId ? null : ext, t: tId, pr, cab, start, pay, status: "confirme", health: !!$("#sb-health").checked })
       let msg = `Rendez-vous ${start} confirmé`
-      if (r && r.room) { S.access.push({ room: r.room, until: `${fd(today)} 23:59`, zone: "Spa, piscine" }); msg += ` · accès spa ajouté à la clé ch. ${r.room} (simulé)` }
+      if (r && r.room) { S.access.push({ room: r.room, res: r.id, until: `${fd(today)} 23:59`, zone: "Spa, piscine" }); msg += ` · accès spa ajouté à la clé ch. ${r.room} (simulé)` }
       toast(msg); go("spa/rdv/" + id)
     },
     ai(k) { S.ai[k] = true; toast(AI_DONE[k]); render() },
@@ -307,6 +325,7 @@
       }
       if (b.pay === "forfait") post(r, `Spa — ${t.name} (inclus au forfait)`, 0)
       b.status = "termine"
+      consume([{ label: t.name, qty: 1 }])
       toast(b.pay === "folio" ? `${money(t.price)} imputés au folio ch. ${r.room}` : b.pay === "direct" ? `${money(t.price)} encaissés (TPE simulé)` : "Soin décompté du forfait / de l'abonnement")
       render()
     },
@@ -341,6 +360,7 @@
       let mode = "Direct"
       if (m !== "direct") { const r = R(m); post(r, `Boutique spa — ${n} × ${p.name}`, n * p.price); mode = `Folio ch. ${r.room}` }
       S.sales.push({ product: p.id, qty: n, amount: n * p.price, mode })
+      consume([{ label: p.name, qty: n }])
       toast(p.stock < p.min ? `Vendu · stock sous le seuil, alerte envoyée aux Achats` : "Vente enregistrée"); render()
     },
     register() {

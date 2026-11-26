@@ -87,7 +87,7 @@
         body = split(
           `<div class="list">${EVENTS.map((e) => `<button aria-current="${e === ev}" onclick="ui.archEvent=${q(e[0])};render()"><strong style="font-family:ui-monospace,monospace;font-size:13px">${esc(e[0])}</strong><div class="muted">${esc(e[1])} → ${esc(e[2].split(" ").length)} module(s)</div></button>`).join("")}</div>`,
           card("", `<div class="big" style="font-family:ui-monospace,monospace;font-size:17px">${esc(ev[0])}</div><p>${esc(ev[3])}</p>
-            <div class="row" style="margin:10px 0">${badge("Producteur : " + ev[1], "dark")} ${badge(cons.length + " consommateur(s)", "on")}</div>
+            <div class="row" style="margin:10px 0">${badge("Producteur : " + ev[1], "info")} ${badge(cons.length + " consommateur(s)", "on")}</div>
             <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px">${MODULES.map((m) => box(m, "", m === ev[1] ? "on" : cons.includes(m) ? "" : "dim")).join("")}</div>
             <p class="muted" style="margin-top:12px">Publication par outbox puis Kafka, enveloppe CloudEvents (tenant, établissement, corrélation). Consommateurs idempotents.</p>`))
       } else body = tbl(["ID", "Exigence", "Cible"], ENF.map((r) => [`<strong>${esc(r[0])}</strong>`, esc(r[1]), esc(r[2])]))

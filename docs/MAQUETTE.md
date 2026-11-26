@@ -7,11 +7,15 @@ But : une maquette cliquable qui représente **tous les modules** de la spécifi
 
 | Fichier | Rôle |
 |---|---|
-| `index.html` | Coquille : styles, en-tête, menu latéral, liste des `<script>` des modules |
+| `index.html` | Coque : charte (celle de l'agent SAV), écran de connexion, menu latéral repliable, en-tête, liste des `<script>` des modules |
 | `data.js` | Données d'exemple du cœur hôtelier (chambres, clients, réservations, folios) |
 | `core.js` | Utilitaires partagés, composants d'interface, registre des modules, routeur |
 | `modules/<module>.js` | Un fichier par module de la spec : ses données d'exemple, ses écrans, ses actions |
 | `tests/smoke.cjs` | Test de fumée : visite chaque écran et sous-onglet, échoue sur erreur JS ou écran vide |
+
+## Connexion et rôles
+
+Comptes de démonstration dans `core.js` (`USERS`, mot de passe `demo1234`) : direction et administrateur voient tout, réception, gouvernante et comptabilité voient leurs groupes du menu (+ `extra`). Un écran hors périmètre affiche « Accès refusé ». Icône d'un écran : `SCREEN_ICON[id]` dans `core.js`.
 
 ## Écrire un module
 
@@ -62,6 +66,10 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 - Mobile : `phone(html, titre)` dessine un cadre de téléphone.
 - Formats : `money(n)` (FCFA), `fd("2026-11-26")` → 26/11, `fdLong`, `addDays`, `nights`, `pct`, `uid(préfixe)`.
 - Sécurité : tout texte issu des données passe par `esc()` ; argument chaîne dans un `onclick` : `q(valeur)`.
+- Date hôtelière : `today` (globale) ; seul l'audit de nuit l'avance via `setBusinessDate(d)`. Lire `today` au moment du rendu, ne pas le figer dans une constante.
+- Statuts de réservation (`STATUS`) : confirmee, arrivee, partie, annulee, noshow, deloge. Un séjour « valide » exclut annulee, noshow et deloge.
+- Retenues d'inventaire : `holdRooms((type, date) => n)` pour des chambres bloquées sans réservation nominative (blocs) ; `available()` les déduit.
+- Passerelles entre modules : `A.mnt.external({ title, target, desc, source })` crée un ordre de travail ; `A.prc.externalRequest(libellé, coût, service)` crée une demande d'achat.
 - Cœur hôtelier partagé : `D.rooms`, `D.guests`, `D.reservations`, `G(id)`, `R(id)`, `T(code)`, `inHouse()`, `occupant(no)`, `folio(r)`, `today`.
 
 ## Règles
@@ -76,4 +84,7 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 
 ```bash
 NODE_PATH=<node_modules contenant playwright> node tests/smoke.cjs [dossier-captures]
+node tests/parcours.cjs   # réservation → check-in → POS → check-out → clé → bloc → OT
+node tests/groupes.cjs    # bloc de groupe → génération → cut-off → audit de nuit
+# URL=https://cissecheick22.github.io/hms/ pour tester le site en ligne
 ```

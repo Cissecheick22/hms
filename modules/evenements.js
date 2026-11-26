@@ -31,7 +31,14 @@
           { label: "Technicien son et lumière", qty: 2, unit: 75000, kind: "Technique" }],
         deposits: [{ label: "Acompte 30 % à la signature", due: "2026-10-30", pct: 0.3, paid: true }, { label: "Acompte 40 % à J-15", due: "2026-11-12", pct: 0.4, paid: true }, { label: "Solde à la fin de l'événement", due: "2026-11-28", pct: 0.3, paid: false }],
         block: { type: "STD", rooms: 4, from: "2026-11-27", to: "2026-11-29", rate: 40000, cutoff: "2026-11-20", picked: 3, created: true, released: false },
-        beo: true, access: [] },
+        beo: true, access: [],
+        portal: { validated: null, validatedV: null }, pSeq: 6,
+        participants: [
+          { id: "P1", name: "Kouamé Assi", company: "Société Ivoirienne Exemple", role: "Organisateur", badge: null },
+          { id: "P2", name: "Adjoua Konan", company: "Société Ivoirienne Exemple", role: "Participant", badge: null },
+          { id: "P3", name: "Moussa Traoré", company: "Société Ivoirienne Exemple", role: "Participant", badge: null },
+          { id: "P4", name: "Christelle Beugré", company: "Cabinet Akwaba Exemple", role: "Intervenante", badge: null },
+          { id: "P5", name: "Yao N'Guessan", company: "Société Ivoirienne Exemple", role: "Participant", badge: null }] },
       { id: "E-302", name: "Mariage", org: "Famille Kouassi (exemple)", contact: "estelle.kouassi@exemple.test", type: "Mariage", status: "option", due: "2026-11-28", quote: "envoye", master: null,
         guaranteed: 170, actual: null, menu: 32000,
         fns: [
@@ -76,6 +83,21 @@
     seq: 308, draft: {}, rule: null,
   }
   Object.assign(ui, { evtSel: "E-301" })
+  // Linge de banquet (carte #61) : besoin par fonction selon la configuration, demande créée au passage en définitif
+  const LINEN = { NAP: "Nappes rondes", STB: "Serviettes de table" }
+  const fnLinen = (f) => {
+    const c = f.covers
+    if (f.config === "banquet") return { NAP: Math.ceil(c / 8) + 1, STB: Math.ceil(c * 1.1) }
+    if (f.config === "cocktail") return { NAP: Math.ceil(c / 15) + 2, STB: Math.ceil(c * 1.5) }
+    if (f.config === "theatre") return { NAP: 2, STB: 0 }
+    return { NAP: Math.ceil(c / 4), STB: c } // classe, conseil : tables nappées, serviettes des pauses
+  }
+  const linenNeed = (e) => e.fns.filter((f) => f.date >= today).reduce((n, f) => { const x = fnLinen(f); n.NAP += x.NAP; n.STB += x.STB; return n }, { NAP: 0, STB: 0 })
+  const requestLinen = (e) => {
+    if (e.linen && e.linen.status === "sortie") return
+    const need = linenNeed(e)
+    e.linen = { ...need, status: "demandee", at: today }
+  }
   const V = D.evt
   const E = (id) => V.events.find((e) => e.id === id)
   const RM = (id) => V.rooms.find((r) => r.id === id)
@@ -92,6 +114,7 @@
   V.events.forEach((e) => e.deposits.forEach((d) => { if (d.paid && d.amt == null) d.amt = Math.round(amount(e) * d.pct) }))
   // RG-EVT-01 : les options échues expirent automatiquement (au chargement, date hôtelière)
   V.events.forEach((e) => { if (e.status === "option" && e.due < today) Object.assign(e, { status: "annule", reason: `Option expirée le ${fdy(e.due)} (automatique)` }) })
+  V.events.forEach((e) => { if (e.status === "definitif" && !e.linen) requestLinen(e) })
 
   // Conflits d'une fonction avec les événements qui bloquent l'espace (option ou définitif)
   function clashes(f, exceptEvt, exceptFn) {
@@ -106,12 +129,12 @@
   const allClashes = () => V.events.filter((e) => e.status !== "annule").flatMap((e) => e.fns.filter((f) => clashes(f, e.id, f.id).length).map((f) => ({ e, f })))
 
   // ---------- Écran ----------
-  const TABS = [["pipeline", "Pipeline et devis"], ["agenda", "Agenda des espaces"], ["fiche", "Fiche événement"], ["salles", "Salles"], ["facturation", "Facturation"], ["pilotage", "KPI et IA"]]
+  const TABS = [["pipeline", "Pipeline et devis"], ["agenda", "Agenda des espaces"], ["fiche", "Fiche événement"], ["portail", "Portail organisateur"], ["salles", "Salles"], ["facturation", "Facturation"], ["pilotage", "KPI et IA"]]
   const views = {
     evt(p) {
       const tab = p[0] || "pipeline"
       return pageHead("Événements et MICE", "Séminaires, banquets, mariages : du devis à la facture. Montants d'exemple ; signature électronique et accès aux salles simulés.", btn("Nouvelle demande", "go('evt/pipeline');setTimeout(()=>document.getElementById('ev-name')?.focus(),50)"))
-        + subtabs("evt", TABS, tab) + ({ pipeline, agenda, fiche, salles, facturation, pilotage }[tab] || pipeline)(p.slice(1))
+        + subtabs("evt", TABS, tab) + ({ pipeline, agenda, fiche, portail, salles, facturation, pilotage }[tab] || pipeline)(p.slice(1))
     },
   }
 
@@ -174,13 +197,20 @@
         ${field("fn-conf", "Configuration", select("fn-conf", Object.entries(CONF), "banquet"))}${field("fn-cov", "Couverts", input("fn-cov", e.guaranteed, 'type="number" min="1"'))}
         <div style="align-self:end">${btn("Ajouter", `A.evt.addFn(${q(e.id)})`, "ghost")}</div><div class="full" id="fn-err"></div></div>` : ""}
 
-      <h3>Fiches de fonction (BEO)</h3>
+      <h3>Fiches de fonction (BEO) ${muted("EF-EVT-004")}</h3>
       ${e.beo ? e.fns.map((f) => `<div class="card" style="margin-bottom:8px"><div class="row between"><strong>BEO ${esc(e.id)}-${esc(f.id)} · ${esc(f.label)}</strong>${badge(`Version ${e.beoV || 1} diffusée`, "outline")}</div>
         <div class="muted">${fdy(f.date)} · ${f.start}–${f.end} · ${esc(RM(f.room).name)} en ${esc(CONF[f.config].toLowerCase())} · ${f.covers} couverts</div>
         <p style="margin:6px 0 0"><strong>Installation :</strong> ${esc(CONF[f.config])}, pupitre, signalétique à l'entrée. <strong>Technique :</strong> ${esc(RM(f.room).equip)}.<br>
-        <strong>Restauration :</strong> ${f.config === "cocktail" ? "pièces salées et sucrées, bar à jus" : f.config === "banquet" ? `menu à ${money(e.menu)} par couvert, service à l'assiette` : "pauses café 10:30 et 15:30, déjeuner buffet"}. <strong>Personnel :</strong> ${Math.ceil(f.covers / 20)} serveurs, 1 maître d'hôtel${f.config !== "cocktail" ? ", 1 technicien" : ""}.</p></div>`).join("")
+        <strong>Restauration :</strong> ${f.config === "cocktail" ? "pièces salées et sucrées, bar à jus" : f.config === "banquet" ? `menu à ${money(e.menu)} par couvert, service à l'assiette` : "pauses café 10:30 et 15:30, déjeuner buffet"}. <strong>Personnel :</strong> ${Math.ceil(f.covers / 20)} serveurs, 1 maître d'hôtel${f.config !== "cocktail" ? ", 1 technicien" : ""}.<br>
+        <strong>Horaires :</strong> mise en place ${hm(Math.max(0, mins(f.start) - 90))}, accueil ${hm(Math.max(0, mins(f.start) - 15))}, début ${f.start}, fin ${f.end}, démontage jusqu'à ${hm(Math.min(24 * 60 - 1, mins(f.end) + 60))}.
+        <strong>Linge :</strong> ${fnLinen(f).NAP} nappes, ${fnLinen(f).STB} serviettes.</p>
+        ${f.note ? `<p style="margin:6px 0 0"><strong>Consignes :</strong> ${esc(f.note)}</p>` : ""}
+        ${editable ? `<div class="row" style="margin-top:6px">${input(`beo-n-${f.id}`, f.note || "", 'placeholder="Consigne particulière (allergies, décoration, horaires…)" style="flex:1;min-width:200px"')}${btn("Enregistrer dans la BEO", `A.evt.beoNote(${q(e.id)}, ${q(f.id)})`, "ghost sm")}</div>` : ""}</div>`).join("")
         + btn("Republier les BEO aux services", `A.evt.beo(${q(e.id)})`, "ghost sm")
         : `<p class="muted">Générés à la confirmation en définitif (US-EVT-01).</p>`}
+
+      <h3>Linge de banquet</h3>
+      ${linenBox(e)}
 
       <h3>Couverts (EF-EVT-006)</h3>
       <div class="form">${field("ev-gar", "Minimum garanti", input("ev-gar", e.guaranteed, 'type="number" min="0"'))}${field("ev-act", "Réel constaté", input("ev-act", e.actual ?? "", 'type="number" min="0" placeholder="après service"'))}
@@ -204,6 +234,40 @@
       ${tbl(["Bénéficiaire", "Espace", "Jusqu'au"], e.access.map((a) => [esc(a.who), esc(a.zone), esc(a.until)]), "Aucun accès accordé.")}
       ${e.status === "definitif" ? `<div class="row" style="margin-top:8px">${btn("Badge organisateur pour la durée de l'événement", `A.evt.access(${q(e.id)})`, "ghost sm")}</div>` : ""}
     </div>`
+  }
+
+  function linenBox(e) {
+    const need = linenNeed(e), l = e.linen, lc = (D.bln && D.bln.stock["Lingerie centrale"]) || {}
+    if (!l) return `<p class="muted">Besoin estimé : ${need.NAP} nappes, ${need.STB} serviettes de table. La demande est transmise à la buanderie au passage en définitif.</p>`
+    const rows = Object.keys(LINEN).map((k) => [esc(LINEN[k]), l[k], lc[k] ?? "—", (lc[k] || 0) >= l[k] ? badge("Disponible", "on") : badge("Stock insuffisant", "dark")])
+    return `<p style="margin:0">${l.status === "sortie" ? badge(`Linge sorti vers le Restaurant le ${fd(l.out)}`, "on") : badge(`Demande transmise à la buanderie le ${fd(l.at)}`, "outline")}</p>
+      ${tbl(["Article", "#Demandé", "#Stock lingerie centrale", ""], rows)}
+      ${l.status !== "sortie" && D.bln ? `<div class="row" style="margin-top:6px">${btn("Sortir le linge de la lingerie vers le Restaurant", `A.evt.linenOut(${q(e.id)})`, "ghost sm")}</div>` : ""}
+      <p class="muted">Stock lu dans Linge et buanderie ; la sortie met à jour ses stocks par lieu.</p>`
+  }
+
+  // EF-EVT-009 : portail organisateur — validation du programme et des BEO, liste des participants, badges
+  function portail() {
+    const list = V.events.filter((x) => ["option", "definitif"].includes(x.status))
+    const e = list.find((x) => x.id === ui.evtSel) || list[0]
+    if (!e) return `<p class="muted">Aucun événement en option ou définitif.</p>`
+    if (!e.participants) Object.assign(e, { participants: [], portal: { validated: null, validatedV: null }, pSeq: 1 })
+    const v = e.beoV || 1, cap = Math.max(...e.fns.map((f) => f.covers)), valid = e.portal.validated && e.portal.validatedV === v
+    const sel = `<div class="chips">${list.map((x) => `<button aria-pressed="${x.id === e.id}" onclick="ui.evtSel=${q(x.id)};render()">${esc(x.name)} — ${esc(x.org)}</button>`).join("")}</div>`
+    const prog = tbl(["Date", "Horaire", "Espace", "#Couverts"], e.fns.map((f) => [fdy(f.date), `${f.start}–${f.end}`, `${esc(RM(f.room).name)}<div class="muted">${esc(f.label)}</div>`, f.covers]))
+    return `${sel}<p class="muted">Vue de l'organisateur (${esc(e.contact)}), accès par lien sécurisé envoyé par e-mail (simulé). EF-EVT-009</p>
+      <div class="cols"><section>${card("1. Programme et fiches de fonction", `${prog}
+        <p style="margin:8px 0">${!e.beo ? badge("BEO non encore générés (événement en option)", "outline") : valid ? badge(`Validé le ${fd(e.portal.validated)} (version ${v})`, "on") : e.portal.validated ? badge(`Version ${v} modifiée depuis votre validation`, "dark") : badge("À valider", "outline")}</p>
+        ${e.beo && !valid ? btn(`Valider le programme et les BEO (version ${v})`, `A.evt.portalValidate(${q(e.id)})`, "accent") : ""}`)}
+        <div style="height:14px"></div>
+        ${card("3. Badges", `${e.participants.length ? `<div class="grid">${e.participants.filter((x) => x.badge).map((x) => `<div class="card" style="padding:10px;text-align:center"><div class="muted">${esc(e.name)}</div><strong>${esc(x.name)}</strong><div>${esc(x.company)}</div>${badge(x.role, x.role === "Participant" ? "outline" : "on")}<div class="muted">${esc(x.badge)} · QR simulé</div></div>`).join("")}</div>` : ""}
+          <p class="muted">${e.participants.filter((x) => x.badge).length}/${e.participants.length} badge(s) édité(s).</p>
+          ${e.participants.some((x) => !x.badge) ? btn("Générer les badges manquants", `A.evt.badges(${q(e.id)})`, "sm") : ""}`)}</section>
+      <section>${card(`2. Liste des participants · ${e.participants.length}/${cap}`, `${tbl(["Nom", "Société", "Rôle", "Badge", ""], e.participants.map((x) => [esc(x.name), esc(x.company), esc(x.role), x.badge ? badge(x.badge, "outline") : muted("—"), btn("Retirer", `A.evt.partDel(${q(e.id)}, ${q(x.id)})`, "ghost sm")]), "Aucun participant inscrit.")}
+        <div class="form" style="margin-top:10px">${field("pp-name", "Nom", input("pp-name", "", 'placeholder="Prénom Nom"'))}${field("pp-co", "Société", input("pp-co", e.org))}${field("pp-role", "Rôle", select("pp-role", ["Participant", "Intervenant(e)", "Organisateur"], "Participant"))}
+          <div style="align-self:end">${btn("Ajouter", `A.evt.partAdd(${q(e.id)})`, "ghost")}</div><div class="full" id="pp-err"></div></div>
+        <div class="row" style="margin-top:8px">${btn("Importer un fichier (3 noms d'exemple)", `A.evt.partImport(${q(e.id)})`, "ghost sm")}</div>
+        <p class="muted">Capacité : ${cap} personnes (plus grande fonction du programme). Au-delà, l'ajout est refusé.</p>`)}</section></div>`
   }
 
   function salles() {
@@ -245,6 +309,7 @@
   }
 
   // ---------- Actions ----------
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
   const msg = (m, ok) => { const x = $("#ev-msg"); if (x) x.innerHTML = ok ? `<p class="muted">${esc(m)}</p>` : err(m) }
   holdRooms((type, date) => D.evt.events.reduce((n, e) => {
     const b = e.block
@@ -285,7 +350,8 @@
         b.created = true
       }
       Object.assign(e, { status: "definitif", beo: true, master: e.master || "CM-" + e.id.slice(2) })
-      toast(`Définitif : ${b ? "bloc créé dans Réservations, " : ""}BEO générés, compte maître ouvert`); render()
+      requestLinen(e)
+      toast(`Définitif : ${b ? "bloc créé dans Réservations, " : ""}BEO générés, demande de linge transmise, compte maître ouvert`); render()
     },
     cancel(id) {
       if (!confirm("Annuler cet événement ? Les espaces et le bloc de chambres seront libérés.")) return
@@ -301,7 +367,43 @@
       if (f.covers > cap) return x(`Capacité dépassée : ${cap} personnes en ${CONF[f.config].toLowerCase()}.`)
       const c = clashes(f, e.id)
       if (c.length) return x("Conflit (EF-EVT-007) : " + c.join(" "))
-      e.fns.push(f); toast(e.beo ? "Fonction ajoutée, BEO mis à jour (evt.beo.updated)" : "Fonction ajoutée au programme"); render()
+      e.fns.push(f); if (e.status === "definitif") requestLinen(e); toast(e.beo ? "Fonction ajoutée, BEO mis à jour (evt.beo.updated)" : "Fonction ajoutée au programme"); render()
+    },
+    beoNote(id, fid) {
+      const e = E(id), f = e.fns.find((x) => x.id === fid)
+      f.note = val(`beo-n-${fid}`); e.beoV = (e.beoV || 1) + 1
+      toast(`Consigne enregistrée, BEO version ${e.beoV} diffusés aux services (evt.beo.updated)`); render()
+    },
+    linenOut(id) {
+      const e = E(id), l = e.linen, lc = D.bln.stock["Lingerie centrale"], rest = (D.bln.stock.Restaurant = D.bln.stock.Restaurant || {})
+      const short = Object.keys(LINEN).filter((k) => (lc[k] || 0) < l[k])
+      if (short.length) return msg(`Stock insuffisant en lingerie centrale : ${short.map((k) => `${LINEN[k]} (${lc[k] || 0}/${l[k]})`).join(", ")}. Relancer la production ou la sous-traitance.`)
+      Object.keys(LINEN).forEach((k) => { lc[k] -= l[k]; rest[k] = (rest[k] || 0) + l[k] })
+      Object.assign(l, { status: "sortie", out: today })
+      toast(`${l.NAP} nappes et ${l.STB} serviettes sorties vers le Restaurant`); render()
+    },
+    portalValidate(id) { const e = E(id); e.portal = { validated: today, validatedV: e.beoV || 1 }; toast("Programme et BEO validés par l'organisateur"); render() },
+    partAdd(id) {
+      const e = E(id), name = val("pp-name"), cap = Math.max(...e.fns.map((f) => f.covers))
+      const x = (m) => ($("#pp-err").innerHTML = err(m))
+      if (!name) return x("Indiquez le nom du participant.")
+      if (e.participants.length >= cap) return x(`Capacité atteinte : ${cap} participants maximum pour ce programme.`)
+      if (e.participants.some((p) => p.name.toLowerCase() === name.toLowerCase())) return x("Ce participant est déjà inscrit.")
+      e.participants.push({ id: "P" + e.pSeq++, name, company: val("pp-co") || e.org, role: val("pp-role"), badge: null })
+      toast("Participant ajouté"); render()
+    },
+    partImport(id) {
+      const e = E(id), cap = Math.max(...e.fns.map((f) => f.covers))
+      const names = [["Aminata Diabaté", "Participant"], ["Serge Ouattara", "Participant"], ["Fatou Dosso", "Intervenant(e)"]].filter(([n]) => !e.participants.some((p) => p.name === n))
+      const room = Math.max(0, cap - e.participants.length), add = names.slice(0, room)
+      add.forEach(([n, role]) => e.participants.push({ id: "P" + e.pSeq++, name: n, company: e.org, role, badge: null }))
+      toast(add.length ? `${add.length} participant(s) importé(s)${add.length < names.length ? " (capacité atteinte)" : ""}` : "Rien à importer"); render()
+    },
+    partDel(id, pid) { const e = E(id); e.participants = e.participants.filter((p) => p.id !== pid); toast("Participant retiré"); render() },
+    badges(id) {
+      const e = E(id); let n = 0
+      e.participants.filter((p) => !p.badge).forEach((p) => { p.badge = `BDG-${e.id.slice(2)}-${p.id.slice(1).padStart(3, "0")}`; n++ })
+      toast(`${n} badge(s) édité(s) (impression simulée)`); render()
     },
     beo(id) { const e = E(id); e.beoV = (e.beoV || 1) + 1; toast(`BEO version ${e.beoV} diffusés : Restauration, technique, housekeeping notifiés (simulé)`); render() },
     covers(id) {

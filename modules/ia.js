@@ -121,6 +121,23 @@
     ],
     guards: { pii: 214, injection: 3, content: 1, actions: 2 },
     budget: 250000,
+    capPolicy: "degrader", // au-delà du plafond : dégrader vers le modèle interne léger, ou bloquer (EF-AIP-012)
+    // Feature store (EF-AIP-003) : fraîcheur en minutes, objectif de fraîcheur (sla)
+    features: [
+      { id: "F-OCC7", name: "occupation_prevue_j7", entity: "Établissement × date", src: "Lakehouse (réservations)", online: true, offline: true, fresh: 12, sla: 60, used: ["M-DEM"] },
+      { id: "F-PICK", name: "pickup_7_jours", entity: "Établissement × date", src: "Événements res.reservation.*", online: true, offline: true, fresh: 4, sla: 15, used: ["M-DEM"] },
+      { id: "F-STAY", name: "nb_sejours_precedents", entity: "Client", src: "Lakehouse (séjours)", online: true, offline: true, fresh: 600, sla: 1440, used: ["M-NSH", "M-NBO"] },
+      { id: "F-GUAR", name: "type_garantie", entity: "Réservation", src: "Événement res.reservation.created", online: true, offline: false, fresh: 2, sla: 15, used: ["M-NSH"] },
+      { id: "F-VIB", name: "vibration_compresseur_moy_24h", entity: "Équipement", src: "Capteurs IoT (simulé)", online: true, offline: true, fresh: 95, sla: 30, used: ["M-SRV"] },
+      { id: "F-RFD", name: "remboursement_vs_moyenne", entity: "Utilisateur", src: "Événement fol.refund.issued", online: true, offline: true, fresh: 6, sla: 15, used: ["M-ANO"] },
+    ],
+    // Pipeline MLOps (EF-AIP-004) : entraîné → validé → canari → production, ou rejeté
+    runs: [
+      { id: "RUN-12", model: "M-SRV", version: "1.0", stage: "entraine", score: 0.71, base: 0.64, unit: "Rappel", scope: "Tenant", data: "IoT 90 jours + ordres de travail", at: addDays(today, -1) },
+      { id: "RUN-11", model: "M-NSH", version: "2.2", stage: "rejete", score: 0.79, base: 0.81, unit: "AUC", scope: "Tenant", data: "Réservations 24 mois", at: addDays(today, -9), why: "Régression : AUC 0,79 < 0,81 en production" },
+    ],
+    runSeq: 13,
+    consent: false, // accord du tenant pour l'entraînement mutualisé anonymisé (RG-AIP-01)
     roomNights: 236, // nuitées du mois (exemple)
     log: [
       { at: "26/11 09:55", uc: "concierge", model: "LLM A", pv: "v7", cost: 38, ms: 1850, result: "Proposition de réservation spa", decision: "En attente client", user: "Client (SMS)", fb: null },
@@ -135,9 +152,17 @@
   ui.aipConv = ui.aipConv || "CV-82"
 
   const now = () => "26/11 " + new Date().toTimeString().slice(0, 5)
-  const logIt = (uc, model, result, decision, cost = 2, ms = 150, pv = "—") =>
-    X.log.unshift({ at: now(), uc, model, pv, cost, ms, result, decision, user: X.role === "dir" ? "Kouadio Brou" : "Aya Koffi", fb: null })
   const UC = (c) => X.useCases.find((u) => u.code === c)
+  const logIt = (uc, model, result, decision, cost = 2, ms = 150, pv = "—") => {
+    const u = UC(uc); if (u) u.used += cost
+    X.log.unshift({ at: now(), uc, model, pv, cost, ms, result, decision, user: X.role === "dir" ? "Kouadio Brou" : "Aya Koffi", fb: null })
+  }
+  // Plafonds de coût par tenant et par cas d'usage (EF-AIP-012) : ok, dégradé (modèle interne léger) ou bloqué
+  const capState = (code) => {
+    const u = UC(code), over = spent() >= X.budget ? "tenant" : u && u.used >= u.budget ? "cas d'usage" : null
+    if (!over) return { ok: true, degraded: false }
+    return X.capPolicy === "bloquer" ? { ok: false, why: `plafond ${over} atteint` } : { ok: true, degraded: true, why: `plafond ${over} atteint` }
+  }
   const MODE = { desactive: "Désactivé", conseil: "Conseil (validation humaine)", auto: "Automatique borné" }
   const pctTxt = (n) => Math.round(n * 100) + " %"
   const disabledNote = (c) => UC(c).mode === "desactive"
@@ -187,8 +212,8 @@
     ia(p) {
       const tab = p[0] || "synthese"
       return pageHead("Services IA", "Couche IA partagée par tous les modules : copilote, concierge, détection d'anomalies, maintenance prédictive et gouvernance des modèles. Tout est simulé.")
-        + subtabs("aip-ia", [["synthese", "Synthèse"], ["copilote", "Copilote"], ["concierge", "Concierge client"], ["anomalies", "Fraude et anomalies"], ["predictif", "Prédictif"], ["modeles", "Modèles et gouvernance"], ["journal", "Journal des décisions"]], tab)
-        + ({ synthese, copilote, concierge: conciergeTab, anomalies, predictif, modeles, journal }[tab] || synthese)(p)
+        + subtabs("aip-ia", [["synthese", "Synthèse"], ["copilote", "Copilote"], ["concierge", "Concierge client"], ["anomalies", "Fraude et anomalies"], ["predictif", "Prédictif"], ["modeles", "Modèles et gouvernance"], ["mlops", "Données et MLOps"], ["journal", "Journal des décisions"]], tab)
+        + ({ synthese, copilote, concierge: conciergeTab, anomalies, predictif, modeles, mlops, journal }[tab] || synthese)(p)
     },
   }
 
@@ -288,6 +313,10 @@
     { id: "ca", q: "Quel est le chiffre d'affaires hébergement du mois ?", dir: true,
       a: () => "Chiffre d'affaires hébergement au 26/11 : 13,9 M FCFA pour 236 nuitées (ADR 58 900 FCFA), soit 94 % du budget à date.",
       sources: ["Manager's report (mois en cours)"], query: "metric=ca_hebergement,nuitees,adr · période=MTD" },
+    { id: "rapport", q: "Génère le rapport d'occupation des 7 prochains jours", dir: false,
+      a: () => { const f = forecast().slice(0, 7); return `Rapport généré : occupation prévue moyenne ${pct(f.reduce((s, x) => s + x.occ, 0) / 7)} sur 7 jours, point bas le ${fd(f.reduce((a, b) => (b.occ < a.occ ? b : a)).d)}.` },
+      table: () => [["Date", "#En portefeuille", "#Prévision", "#Occupation"], forecast().slice(0, 7).map((x) => [`${wd(x.d)} ${fd(x.d)}`, x.otb, x.fc, pct(x.occ)])],
+      sources: ["Réservations (réception)", "Modèle de demande M-DEM v3.2"], query: "rapport=occupation · période=J..J+6 · métriques=otb,prevision,occupation", report: true },
     { id: "avis", q: "Rédige une réponse à l'avis négatif sur le bruit de la climatisation", dir: false,
       a: () => "Brouillon : « Madame, Monsieur, merci d'avoir pris le temps de nous écrire. Nous sommes désolés que le bruit de la climatisation ait perturbé votre nuit. Notre équipe technique est intervenue et nous serions heureux de vous accueillir à nouveau dans de meilleures conditions. La direction de l'Hôtel Exemple. »",
       sources: ["Avis du 24/11 (plateforme simulée)", "Conversation CV-82"], query: "modèle=avis.reponse v3 · ton=professionnel", draft: true },
@@ -300,7 +329,7 @@
         ${select("aip-role", [["dir", "Kouadio Brou, directeur (tous droits)"], ["rec", "Aya Koffi, réceptionniste (droits réception)"]], role, `onchange="A.aip.setRole(this.value)"`)}
         <h3>Questions suggérées</h3>
         <div class="list">${QA.map((x) => `<button onclick="A.aip.ask(${q(x.id)})"><strong>${esc(x.q)}</strong>${x.dir ? `<div class="muted">Données de direction</div>` : ""}</button>`).join("")}</div>
-        <p class="muted">Le copilote interroge une couche sémantique contrôlée (pas de requête libre sur la base) et applique les droits de l'utilisateur (RG-AIP-04). Il ne produit que des brouillons.</p>
+        <p class="muted">Le copilote interroge une couche sémantique contrôlée (pas de requête libre sur la base) et applique les droits de l'utilisateur (RG-AIP-04). Il répond en langage naturel, génère des rapports et rédige des brouillons, jamais envoyés sans l'utilisateur. <span style="font-size:12px">EF-AIP-008</span></p>
       </div>
       <div class="card">
         <div class="row between"><strong>Copilote</strong>${badge("IA · simulé", "outline")}</div>
@@ -313,10 +342,11 @@
     if (m.who === "user") return `<div style="text-align:right"><span class="pill">${esc(m.text)}</span></div>`
     return `<div class="card" style="padding:12px">
       <p style="margin:0">${esc(m.text)}</p>
+      ${m.table ? `<div style="margin-top:8px">${tbl(m.table[0], m.table[1].map((r) => r.map((c) => esc(c))))}</div>` : ""}
       ${m.chart ? `<div style="margin-top:8px">${columns(m.chart.map((c) => c[0]), m.chart.map((c) => c[1]), (v) => Math.round(v / 100) / 10 + " k")}</div>` : ""}
       ${m.sources?.length ? `<p class="muted" style="margin:8px 0 0">Sources : ${esc(m.sources.join(" · "))}</p>` : ""}
       ${m.query ? `<p class="muted" style="margin:2px 0 0">Requête : <code>${esc(m.query)}</code></p>` : ""}
-      <div class="row" style="margin-top:8px">${m.draft ? btn("Copier le brouillon", `A.aip.copyDraft()`, "sm") : ""}
+      <div class="row" style="margin-top:8px">${m.draft ? btn("Copier le brouillon", `A.aip.copyDraft()`, "sm") : ""}${m.table ? btn("Exporter en PDF (simulé)", `A.aip.exportReport()`, "sm") + btn("Planifier l'envoi", "A.bir ? A.bir.prefill('RPT-OCC') : go('bi-rapports/planifies')", "ghost sm") : ""}
         ${m.fb ? badge(m.fb === "utile" ? "Retour : utile" : "Retour : pas utile", "outline") : btn("Utile", `A.aip.chatFb(${i},'utile')`, "ghost sm") + btn("Pas utile", `A.aip.chatFb(${i},'inutile')`, "ghost sm")}</div>
     </div>`
   }
@@ -330,6 +360,16 @@
         ${kpi("Délai de première réponse", "1,6 s", "p95 simulé (cible < 2 s)")}
         ${kpi("Escalades", X.convs.filter((x) => x.escal).length, "réclamation, urgence ou confiance faible")}
       </div>
+      <h2>Simuler un message entrant</h2>
+      <div class="card">${form([
+        field("aip-in-ch", "Canal", select("aip-in-ch", ["WhatsApp", "SMS", "App client", "Web"], "WhatsApp")),
+        field("aip-in-lang", "Langue du client", select("aip-in-lang", ["Français", "Anglais", "Espagnol"], "Anglais")),
+        field("aip-in-res", "Client en séjour", select("aip-in-res", inHouse().map((r) => [r.id, `${G(r.guest).name} · ch. ${r.room}`]), inHouse()[0]?.id)),
+        field("aip-in-msg", "Message", input("aip-in-msg", "", `placeholder="ex. Could I get two extra towels and a wake-up call at 6 am?"`), "full"),
+      ])}
+        <div class="row" style="margin-top:8px"><span class="muted">Exemples :</span>${[["Anglais", "Could I get two extra towels and a wake-up call at 6 am?"], ["Français", "La climatisation fait un bruit énorme, impossible de dormir."], ["Espagnol", "¿A qué hora es el desayuno?"], ["Français", "Je voudrais parler à un humain."]].map(([l, t]) => btn(t.slice(0, 28) + "…", `document.getElementById('aip-in-lang').value=${q(l)};document.getElementById('aip-in-msg').value=${q(t)}`, "ghost sm")).join("")}</div>
+        <div class="row" style="margin-top:10px">${btn("Envoyer au concierge", "A.aip.incoming()")}</div>
+        <p class="muted">Le concierge détecte l'intention, répond dans la langue du client sur le canal d'origine, propose des actions à confirmer et escalade vers un humain (réclamation, demande explicite, confiance faible). <span style="font-size:12px">EF-AIP-006</span></p></div>
       <div class="split" style="margin-top:20px">
         <div><h3>Conversations</h3><div class="list">${X.convs.map((x) => `<button aria-current="${x === c}" onclick="ui.aipConv=${q(x.id)};render()">
           <strong>${esc(x.guest ? G(x.guest).name : "Visiteur anonyme")}</strong> ${badge(ST[x.status][0], ST[x.status][1])}
@@ -407,12 +447,17 @@
       ${tbl(["Cas d'usage", "Module", "Modèle", "Mode", "#Budget mensuel", "#Consommé", "Repli"], X.useCases.map((u) => [
         `<strong>${esc(u.label)}</strong><div class="muted">${esc(u.code)}</div>`, esc(u.module), esc(u.model),
         select("aip-m-" + u.code.replace(".", "-"), u.modes.map((m) => [m, MODE[m]]), u.mode, `onchange="A.aip.setMode(${q(u.code)},this.value)" aria-label="Mode ${esc(u.label)}"`),
-        money(u.budget), u.used / u.budget >= 0.8 ? badge(pctTxt(u.used / u.budget), "on") : pctTxt(u.used / u.budget), `<span class="muted">${esc(FALLBACK[u.code])}</span>`]))}
+        `<input type="number" id="aip-b-${esc(u.code.replace(".", "-"))}" value="${u.budget}" min="0" step="1000" style="text-align:right;min-width:100px" aria-label="Budget ${esc(u.label)}">`,
+        `${money(u.used)} ${u.used >= u.budget ? badge("Plafond atteint", "dark") : u.used / u.budget >= 0.8 ? badge(pctTxt(u.used / u.budget), "on") : pctTxt(u.used / u.budget)}`, `<span class="muted">${esc(FALLBACK[u.code])}</span>`]))}
       <div class="cols">
         <section><h2>Maîtrise des coûts</h2>
-          ${card("", `<div class="row between"><span>Budget IA du mois</span><strong>${money(s)} / ${money(X.budget)}</strong></div>
+          ${card("", `<div class="row between"><span>Plafond du tenant (Hôtel Exemple) ce mois</span><strong>${money(s)} / ${money(X.budget)}</strong></div>
             <div class="track" style="margin:10px 0"><i style="width:${Math.min(100, ratio * 100)}%"></i></div>
-            <div class="muted">Alerte à 80 % ; au-delà du budget, bascule vers le modèle interne léger (dégradation contrôlée). Concierge à ${pctTxt(UC("concierge").used / UC("concierge").budget)} de son budget.</div>`)}
+            ${s >= X.budget ? `<p class="err">Plafond du tenant atteint : ${X.capPolicy === "bloquer" ? "fonctions IA bloquées, repli non-IA" : "toutes les fonctions basculent sur le modèle interne léger"}.</p>` : ""}
+            ${form([field("aip-tenant-b", "Plafond mensuel du tenant (FCFA)", input("aip-tenant-b", X.budget, 'type="number" min="0" step="10000"')),
+              field("aip-cap", "Au-delà d'un plafond", select("aip-cap", [["degrader", "Dégrader vers le modèle interne léger"], ["bloquer", "Bloquer et passer au repli non-IA"]], X.capPolicy))])}
+            <div class="row" style="margin-top:10px">${btn("Enregistrer les plafonds", "A.aip.saveBudgets()")}${btn("Simuler un pic de 40 conversations", "A.aip.spike()", "ghost sm")}${btn("Nouveau mois (remise à zéro)", "A.aip.resetCosts()", "ghost sm")}</div>
+            <div class="muted" style="margin-top:8px">Coût mesuré à chaque inférence (journal) et cumulé par cas d'usage ; alerte à 80 %. Concierge à ${pctTxt(UC("concierge").used / UC("concierge").budget)} de son budget. <span style="font-size:12px">EF-AIP-012</span></div>`)}
           <h2>Garde-fous (30 jours)</h2>
           ${tbl(["Contrôle", "#Déclenchements"], [["Données personnelles masquées avant envoi", X.guards.pii], ["Tentatives d'injection de prompt bloquées", X.guards.injection], ["Contenus filtrés", X.guards.content], ["Actions refusées (hors liste blanche)", X.guards.actions]])}
         </section>
@@ -427,6 +472,40 @@
         `<strong>${esc(m.name)}</strong><div class="muted">${esc(m.id)}</div>`, esc(m.type), esc(m.version), esc(m.metric), fd(m.evalAt),
         badge(m.status, m.status === "production" ? "on" : "outline"), esc(m.scope), btn("Réévaluer", `A.aip.evalModel(${q(m.id)})`, "ghost sm")]))}
       <p class="muted">Aucune donnée de ce tenant n'entraîne un modèle d'un autre tenant sans accord et anonymisation (RG-AIP-01). Supervision de la dérive et des retours utilisateurs (EF-AIP-011).</p>`
+  }
+
+  // Feature store et pipeline MLOps (EF-AIP-003, EF-AIP-004)
+  const featureValue = (id) => {
+    const f = forecast(), g = D.reservations.find((r) => r.status === "confirmee")
+    return { "F-OCC7": pct(f[7].occ), "F-PICK": String(f.slice(0, 7).reduce((s, x) => s + x.otb, 0)) + " nuitées", "F-STAY": g ? `${D.reservations.filter((x) => x.guest === g.guest && x.status === "partie").length} (${G(g.guest).name})` : "—",
+      "F-GUAR": g ? `${g.guarantee} (${g.id})` : "—", "F-VIB": "+35 % (EQ-1)", "F-RFD": "6,0 × (AN-41)" }[id] || "—"
+  }
+  const freshTxt = (m) => (m < 60 ? m + " min" : m < 1440 ? Math.round(m / 60) + " h" : Math.round(m / 1440) + " j")
+  const RUNST = { entraine: ["Entraîné", ""], valide: ["Validé", "outline"], canari: ["Canari 10 %", "outline"], production: ["En production", "on"], rejete: ["Rejeté", "dark"], retire: ["Retiré", "dark"] }
+  function mlops() {
+    const stale = X.features.filter((f) => f.fresh > f.sla)
+    return `<h2>Feature store <span class="muted" style="font-size:12px">EF-AIP-003</span></h2>
+      <p class="muted">Variables calculées une fois et partagées par les modèles : stockage hors ligne (entraînement, lakehouse) et en ligne (prédiction en temps réel, alimenté par les événements). Valeurs servies calculées sur les données de la maquette.</p>
+      ${stale.length ? `<p class="err">${stale.length} variable(s) au-delà de leur objectif de fraîcheur : ${esc(stale.map((f) => f.name).join(", "))}. Les prédictions qui les utilisent sont marquées « données anciennes ».</p>` : ""}
+      ${tbl(["Variable", "Entité", "Source", "En ligne", "Hors ligne", "Fraîcheur", "Valeur servie", "Modèles", ""], X.features.map((f) => [`<code>${esc(f.name)}</code>`, esc(f.entity), esc(f.src), f.online ? badge("Oui", "on") : "—", f.offline ? badge("Oui", "outline") : "—",
+        f.fresh > f.sla ? badge(`${freshTxt(f.fresh)} > ${freshTxt(f.sla)}`, "dark") : `${freshTxt(f.fresh)} <span class="muted">/ ${freshTxt(f.sla)}</span>`, esc(featureValue(f.id)), esc(f.used.join(", ")), btn("Rematérialiser", `A.aip.refreshFeature(${q(f.id)})`, "ghost sm")]))}
+      <div class="row" style="margin-top:10px">${btn("Rematérialiser tout le store", "A.aip.refreshFeature('*')", "ghost")}</div>
+      <h2>Pipeline MLOps <span class="muted" style="font-size:12px">EF-AIP-004</span></h2>
+      <div class="card">${form([
+        field("aip-tr-model", "Modèle à réentraîner", select("aip-tr-model", X.models.map((m) => [m.id, `${m.name} (v${m.version})`]), "M-DEM")),
+        field("aip-tr-scope", "Données d'entraînement", select("aip-tr-scope", [["Tenant", "Données de ce tenant uniquement"], ["Mutualisé", "Mutualisé, anonymisé, avec accord"]], "Tenant")),
+        `<div style="align-self:end">${btn("Lancer l'entraînement (simulé)", "A.aip.train()")}</div>`])}
+        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" ${X.consent ? "checked" : ""} onchange="A.aip.consent(this.checked)"> Le tenant accepte l'entraînement mutualisé sur données anonymisées (RG-AIP-01)</label></div>
+      ${tbl(["Exécution", "Modèle", "Version", "Données", "Métrique", "#Candidat", "#Production", "Étape", ""], X.runs.map((r) => {
+        const m = X.models.find((x) => x.id === r.model)
+        const act = r.stage === "entraine" ? btn("Valider sur le jeu de test", `A.aip.validateRun(${q(r.id)})`, "sm")
+          : r.stage === "valide" ? btn("Déployer en canari", `A.aip.deployRun(${q(r.id)})`, "sm")
+          : r.stage === "canari" ? btn("Promouvoir en production", `A.aip.promoteRun(${q(r.id)})`, "accent sm") + btn("Annuler", `A.aip.retireRun(${q(r.id)})`, "ghost sm")
+          : r.stage === "production" && r.prev ? btn("Revenir à la version précédente", `A.aip.retireRun(${q(r.id)})`, "ghost sm") : ""
+        return [esc(r.id) + `<div class="muted">${fd(r.at)}</div>`, esc(m ? m.name : r.model), "v" + esc(r.version), `${esc(r.scope)}<div class="muted">${esc(r.data)}</div>`, esc(r.unit), r.score.toFixed(3).replace(".", ","), r.base.toFixed(3).replace(".", ","),
+          badge(RUNST[r.stage][0], RUNST[r.stage][1]) + (r.why ? `<div class="muted">${esc(r.why)}</div>` : ""), `<span class="row" style="flex-wrap:nowrap;gap:4px">${act}</span>`]
+      }))}
+      <p class="muted">Chaque version est validée contre la version en production (aucune régression admise), déployée en canari puis promue ; retour arrière possible. Registre des modèles dans « Modèles et gouvernance ».</p>`
   }
 
   function journal() {
@@ -464,18 +543,23 @@
     setRole(r) { X.role = r; X.chat = []; toast(r === "dir" ? "Connecté : Kouadio Brou (directeur)" : "Connecté : Aya Koffi (réceptionniste)"); render() },
     ask(id, text) {
       if (UC("copilote").mode === "desactive") return toast("Copilote désactivé : consultez les rapports standards")
-      const x = QA.find((k) => k.id === id)
+      const x = QA.find((k) => k.id === id), cap = capState("copilote")
       X.chat.push({ who: "user", text: text || x.q })
+      if (!cap.ok) {
+        X.chat.push({ who: "ia", text: `Copilote indisponible : ${cap.why} ce mois. Repli : ${FALLBACK.copilote}.`, sources: ["Bibliothèque de rapports"], query: "aucun appel au modèle (plafond de coût)" })
+        logIt("copilote", "—", "Bloqué par le plafond de coût", "Repli non-IA", 0, 5, "v4"); return render()
+      }
       if (x.dir && X.role !== "dir") X.chat.push({ who: "ia", text: "Je ne peux pas répondre : ces données (revenus de l'établissement) ne font pas partie de vos droits. Le copilote n'accède qu'aux données que vous pouvez consulter.", sources: [], query: "refus · droits insuffisants (RG-AIP-04)" })
-      else X.chat.push({ who: "ia", text: x.a(), sources: x.sources, query: x.query, chart: x.chart, draft: x.draft })
-      logIt("copilote", "LLM A", x.dir && X.role !== "dir" ? "Refus (droits)" : "Réponse générée", "Brouillon / information", 30 + Math.round(rnd(X.chat.length) * 30), 1500 + Math.round(rnd(X.chat.length + 3) * 900), "v4")
+      else X.chat.push({ who: "ia", text: (cap.degraded ? "[Modèle interne léger, réponse abrégée] " : "") + x.a(), sources: x.sources, query: x.query, chart: x.chart, draft: x.draft, table: x.table && x.table() })
+      const c0 = 30 + Math.round(rnd(X.chat.length) * 30)
+      logIt("copilote", cap.degraded ? "Interne léger" : "LLM A", x.dir && X.role !== "dir" ? "Refus (droits)" : x.report ? "Rapport généré" : "Réponse générée", cap.degraded ? "Dégradé (plafond)" : "Brouillon / information", cap.degraded ? Math.round(c0 / 5) : c0, 1500 + Math.round(rnd(X.chat.length + 3) * 900), "v4")
       render()
     },
     askFree() {
       const t = val("aip-q")
       if (!t) return
       const s = t.toLowerCase()
-      const hit = QA.find((x) => (x.id === "revpar" && s.includes("revpar")) || (x.id === "vip" && s.includes("vip")) || (x.id === "hk" && (s.includes("nettoy") || s.includes("sale"))) || (x.id === "ca" && (s.includes("chiffre") || s.includes("ca "))) || (x.id === "avis" && s.includes("avis")))
+      const hit = QA.find((x) => (x.id === "revpar" && s.includes("revpar")) || (x.id === "vip" && s.includes("vip")) || (x.id === "hk" && (s.includes("nettoy") || s.includes("sale"))) || (x.id === "ca" && (s.includes("chiffre") || s.includes("ca "))) || (x.id === "avis" && s.includes("avis")) || (x.id === "rapport" && (s.includes("rapport") || s.includes("occupation"))))
       if (hit) return actions.ask(hit.id, t)
       X.chat.push({ who: "user", text: t }, { who: "ia", text: "Cette maquette ne contient pas de réponse pré-écrite pour cette question. Repli : consultez les rapports standards du module Business Intelligence.", sources: ["Bibliothèque de rapports"], query: "aucune correspondance sur la couche sémantique" })
       render()
@@ -484,11 +568,19 @@
     chatFb(i, v) { X.chat[i].fb = v; toast("Merci, retour enregistré pour la supervision de la qualité"); render() },
     copyDraft() { toast("Brouillon copié : relisez-le avant envoi (envoi par l'utilisateur uniquement)") },
     confirmTool(cid, i) {
-      const c = X.convs.find((x) => x.id === cid)
-      c.tools[i].status = "confirmee"
-      c.msgs.push(["client", "Oui, je confirme."], ["ia", "C'est réservé : massage 60 min le 27/11 à 15 h. À demain !"])
-      c.status = "resolue"; c.rating = 5
-      logIt("concierge", "LLM A", "Soin spa réservé via outil contrôlé", "Confirmé par le client", 22, 1600, "v7")
+      const c = X.convs.find((x) => x.id === cid), t = c.tools[i]
+      t.status = "confirmee"
+      if (t.kind) {
+        if (D.sej && D.sej.log) D.sej.log.unshift({ id: uid("MC"), at: `${today} ${new Date().toTimeString().slice(0, 5)}`, author: `Concierge IA (${c.channel})`, type: "Demande client", room: t.room || "", text: t.text, due: t.due, status: "ouverte", t0: Date.now() })
+        const L = { "Français": 0, "Anglais": 1, "Espagnol": 2 }[c.lang] ?? 0
+        c.msgs.push(["client", ["Oui, je confirme.", "Yes please.", "Sí, confirmo."][L]], ["ia", ["C'est fait, la demande est transmise à l'équipe.", "Done, your request has been passed to the team.", "Hecho, su solicitud ha sido transmitida al equipo."][L]])
+        if (c.tools.every((x) => x.status === "confirmee")) { c.status = "resolue"; c.rating = 5 }
+        logIt("concierge", "LLM A", `${t.label} (main courante)`, "Confirmé par le client", 12, 900, "v7")
+      } else {
+        c.msgs.push(["client", "Oui, je confirme."], ["ia", "C'est réservé : massage 60 min le 27/11 à 15 h. À demain !"])
+        c.status = "resolue"; c.rating = 5
+        logIt("concierge", "LLM A", "Soin spa réservé via outil contrôlé", "Confirmé par le client", 22, 1600, "v7")
+      }
       toast("Action exécutée après confirmation du client (simulé)"); render()
     },
     humanReply(cid) {
@@ -547,6 +639,89 @@
     },
     evalModel(id) { const m = X.models.find((x) => x.id === id); m.evalAt = today; toast(`${m.name} : jeu d'évaluation relancé, métriques stables (simulé)`); render() },
     logFb(i, v) { X.log[i].fb = v; toast("Retour enregistré"); render() },
+    exportReport() { logIt("copilote", "—", "Rapport exporté en PDF", "Export utilisateur", 0, 0); toast("rapport_occupation_7j.pdf généré (simulé)") },
+    // concierge : message entrant simulé (EF-AIP-006)
+    incoming() {
+      const ch = val("aip-in-ch"), lang = val("aip-in-lang"), rid = val("aip-in-res"), msg = val("aip-in-msg")
+      if (!msg) return toast("Saisissez le message du client")
+      const r = R(rid), room = r ? r.room : null, s = msg.toLowerCase(), cap = capState("concierge")
+      const L = { "Français": 0, "Anglais": 1, "Espagnol": 2 }[lang] ?? 0
+      const T3 = (a) => a[L]
+      const intro = T3(["Bonjour, je suis le concierge virtuel de l'hôtel (assistant IA). Vous pouvez demander un membre du personnel à tout moment.", "Hello, I am the hotel's virtual concierge (AI assistant). You can ask for a staff member at any time.", "Hola, soy el conserje virtual del hotel (asistente de IA). Puede pedir hablar con una persona en cualquier momento."])
+      const c = { id: uid("CV"), channel: ch, lang, guest: r ? r.guest : null, room, at: fd(today) + " " + new Date().toTimeString().slice(0, 5), status: "encours", escal: false, rating: null, msgs: [["ia", intro], ["client", msg]], tools: [], sources: [] }
+      if (UC("concierge").mode === "desactive" || !cap.ok) {
+        c.msgs.push(["ia", T3(["Je transmets votre message à la réception, qui vous répond rapidement.", "I am forwarding your message to the front desk, who will reply shortly.", "Transmito su mensaje a la recepción, que le responderá en breve."])])
+        Object.assign(c, { status: "escaladee", escal: true, reason: UC("concierge").mode === "desactive" ? "Concierge désactivé (repli)" : "Plafond de coût atteint (repli)" })
+      } else {
+        const hk = /serviette|towel|toalla|oreiller|pillow|almohada|savon|soap|jab[oó]n/.test(s)
+        const wake = /r[ée]veil|wake|despert/.test(s), hm = s.match(/(\d{1,2})\s*(?:h|am|:00|de la ma)/), hour = hm ? String(+hm[1]).padStart(2, "0") + ":00" : "06:00"
+        const complaint = /bruit|noise|ruido|sale\b|dirty|sucio|plainte|complain|queja|cass[ée]|broken|panne|clim/.test(s)
+        const human = /humain|human|humano|personne|person/.test(s)
+        const info = /d[ée]jeuner|breakfast|desayuno|piscine|pool|piscina|horaire|hours|horario|wifi/.test(s)
+        if (complaint || human) {
+          c.msgs.push(["ia", T3(["Je suis désolé. Je vous mets en relation avec la réception, qui vous recontacte immédiatement.", "I am sorry. I am connecting you with the front desk, who will contact you right away.", "Lo siento. Le pongo en contacto con la recepción, que le llamará de inmediato."])])
+          Object.assign(c, { status: "escaladee", escal: true, reason: complaint ? "Réclamation détectée" : "Demande d'un humain" })
+          c.tools.push({ label: `Escalade vers la réception${room ? " — ch. " + room : ""}`, status: "confirmee" })
+          if (D.sej && D.sej.log) D.sej.log.unshift({ id: uid("MC"), at: `${today} ${new Date().toTimeString().slice(0, 5)}`, author: `Concierge IA (${ch})`, type: complaint ? "Incident" : "Message client", room: room || "", text: `${complaint ? "Réclamation" : "Demande d'un humain"} reçue par le concierge : « ${msg} »`, status: "ouverte" })
+        } else if (hk || wake) {
+          if (hk) c.tools.push({ kind: "hk", label: `Demande housekeeping : ${msg.slice(0, 60)} — ch. ${room}`, status: "attente", room, text: `Demande client via concierge IA : ${msg}` })
+          if (wake) c.tools.push({ kind: "wake", label: `Réveil programmé ${fd(addDays(today, 1))} à ${hour} — ch. ${room}`, status: "attente", room, text: `Réveil à ${hour}`, due: hour })
+          c.msgs.push(["ia", T3([`Je peux ${hk ? "créer une demande au service des étages" : ""}${hk && wake ? " et " : ""}${wake ? `programmer un réveil à ${hour}` : ""} pour la chambre ${room}. Je confirme ?`, `I can ${hk ? "send a housekeeping request" : ""}${hk && wake ? " and " : ""}${wake ? `schedule a wake-up call at ${hour}` : ""} for room ${room}. Shall I confirm?`, `Puedo ${hk ? "enviar una solicitud al servicio de pisos" : ""}${hk && wake ? " y " : ""}${wake ? `programar un despertador a las ${hour}` : ""} para la habitación ${room}. ¿Confirmo?`])])
+          c.sources.push("Catalogue des services v5")
+        } else if (info) {
+          c.msgs.push(["ia", T3(["Le petit-déjeuner est servi de 6 h 30 à 10 h 30. La piscine est ouverte de 7 h à 20 h.", "Breakfast is served from 6:30 to 10:30 am. The pool is open from 7 am to 8 pm.", "El desayuno se sirve de 6:30 a 10:30. La piscina abre de 7:00 a 20:00."])])
+          c.status = "resolue"; c.sources.push("FAQ établissement v3", "Horaires spa et piscine")
+        } else {
+          c.msgs.push(["ia", T3(["Je ne suis pas certain de comprendre : je transmets à la réception.", "I am not sure I understand: I am passing you to the front desk.", "No estoy seguro de entender: le paso con la recepción."])])
+          Object.assign(c, { status: "escaladee", escal: true, reason: "Confiance faible" })
+        }
+      }
+      X.convs.unshift(c); ui.aipConv = c.id
+      if (cap.ok && UC("concierge").mode !== "desactive") logIt("concierge", cap.degraded ? "Interne léger" : "LLM A", `Message ${ch} (${lang}) : ${c.status === "escaladee" ? "escalade" : c.tools.length ? "action proposée" : "réponse"}`, c.status === "escaladee" ? "Escaladé" : "—", cap.degraded ? 5 : 26, 1400, "v7")
+      toast(`Message ${ch} traité par le concierge (${lang})`); render()
+    },
+    // plafonds de coût (EF-AIP-012)
+    saveBudgets() {
+      X.useCases.forEach((u) => { const v = +val("aip-b-" + u.code.replace(".", "-")); if (v >= 0) u.budget = v })
+      const t = +val("aip-tenant-b"); if (t > 0) X.budget = t
+      X.capPolicy = val("aip-cap") || X.capPolicy
+      toast("Plafonds enregistrés"); render()
+    },
+    spike() { for (let i = 0; i < 40; i++) logIt("concierge", "LLM A", "Conversation (pic simulé)", "—", 38, 1500, "v7"); toast(`Pic simulé : concierge à ${money(UC("concierge").used)} / ${money(UC("concierge").budget)}`); render() },
+    resetCosts() { X.useCases.forEach((u) => (u.used = 0)); toast("Compteurs de coût remis à zéro (nouveau mois)"); render() },
+    // feature store et MLOps
+    refreshFeature(id) { X.features.filter((f) => id === "*" || f.id === id).forEach((f) => (f.fresh = 0)); toast(id === "*" ? "Feature store rematérialisé (simulé)" : "Variable rematérialisée"); render() },
+    consent(v) { X.consent = v; toast(v ? "Accord d'entraînement mutualisé enregistré" : "Accord retiré : entraînement sur les données du tenant uniquement"); render() },
+    train() {
+      const mid = val("aip-tr-model"), scope = val("aip-tr-scope"), m = X.models.find((x) => x.id === mid)
+      if (scope === "Mutualisé" && !X.consent) return toast("Entraînement mutualisé impossible sans accord explicite du tenant (RG-AIP-01)")
+      const unit = (m.metric.match(/^[A-Za-zéÉ]+/) || ["Score"])[0], base = +(m.metric.match(/[\d,]+/) || ["0,8"])[0].replace(",", ".") / (/%/.test(m.metric) ? 100 : 1)
+      const lower = unit === "MAPE", delta = (rnd(X.runSeq) - 0.35) * 0.06
+      const n = X.runSeq++, ver = (+m.version + 0.1).toFixed(1)
+      X.runs.unshift({ id: "RUN-" + n, model: mid, version: ver, stage: "entraine", score: Math.max(0.01, +(base + (lower ? -delta : delta)).toFixed(3)), base, unit, lower, scope, data: scope === "Tenant" ? "Données du tenant, 24 mois" : "Mutualisé anonymisé (accord)", at: today })
+      logIt(m.id === "M-DEM" ? "rm.pricing" : "maint", m.id, `Entraînement ${m.id} v${ver}`, "Lancé par l'utilisateur", 0, 0)
+      toast(`${m.name} v${ver} entraîné (simulé)`); render()
+    },
+    validateRun(id) {
+      const r = X.runs.find((x) => x.id === id), better = r.lower ? r.score <= r.base : r.score >= r.base
+      r.stage = better ? "valide" : "rejete"
+      if (!better) r.why = `Régression : ${r.unit} ${String(r.score).replace(".", ",")} contre ${String(r.base).replace(".", ",")} en production`
+      toast(better ? "Validation réussie : aucune régression" : "Version rejetée : régression sur le jeu de test"); render()
+    },
+    deployRun(id) { const r = X.runs.find((x) => x.id === id); r.stage = "canari"; X.models.find((m) => m.id === r.model).status = "canari 10 %"; toast("Déployé en canari sur 10 % du trafic"); render() },
+    promoteRun(id) {
+      const r = X.runs.find((x) => x.id === id), m = X.models.find((x) => x.id === r.model)
+      r.prev = { version: m.version, metric: m.metric }
+      X.runs.filter((x) => x.model === r.model && x.stage === "production" && x !== r).forEach((x) => (x.stage = "retire"))
+      Object.assign(m, { version: r.version, metric: `${r.unit} ${r.unit === "MAPE" ? (r.score * 100).toFixed(1).replace(".", ",") + " %" : r.score.toFixed(2).replace(".", ",")}`, status: "production", evalAt: today })
+      r.stage = "production"; toast(`${m.name} v${r.version} en production`); render()
+    },
+    retireRun(id) {
+      const r = X.runs.find((x) => x.id === id), m = X.models.find((x) => x.id === r.model)
+      if (r.stage === "production" && r.prev) Object.assign(m, r.prev)
+      m.status = "production"; r.stage = "retire"
+      toast(`Retour à ${m.name} v${m.version}`); render()
+    },
   }
   function applyReco(r, by) {
     r.status = "acceptee"; r.by = by

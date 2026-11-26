@@ -14,11 +14,13 @@ const assert = (cond, msg) => { if (!cond) throw new Error("ÉCHEC : " + msg); c
   p.on("pageerror", (e) => errs.push(e.message))
   p.on("console", (m) => m.type() === "error" && errs.push(m.text()))
   p.on("dialog", (d) => d.accept())
-  const url = "file://" + path.resolve(__dirname, "../index.html")
+  const url = process.env.URL || "file://" + path.resolve(__dirname, "../index.html")
   const go = async (h) => { await p.evaluate((x) => (location.hash = x), h); await p.waitForTimeout(120) }
   const ev = (fn, arg) => p.evaluate(fn, arg)
   await p.goto(url)
-  await ev(() => localStorage.clear())
+  await p.evaluate(() => localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })))
+  await p.reload()
+  await ev(() => { localStorage.clear(); localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })) })
   await p.reload()
 
   // 1. Réservation (Réservations)

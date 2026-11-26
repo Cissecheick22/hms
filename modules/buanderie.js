@@ -10,22 +10,26 @@
   // ---------- Données d'exemple ----------
   D.bln = {
     items: [
-      { code: "DRP", label: "Drap 2 places", cat: "Chambre", kg: 0.9, cost: 9500, maxWash: 200 },
-      { code: "HSC", label: "Housse de couette", cat: "Chambre", kg: 1.3, cost: 16000, maxWash: 180 },
-      { code: "TAI", label: "Taie d'oreiller", cat: "Chambre", kg: 0.2, cost: 2500, maxWash: 200 },
-      { code: "SBN", label: "Serviette de bain", cat: "Chambre", kg: 0.6, cost: 6500, maxWash: 150 },
-      { code: "SMN", label: "Serviette de main", cat: "Chambre", kg: 0.25, cost: 3000, maxWash: 150 },
-      { code: "PGN", label: "Peignoir", cat: "Chambre", kg: 1.1, cost: 18000, maxWash: 120 },
-      { code: "NAP", label: "Nappe ronde", cat: "Restauration", kg: 1.0, cost: 14000, maxWash: 150 },
-      { code: "STB", label: "Serviette de table", cat: "Restauration", kg: 0.1, cost: 1500, maxWash: 150 },
-      { code: "SSP", label: "Drap de massage spa", cat: "Spa", kg: 0.7, cost: 8000, maxWash: 160 },
+      { code: "DRP", label: "Drap 2 places", cat: "Chambre", kg: 0.9, cost: 9500, maxWash: 200, life: 24 },
+      { code: "HSC", label: "Housse de couette", cat: "Chambre", kg: 1.3, cost: 16000, maxWash: 180, life: 30 },
+      { code: "TAI", label: "Taie d'oreiller", cat: "Chambre", kg: 0.2, cost: 2500, maxWash: 200, life: 24 },
+      { code: "SBN", label: "Serviette de bain", cat: "Chambre", kg: 0.6, cost: 6500, maxWash: 150, life: 18 },
+      { code: "SMN", label: "Serviette de main", cat: "Chambre", kg: 0.25, cost: 3000, maxWash: 150, life: 18 },
+      { code: "PGN", label: "Peignoir", cat: "Chambre", kg: 1.1, cost: 18000, maxWash: 120, life: 24 },
+      { code: "NAP", label: "Nappe ronde", cat: "Restauration", kg: 1.0, cost: 14000, maxWash: 150, life: 30 },
+      { code: "STB", label: "Serviette de table", cat: "Restauration", kg: 0.1, cost: 1500, maxWash: 150, life: 24 },
+      { code: "SSP", label: "Drap de massage spa", cat: "Spa", kg: 0.7, cost: 8000, maxWash: 160, life: 18 },
+      { code: "HSD", label: "Housse de couette (ancien modèle)", cat: "Chambre", kg: 1.2, cost: 14000, maxWash: 150, life: 24, inactive: true },
+      { code: "UTU", label: "Tunique femme de chambre", cat: "Uniformes", kg: 0.4, cost: 12000, maxWash: 100, life: 12 },
+      { code: "UVC", label: "Veste de cuisine", cat: "Uniformes", kg: 0.5, cost: 15000, maxWash: 100, life: 12 },
     ],
     // dotation d'une chambre selon la tâche (départ = changement complet, recouche = serviettes)
     kit: { "Départ": { DRP: 2, HSC: 1, TAI: 2, SBN: 2, SMN: 2 }, "Recouche": { SBN: 2, SMN: 2 } },
-    locations: ["Lingerie centrale", "Office étage 1", "Office étage 2", "Office étage 3", "Restaurant", "Spa", "En lavage", "Chez le prestataire", "Réserve neuve"],
+    locations: ["Lingerie centrale", "Office étage 1", "Office étage 2", "Office étage 3", "Restaurant", "Spa", "Banquets et événements", "En lavage", "Chez le prestataire", "Réserve neuve"],
     // stock propre par lieu et par article ; par = dotation cible, min = seuil de réassort (RG-BLN-06)
     stock: {
-      "Lingerie centrale": { DRP: 120, HSC: 46, TAI: 140, SBN: 110, SMN: 130, PGN: 30, NAP: 40, STB: 260, SSP: 30 },
+      "Lingerie centrale": { DRP: 120, HSC: 46, TAI: 140, SBN: 110, SMN: 130, PGN: 30, NAP: 40, STB: 260, SSP: 30, UTU: 12, UVC: 8 },
+      "Banquets et événements": {},
       "Office étage 1": { DRP: 12, HSC: 5, TAI: 12, SBN: 10, SMN: 14 },
       "Office étage 2": { DRP: 6, HSC: 3, TAI: 8, SBN: 6, SMN: 9 },
       "Office étage 3": { DRP: 10, HSC: 4, TAI: 10, SBN: 4, SMN: 10, PGN: 8 },
@@ -97,11 +101,18 @@
     expressRate: 0.5,
     // statut : prise | traitement | prete | livree
     orders: [
-      { id: "PR-0412", res: "R-2044", lines: [{ art: "Chemise", svc: "lavage", qty: 3 }], express: false, taken: "2026-11-25 08:30", promised: "2026-11-25 18:00", delivered: "2026-11-25 17:10", status: "livree", charged: true, amount: 4500 },
-      { id: "PR-0418", res: "R-2048", lines: [{ art: "Costume (2 pièces)", svc: "sec", qty: 1 }, { art: "Chemise", svc: "repassage", qty: 2 }], express: false, taken: "2026-11-26 07:50", promised: "2026-11-26 19:00", status: "traitement" },
-      { id: "PR-0419", res: "R-2047", lines: [{ art: "Pantalon", svc: "lavage", qty: 2 }], express: true, taken: "2026-11-26 09:15", promised: "2026-11-26 12:00", status: "prise" },
+      { id: "PR-0412", channel: "Chambre (téléphone)", res: "R-2044", lines: [{ art: "Chemise", svc: "lavage", qty: 3 }], express: false, taken: "2026-11-25 08:30", promised: "2026-11-25 18:00", delivered: "2026-11-25 17:10", status: "livree", charged: true, amount: 4500 },
+      { id: "PR-0418", channel: "Réception", res: "R-2048", lines: [{ art: "Costume (2 pièces)", svc: "sec", qty: 1 }, { art: "Chemise", svc: "repassage", qty: 2 }], express: false, taken: "2026-11-26 07:50", promised: "2026-11-26 19:00", status: "traitement" },
+      { id: "PR-0419", channel: "Application client", res: "R-2047", lines: [{ art: "Pantalon", svc: "lavage", qty: 2 }], express: true, taken: "2026-11-26 09:15", promised: "2026-11-26 12:00", status: "prise" },
     ],
     claims: [],
+    vat: 0.18, // TVA appliquée au pressing (exemple, taux à paramétrer) — EF-BLN-013
+    // linge de banquet réservé par événement (EF-BLN-015) : reserve | sorti | rendu
+    banquets: [{ evt: "E-301", fn: "F2", label: "Cocktail dînatoire", date: "2026-11-27", lines: { NAP: 10, STB: 70 }, status: "reserve" }],
+    // RFID (EF-BLN-010) : portiques de comptage en masse (simulés)
+    rfid: { on: true, gates: [["G1", "Sortie lingerie centrale", "Lingerie centrale"], ["G2", "Quai linge sale (entrée buanderie)", "En lavage"], ["G3", "Quai prestataire", "Chez le prestataire"]], reads: [{ at: "2026-11-26 07:55", gate: "G2", loc: "En lavage", read: 270, expected: 272, applied: false, lines: { DRP: [34, 33], HSC: [12, 12], TAI: [40, 40], SBN: [46, 45], SMN: [38, 38], NAP: [12, 12], STB: [90, 90] } }], n: 0 },
+    // poste tablette de la buanderie (EF-BLN-017) : mode hors ligne et file
+    tablet: { offline: false, queue: [] },
     seq: { pr: 420, lot: 5531, env: 209 },
   }
   const B = D.bln
@@ -119,6 +130,11 @@
   const orderAmount = (o) => Math.round(o.lines.reduce((s, l) => s + unitPrice(l.art, l.svc) * l.qty, 0) * (o.express ? 1 + B.expressRate : 1))
   const lossValue = (l) => l.qty * IT(l.item).cost
   const offices = ["Office étage 1", "Office étage 2", "Office étage 3"]
+  const CHANNELS = ["Chambre (téléphone)", "Réception", "Application client", "Concierge IA"]
+  const taxOf = (ttc) => Math.round(ttc - ttc / (1 + B.vat))
+  const BQ = { reserve: ["Réservé", "outline"], sorti: ["Sorti", "on"], rendu: ["Rendu", "dark"] }
+  const evtFns = () => ((D.evt && D.evt.events) || []).filter((e) => e.status !== "annule").flatMap((e) => (e.fns || []).filter((f) => ["banquet", "cocktail"].includes(f.config) && f.date >= today).map((f) => ({ e, f })))
+  const reserved = (c) => B.banquets.filter((b) => b.status === "reserve").reduce((t, b) => t + (b.lines[c] || 0), 0)
 
   // EF-BLN-003 : besoin du jour par étage depuis les départs et recouches
   const requirement = () => {
@@ -137,8 +153,8 @@
     return pageHead("Linge et buanderie", "Stocks et dotations par lieu, besoin du jour, production interne, sous-traitance, pertes et uniformes. Données d'exemple ; compteurs et RFID simulés.")
       + cards([kpi("Pièces en circulation", inUse.toLocaleString("fr-FR"), "tous lieux"), kpi("Lots en cours", B.batches.filter((b) => b.status === "en_cours").length, `${B.machines.filter((m) => m.state === "disponible").length} machine(s) disponible(s)`),
         kpi("Offices sous le minimum", below.length, "réassort à servir"), kpi("Pertes du mois", money(B.losses.filter((l) => l.date >= "2026-11-01").reduce((s, l) => s + lossValue(l), 0)), "valorisées au coût")])
-      + subtabs("bln-linge", [["stocks", "Stocks et pars"], ["besoin", "Besoin du jour"], ["production", "Production"], ["soustraitance", "Sous-traitance"], ["pertes", "Pertes et réformes"], ["uniformes", "Uniformes"], ["kpi", "Indicateurs"]], tab)
-      + ({ stocks: tabStock, besoin: tabNeed, production: tabProd, soustraitance: tabOut, pertes: tabLoss, uniformes: tabUniforms, kpi: tabKpi }[tab] || tabStock)(p.slice(1))
+      + subtabs("bln-linge", [["stocks", "Stocks et pars"], ["catalogue", "Catalogue"], ["besoin", "Besoin du jour"], ["production", "Production"], ["banquets", "Banquets"], ["rfid", "RFID"], ["tablette", "Poste tablette"], ["soustraitance", "Sous-traitance"], ["pertes", "Pertes et réformes"], ["uniformes", "Uniformes"], ["kpi", "Indicateurs"]], tab)
+      + ({ stocks: tabStock, catalogue: tabCatalog, besoin: tabNeed, production: tabProd, banquets: tabBanquets, rfid: tabRfid, tablette: tabTablet, soustraitance: tabOut, pertes: tabLoss, uniformes: tabUniforms, kpi: tabKpi }[tab] || tabStock)(p.slice(1))
   }
 
   function tabStock() {
@@ -156,6 +172,63 @@
       + tbl(["Collecte", "Lieu", "#Pièces sorties", "#Poids", "#Rentrées propres", "Écart"], B.collect.map((c, i) => [dt(c.date), esc(c.loc), c.pcs, c.kg.toFixed(1).replace(".", ",") + " kg", c.back || "en cours",
         c.back ? (c.back === c.pcs ? badge("0", "outline") : badge(`${c.back - c.pcs} pièce(s)`, "on")) : btn("Retour propre", `A.bln.collectBack(${i})`, "ghost sm")]))
       + card("Enregistrer une collecte", `<div class="row" style="flex-wrap:nowrap">${select("c-loc", [...offices, "Restaurant", "Spa"], "Office étage 3")}${input("c-pcs", "", 'type="number" min="1" placeholder="Pièces" style="max-width:110px"')}${input("c-kg", "", 'type="number" min="0" step="0.1" placeholder="kg" style="max-width:90px"')}${btn("Enregistrer", "A.bln.collect()", "ghost")}</div>`)
+  }
+
+  function tabCatalog() {
+    return `<p class="muted">Articles de linge : poids unitaire, coût, durée de vie cible et nombre de lavages maximal ; le coût par lavage sert au coût du linge par chambre ${muted("EF-BLN-001")}</p>`
+      + tbl(["Code", "Article", "Catégorie", "#Poids", "#Coût", "#Durée de vie", "#Lavages max", "#Coût / lavage", "En stock", ""], B.items.map((i) => [esc(i.code), esc(i.label), esc(i.cat), i.kg.toFixed(2).replace(".", ",") + " kg", money(i.cost), i.life + " mois", i.maxWash, money(i.cost / i.maxWash),
+        B.locations.reduce((t, l) => t + qty(l, i.code), 0), i.inactive ? badge("Retiré", "dark") : btn("Retirer", `A.bln.toggleItem(${q(i.code)})`, "ghost sm")]))
+      + card("Nouvel article de linge", form([
+        field("it-code", "Code (3 lettres)", input("it-code", "", 'maxlength="3" placeholder="Ex. TPS"')),
+        field("it-label", "Libellé", input("it-label", "", 'placeholder="Ex. Tapis de bain"')),
+        field("it-cat", "Catégorie", select("it-cat", ["Chambre", "Restauration", "Spa", "Uniformes", "Banquets"], "Chambre")),
+        field("it-kg", "Poids unitaire (kg)", input("it-kg", "0.5", 'type="number" min="0.01" step="0.05"')),
+        field("it-cost", "Coût unitaire (FCFA)", input("it-cost", "5000", 'type="number" min="1"')),
+        field("it-life", "Durée de vie cible (mois)", input("it-life", "18", 'type="number" min="1"')),
+        field("it-wash", "Lavages maximum", input("it-wash", "150", 'type="number" min="1"')),
+        `<div class="full" id="it-err"></div>`,
+        `<div class="full row">${btn("Ajouter au catalogue", "A.bln.addItem()")}</div>`,
+      ]))
+  }
+
+  function tabBanquets() {
+    const fns = evtFns()
+    return `<p class="muted">Nappage réservé par prestation d'événement (salles, banquets, cocktails), sorti de la lingerie la veille et compté au retour ; le manquant est valorisé en perte ${muted("EF-BLN-015")}</p>`
+      + tbl(["Événement", "Prestation", "Date", "#Couverts", "Linge", "Statut", ""], fns.map(({ e, f }) => {
+        const b = B.banquets.find((x) => x.evt === e.id && x.fn === f.id)
+        return [esc(e.name) + " " + muted(e.org), esc(f.label), fd(f.date), f.covers, b ? esc(Object.entries(b.lines).map(([c, n]) => `${IT(c).label} × ${n}`).join(", ")) + (b.status === "rendu" && b.missing ? " " + badge(`${b.missing} manquant(s)`, "on") : "") : muted(`proposé : ${Math.ceil(f.covers / 8) + 2} nappes, ${Math.ceil(f.covers * 1.1)} serviettes`),
+          b ? b2(BQ, b.status) : badge("Non réservé", "outline"),
+          !b ? btn("Réserver le nappage", `A.bln.bqReserve(${q(e.id)}, ${q(f.id)})`, "sm") : b.status === "reserve" ? btn("Sortir de la lingerie", `A.bln.bqOut(${q(e.id)}, ${q(f.id)})`, "ghost sm") : b.status === "sorti" ? btn("Enregistrer le retour", `A.bln.bqBack(${q(e.id)}, ${q(f.id)})`, "ghost sm") : ""]
+      }), "Aucune prestation de banquet à venir.")
+      + `<p class="muted">Disponible en lingerie après réservations : nappes ${qty("Lingerie centrale", "NAP") - reserved("NAP")}, serviettes de table ${qty("Lingerie centrale", "STB") - reserved("STB")}. Une réservation au-delà du disponible est refusée.</p>`
+  }
+
+  function tabRfid() {
+    const R0 = B.rfid
+    return `<div class="row between"><p class="muted" style="margin:0">Comptage en masse des pièces pucées aux points de passage, comparé au stock théorique ${muted("EF-BLN-010 · lecteurs simulés")}</p>
+        <label class="row" style="color:var(--ink)"><input type="checkbox" ${R0.on ? "checked" : ""} onchange="A.bln.rfidToggle()"> Établissement équipé RFID</label></div>`
+      + (R0.on ? card("Lancer un comptage", `<div class="row" style="flex-wrap:nowrap">${select("rf-gate", R0.gates.map(([id, l]) => [id, l]), "G1")}${btn("Passer le chariot au portique", "A.bln.rfidScan()")}</div>`)
+        : `<p class="err">RFID désactivé : comptage manuel par lieu (onglet Stocks).</p>`)
+      + tbl(["Lecture", "Portique", "Lieu", "#Lues", "#Théorique", "Écart", "Détail", ""], R0.reads.map((r, i) => [dt(r.at), esc((R0.gates.find((g) => g[0] === r.gate) || [, r.gate])[1]), esc(r.loc), r.read, r.expected,
+        r.read === r.expected ? badge("0", "outline") : badge(`${r.read - r.expected}`, "on"),
+        `<span class="muted">${esc(Object.entries(r.lines).filter(([, [a, b]]) => a !== b).map(([c, [a, b]]) => `${IT(c).label} : ${b} lus / ${a}`).join(" ; ") || "conforme")}</span>`,
+        r.applied ? muted("stock ajusté") : r.read !== r.expected ? btn("Ajuster le stock sur la lecture", `A.bln.rfidApply(${i})`, "ghost sm") : ""]), "Aucune lecture.")
+  }
+
+  function tabTablet() {
+    const tb = B.tablet, running = B.batches.filter((b) => b.status === "en_cours" && !tb.queue.some((x) => x.kind === "end" && x.id === b.id))
+    const big = 'style="min-height:56px;font-size:16px;flex:1"'
+    return `<p class="muted">Poste tablette de la buanderie : gros boutons, saisie en un geste, fonctionne sans réseau et synchronise au retour ${muted("EF-BLN-017")}</p>
+      <div class="card" style="max-width:760px;border-width:10px;border-radius:22px">
+        <div class="row between"><strong>Buanderie — poste 1</strong>${tb.offline ? badge(`Hors ligne · ${tb.queue.length} en file`, "dark") : badge("En ligne", "on")}</div>
+        <h3>Collecte rapide</h3>
+        <div class="row" style="flex-wrap:nowrap">${select("tb-loc", [...offices, "Restaurant", "Spa"], "Office étage 1")}${input("tb-pcs", "20", 'type="number" min="1" style="max-width:110px" aria-label="Pièces"')}</div>
+        <div class="row" style="margin-top:8px"><button class="btn" ${big} onclick="A.bln.tabletCollect()">Enregistrer la collecte</button></div>
+        <h3>Lots en cours</h3>
+        ${running.length ? running.map((b) => `<div class="row" style="margin-bottom:6px"><span style="flex:1"><strong>${esc(b.id)}</strong> · ${esc(b.machine)} · ${b.kg} kg</span><button class="btn" ${big} onclick="A.bln.tabletEnd(${q(b.id)}, 'conforme')">Conforme</button><button class="btn ghost" ${big} onclick="A.bln.tabletEnd(${q(b.id)}, 'relaver')">À relaver</button></div>`).join("") : `<p class="muted">Aucun lot en cours.</p>`}
+        <div class="row" style="margin-top:12px">${btn(tb.offline ? "Retrouver le réseau (synchroniser)" : "Simuler une coupure réseau", "A.bln.tabletNet()", "ghost")}</div>
+      </div>`
+      + (tb.queue.length ? tbl(["Saisie hors ligne", "Détail"], tb.queue.map((x) => [x.kind === "collect" ? "Collecte" : "Fin de lot", esc(x.kind === "collect" ? `${x.loc} · ${x.pcs} pièces` : `${x.id} : ${RES[x.result][0]}`)])) : "")
   }
 
   function tabNeed() {
@@ -258,10 +331,10 @@
 
   function tabOrders() {
     const next = { prise: ["traitement", "Mettre en traitement"], traitement: ["prete", "Marquer prête"], prete: ["livree", "Livrer et imputer au folio"] }
-    return tbl(["Ticket", "Chambre / client", "Articles", "Option", "Promis pour", "#Montant", "Statut", ""], B.orders.map((o) => {
+    return `<p class="muted">Commandes prises en chambre, à la réception, depuis l'application ou par le concierge IA ${muted("EF-BLN-011 · EF-BLN-013")}</p>` + tbl(["Ticket", "Canal", "Chambre / client", "Articles", "Option", "Promis pour", "#Montant TTC", "Statut", ""], B.orders.map((o) => {
       const r = R(o.res), late = o.status !== "livree" && o.promised < NOW
-      return [`<strong>${esc(o.id)}</strong>`, r ? `Ch. ${esc(r.room)} · ${esc(G(r.guest).name)}` : `${esc(o.ext)} ${muted("externe, payé")}`, esc(o.lines.map((l) => `${l.art} × ${l.qty} (${SVC[l.svc].toLowerCase()})`).join(", ")),
-        o.express ? badge("Express", "on") : "Normal", dt(o.promised) + (late ? " " + badge("En retard", "dark") : ""), money(o.amount ?? orderAmount(o)),
+      return [`<strong>${esc(o.id)}</strong>`, esc(o.channel || "Réception"), r ? `Ch. ${esc(r.room)} · ${esc(G(r.guest).name)}` : `${esc(o.ext)} ${muted("externe, payé")}`, esc(o.lines.map((l) => `${l.art} × ${l.qty} (${SVC[l.svc].toLowerCase()})`).join(", ")),
+        o.express ? badge("Express", "on") : "Normal", dt(o.promised) + (late ? " " + badge("En retard", "dark") : ""), money(o.amount ?? orderAmount(o)) + "<br>" + muted(`dont TVA ${money(taxOf(o.amount ?? orderAmount(o)))}`),
         b2(OST, o.status) + (o.charged ? " " + muted("imputé au folio") : o.ext ? " " + muted(`encaissé ${o.payMode}`) : ""),
         next[o.status] ? btn(next[o.status][1], `A.bln.advance(${q(o.id)})`, o.status === "prete" ? "sm" : "ghost sm") : btn("Réclamation", `A.bln.claim(${q(o.id)})`, "ghost sm")]
     }))
@@ -272,6 +345,7 @@
     const ih = inHouse()
     const art = B.prices.map((x) => x.art)
     return card("Commande de pressing", form([
+      field("pr-chan", "Canal de prise de commande", select("pr-chan", CHANNELS, "Chambre (téléphone)")),
       field("pr-res", "Client en séjour", select("pr-res", [...ih.map((r) => [r.id, `Ch. ${r.room} · ${G(r.guest).name}`]), ["ext", "Client externe (paiement immédiat)"]], ih[0] && ih[0].id)),
       field("pr-due", "Retour souhaité dans", select("pr-due", [["2", "2 h"], ["3", "3 h"], ["6", "6 h"], ["8", "8 h (le soir)"], ["24", "24 h"]], "8", `onchange="A.bln.quote()"`)),
       ...[0, 1, 2].map((i) => field("pr-art" + i, `Article ${i + 1}`, select("pr-art" + i, [["", "—"], ...art], i === 0 ? "Chemise" : "", `onchange="A.bln.quote()"`))
@@ -280,7 +354,7 @@
       field("pr-ext", "Client externe : nom et téléphone", input("pr-ext", "", 'placeholder="Ex. Kadi Ouattara, +225 07 00 00 00 41"')),
       field("pr-pay", "Paiement immédiat (externe)", select("pr-pay", ["Espèces", "Mobile Money", "Carte bancaire"], "Mobile Money")),
       `<div class="full" id="pr-quote"></div>`,
-      `<div class="full row">${btn("Confirmer la commande", "A.bln.createOrder()", "accent")}${muted("RG-BLN-01 : client en séjour, ou externe identifié avec paiement immédiat")}</div>`,
+      `<div class="full row">${btn("Confirmer la commande", "A.bln.createOrder()", "accent")}${muted("RG-BLN-01 : client en séjour, ou externe identifié avec paiement immédiat · EF-BLN-011")}</div>`,
     ]))
       + aiBox("Prise de commande par le concierge IA", "Message du client (ch. 202) : « Pouvez-vous laver et repasser deux chemises pour ce soir ? » Proposition : 2 chemises, lavage, retour 19 h, 4 000 FCFA. Le prix est confirmé au client avant validation.",
         btn("Créer la commande proposée", "A.bln.fromConcierge()", "sm"))
@@ -314,7 +388,7 @@
       const bad = f.lines.find((l) => !unitPrice(l.art, l.svc))
       if (bad) return (el.innerHTML = `<div class="err">${esc(SVC[bad.svc])} non proposé pour : ${esc(bad.art)}.</div>`)
       const total = orderAmount({ lines: f.lines, express: f.express })
-      el.innerHTML = `<div class="card"><strong>Prix : ${esc(money(total))}</strong> ${f.express ? badge("Express +" + B.expressRate * 100 + " %", "on") : ""} <span class="muted">· retour promis ${esc(dt(promisedAt(f.hours)))}</span></div>`
+      el.innerHTML = `<div class="card"><strong>Prix : ${esc(money(total))}</strong> <span class="muted">dont TVA ${esc(money(taxOf(total)))}</span> ${f.express ? badge("Express +" + B.expressRate * 100 + " %", "on") : ""} <span class="muted">· retour promis ${esc(dt(promisedAt(f.hours)))}</span></div>`
     },
     createOrder() {
       const f = readOrderForm(), res = val("pr-res")
@@ -323,7 +397,7 @@
       if (res === "ext") {
         const ext = val("pr-ext")
         if (!ext) return toast("Client externe : identité obligatoire et paiement immédiat (RG-BLN-01)")
-        const o = { id: "PR-0" + B.seq.pr++, res: null, ext, payMode: val("pr-pay"), lines: f.lines, express: f.express, taken: NOW, promised: promisedAt(f.hours), status: "prise" }
+        const o = { id: "PR-0" + B.seq.pr++, channel: val("pr-chan"), res: null, ext, payMode: val("pr-pay"), lines: f.lines, express: f.express, taken: NOW, promised: promisedAt(f.hours), status: "prise" }
         o.amount = orderAmount(o)
         B.orders.unshift(o)
         toast(`${o.id} : ${money(o.amount)} encaissés (${o.payMode}, simulé)`)
@@ -331,7 +405,7 @@
       }
       const r = R(res)
       if (!r || r.status !== "arrivee") return toast("Commande refusée : le client n'est pas en séjour (RG-BLN-01)")
-      const o = { id: "PR-0" + B.seq.pr++, res, lines: f.lines, express: f.express, taken: NOW, promised: promisedAt(f.hours), status: "prise" }
+      const o = { id: "PR-0" + B.seq.pr++, channel: val("pr-chan"), res, lines: f.lines, express: f.express, taken: NOW, promised: promisedAt(f.hours), status: "prise" }
       B.orders.unshift(o)
       toast(`${o.id} enregistré — ticket imprimé (simulé), ${money(orderAmount(o))}`)
       go("bln-pressing/commandes")
@@ -339,7 +413,7 @@
     fromConcierge() {
       const r = inHouse().find((x) => x.room === "202") || inHouse()[0]
       if (!r) return toast("Aucun client en séjour")
-      const o = { id: "PR-0" + B.seq.pr++, res: r.id, lines: [{ art: "Chemise", svc: "lavage", qty: 2 }], express: false, taken: NOW, promised: today + " 19:00", status: "prise" }
+      const o = { id: "PR-0" + B.seq.pr++, channel: "Concierge IA", res: r.id, lines: [{ art: "Chemise", svc: "lavage", qty: 2 }], express: false, taken: NOW, promised: today + " 19:00", status: "prise" }
       B.orders.unshift(o)
       toast(`${o.id} créée depuis le concierge IA (simulé)`)
       go("bln-pressing/commandes")
@@ -352,9 +426,10 @@
         if (r.status !== "arrivee") return toast("Le client a quitté l'hôtel : imputation impossible sur un folio clos")
         o.amount = orderAmount(o)
         o.delivered = NOW
-        ;(D.extras[o.res] = D.extras[o.res] || []).push({ label: `Pressing ${o.id}${o.express ? " (express)" : ""}`, amount: o.amount })
+        const tax = taxOf(o.amount)
+        ;(D.extras[o.res] = D.extras[o.res] || []).push({ label: `Pressing ${o.id}${o.express ? " (express)" : ""} — dont TVA ${Math.round(B.vat * 100)} % : ${money(tax)}`, amount: o.amount, tax, code: "BLA" })
         o.charged = true
-        toast(`${id} livré en chambre ${r.room} — ${money(o.amount)} imputés au folio`)
+        toast(`${id} livré en chambre ${r.room} — ${money(o.amount)} TTC imputés au folio (TVA ${money(tax)})`)
       } else toast(`${id} : ${OST[next][0].toLowerCase()}`)
       o.status = next
       render()
@@ -375,6 +450,90 @@
       ;(D.extras[o.res] = D.extras[o.res] || []).push({ label: `Dédommagement pressing ${o.id}`, amount: -c.amount })
       c.ok = true
       toast(`Dédommagement de ${money(c.amount)} imputé en avoir au folio`)
+      render()
+    },
+    addItem() {
+      const code = val("it-code").toUpperCase(), label = val("it-label"), kg = Number(val("it-kg")), cost = Number(val("it-cost")), life = Number(val("it-life")), maxWash = Number(val("it-wash"))
+      const err = (m) => ($("#it-err").innerHTML = `<div class="err">${esc(m)}</div>`)
+      if (!/^[A-Z]{3}$/.test(code)) return err("Code : 3 lettres.")
+      if (IT(code)) return err(`Le code ${code} existe déjà.`)
+      if (!label || !(kg > 0) || !(cost > 0) || !(life > 0) || !(maxWash > 0)) return err("Tous les champs sont obligatoires et doivent être positifs.")
+      B.items.push({ code, label, cat: val("it-cat"), kg, cost, maxWash, life })
+      toast(`${label} ajouté au catalogue`)
+      render()
+    },
+    toggleItem(c) { IT(c).inactive = true; toast(`${IT(c).label} retiré du catalogue (historique conservé)`); render() },
+    bqReserve(evt, fn) {
+      const x = evtFns().find((y) => y.e.id === evt && y.f.id === fn)
+      const lines = { NAP: Math.ceil(x.f.covers / 8) + 2, STB: Math.ceil(x.f.covers * 1.1) }
+      const short = Object.entries(lines).filter(([c, n]) => qty("Lingerie centrale", c) - reserved(c) < n)
+      if (short.length) return toast(`Réservation refusée : ${short.map(([c, n]) => `${IT(c).label} (${n} demandées, ${qty("Lingerie centrale", c) - reserved(c)} disponibles)`).join(", ")}`)
+      B.banquets.push({ evt, fn, label: x.f.label, date: x.f.date, lines, status: "reserve" })
+      toast(`Nappage réservé pour ${x.e.name} — ${x.f.label}`)
+      render()
+    },
+    bqOut(evt, fn) {
+      const b = B.banquets.find((x) => x.evt === evt && x.fn === fn), c0 = B.stock["Lingerie centrale"], bq = B.stock["Banquets et événements"]
+      Object.entries(b.lines).forEach(([c, n]) => { c0[c] = qty("Lingerie centrale", c) - n; bq[c] = (bq[c] || 0) + n })
+      b.status = "sorti"
+      toast("Linge sorti de la lingerie vers la salle")
+      render()
+    },
+    bqBack(evt, fn) {
+      const b = B.banquets.find((x) => x.evt === evt && x.fn === fn), bq = B.stock["Banquets et événements"], wash = B.stock["En lavage"]
+      let missing = 0
+      for (const [c, n] of Object.entries(b.lines)) {
+        const back = Number(prompt(`${IT(c).label} : pièces rendues (sur ${n})`, String(n)))
+        if (!(back >= 0) || back > n) return toast("Quantité invalide")
+        bq[c] = Math.max(0, (bq[c] || 0) - n); wash[c] = (wash[c] || 0) + back
+        if (back < n) { missing += n - back; B.losses.unshift({ date: today, item: c, qty: n - back, reason: "Perte / vol", loc: "Banquets et événements" }) }
+      }
+      Object.assign(b, { status: "rendu", missing })
+      toast(missing ? `Retour enregistré : ${missing} pièce(s) manquante(s) valorisée(s) en perte` : "Retour complet, linge envoyé au lavage")
+      render()
+    },
+    rfidToggle() { B.rfid.on = !B.rfid.on; toast(B.rfid.on ? "RFID activé" : "RFID désactivé : comptage manuel"); render() },
+    rfidScan() {
+      const g = B.rfid.gates.find((x) => x[0] === val("rf-gate")), loc = g[2], lines = {}
+      let n = B.rfid.n++
+      Object.entries(B.stock[loc] || {}).forEach(([c, a]) => { if (a > 0) { const miss = n % 2 === 0 && c === Object.keys(B.stock[loc])[0] ? 1 : 0; lines[c] = [a, a - miss] } })
+      const expected = Object.values(lines).reduce((t, [a]) => t + a, 0), read = Object.values(lines).reduce((t, [, b]) => t + b, 0)
+      B.rfid.reads.unshift({ at: NOW, gate: g[0], loc, read, expected, applied: false, lines })
+      toast(`${read} puce(s) lue(s) en une passe à « ${g[1]} »${read !== expected ? ` — écart de ${read - expected}` : ""}`)
+      render()
+    },
+    rfidApply(i) {
+      const r = B.rfid.reads[i]
+      Object.entries(r.lines).forEach(([c, [, b]]) => (B.stock[r.loc][c] = b))
+      r.applied = true
+      toast(`Stock « ${r.loc} » ajusté sur la lecture RFID`)
+      render()
+    },
+    tabletCollect() {
+      const pcs = Number(val("tb-pcs")), loc = val("tb-loc")
+      if (!(pcs > 0)) return toast("Indiquez le nombre de pièces")
+      if (B.tablet.offline) { B.tablet.queue.push({ kind: "collect", loc, pcs }); toast(`Hors ligne : collecte gardée sur la tablette (${B.tablet.queue.length})`); return render() }
+      B.collect.unshift({ date: NOW, loc, pcs, kg: pcs * 0.55, back: 0 })
+      toast(`Collecte ${loc} enregistrée`)
+      render()
+    },
+    tabletEnd(id, result) {
+      if (B.tablet.offline) { B.tablet.queue.push({ kind: "end", id, result }); toast("Hors ligne : fin de lot gardée sur la tablette"); return render() }
+      const b = B.batches.find((x) => x.id === id)
+      Object.assign(b, { status: "termine", result, end: NOW }); MA(b.machine).state = "disponible"
+      toast(`${id} terminé : ${RES[result][0].toLowerCase()}`)
+      render()
+    },
+    tabletNet() {
+      const t = B.tablet
+      if (!t.offline) { t.offline = true; toast("Coupure réseau simulée : la tablette continue en local"); return render() }
+      t.offline = false
+      const q0 = t.queue.splice(0)
+      q0.forEach((x) => {
+        if (x.kind === "collect") B.collect.unshift({ date: NOW, loc: x.loc, pcs: x.pcs, kg: x.pcs * 0.55, back: 0 })
+        else { const b = B.batches.find((y) => y.id === x.id); if (b && b.status === "en_cours") { Object.assign(b, { status: "termine", result: x.result, end: NOW }); MA(b.machine).state = "disponible" } }
+      })
+      toast(`${q0.length} saisie(s) synchronisée(s)`)
       render()
     },
     collect() {

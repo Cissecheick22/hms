@@ -24,9 +24,30 @@
     { id: "L-PISC", door: "Piscine", zone: "Espaces communs", kind: "en ligne", battery: 72, fw: "4.2.0", last: "2026-11-26 08:40", state: "mode bureau" },
     { id: "L-PARK", door: "Parking (barrière)", zone: "Espaces communs", kind: "en ligne", battery: null, fw: "1.9.2", last: "2026-11-26 08:42", state: "verrouillée" },
     { id: "L-SAL", door: "Salon exécutif", zone: "Espaces communs", kind: "en ligne", battery: 63, fw: "4.2.0", last: "2026-11-26 08:39", state: "verrouillée" },
-    { id: "L-TECH", door: "Local technique", zone: "Service", kind: "en ligne", battery: 55, fw: "4.2.0", last: "2026-11-26 08:41", state: "verrouillée" },
+    { id: "L-SPA", door: "Spa", zone: "Espaces communs", kind: "en ligne", battery: 81, fw: "4.2.0", last: "2026-11-26 08:38", state: "verrouillée" },
+    { id: "L-BAR", door: "Bar lounge", zone: "Espaces communs", kind: "en ligne", battery: 76, fw: "4.2.0", last: "2026-11-26 08:37", state: "verrouillée" },
+    { id: "L-TECH", door: "Local technique", zone: "Service", kind: "en ligne", battery: 55, fw: "4.2.0", last: "2026-11-26 08:41", state: "verrouillée", doorOpen: true },
     { id: "L-LING", door: "Lingerie étage 2", zone: "Service", kind: "hors ligne", battery: 33, fw: "4.1.3", last: "2026-11-25 17:30", state: "verrouillée" },
+    // Portes de communication entre chambres communicantes (EF-ACC-027) : ouvertes seulement par une clé couvrant les deux chambres
+    { id: "L-COM-202", door: "Porte communicante 202↔203", zone: "Étage 2", kind: "hors ligne", battery: 70, fw: "4.1.3", last: "2026-11-25 18:00", state: "verrouillée", pair: ["202", "203"] },
+    { id: "L-COM-303", door: "Porte communicante 303↔304", zone: "Étage 3", kind: "hors ligne", battery: 68, fw: "4.1.3", last: "2026-11-25 18:00", state: "verrouillée", pair: ["303", "304"] },
   ]
+  // Espaces communs : serrure, horaires d'ouverture encodés sur la carte (EF-ACC-011)
+  const AREAS = [
+    { name: "Ascenseur", lock: "L-ASC", hours: ["00:00", "23:59"] },
+    { name: "Piscine", lock: "L-PISC", hours: ["07:00", "21:00"] },
+    { name: "Salle de sport", lock: "L-GYM", hours: ["06:00", "22:00"] },
+    { name: "Parking", lock: "L-PARK", hours: ["00:00", "23:59"] },
+    { name: "Spa", lock: "L-SPA", hours: ["09:00", "20:00"] },
+    { name: "Salon exécutif", lock: "L-SAL", hours: ["06:30", "23:00"] },
+    { name: "Bar lounge", lock: "L-BAR", hours: ["11:00", "23:59"] },
+    { name: "Minibar", lock: null, hours: ["00:00", "23:59"] },
+  ]
+  const HOLDERS = { principal: "Occupant principal", adulte: "Accompagnant adulte", enfant: "Accompagnant enfant (restreint)" }
+  const CHILD_DENY = ["Minibar", "Bar lounge", "Salon exécutif"] // EF-ACC-004 : enfant sans minibar ni bar
+  const DOOR_TOKENS = { ROOMS_FLOOR: "Chambres de l'étage affecté", ROOMS_WO: "Chambres sur ordre de travail" }
+  const DAYS = { "Tous les jours": [0, 1, 2, 3, 4, 5, 6], "Lun–Sam": [1, 2, 3, 4, 5, 6], "Lun–Ven": [1, 2, 3, 4, 5] }
+  const GW_LATEST = "2.9.0", FW_LATEST = "4.2.0"
   D.acc = {
     role: "Réceptionniste",
     gateway: { id: "GW-ABJ-01", version: "2.8.1", cloud: true, cert: "2026-12-05", certFp: "3F:A2:…:9C", beat: "il y a 4 s", ha: false, queue: [], adapter: "Adaptateur fabricant générique (simulé)", caps: ["Serrures en ligne", "Clé mobile BLE/NFC", "Ouverture à distance", "Collecte des journaux", "Ascenseur"] },
@@ -47,11 +68,12 @@
       { id: "PS-04", type: "Passe d'urgence", holder: "Coffre de sécurité (sous scellés)", from: "2026-01-01", to: "2026-12-31", status: "sous scellés", by: "Arsène Gbané (responsable sécurité)", validatedBy: "Jean-Marc Tanoh (directeur d'exploitation)" },
       { id: "PS-05", type: "Passe d'étage 3", holder: "Fatou Diabaté (femme de chambre)", from: "2026-11-27", to: "2026-11-27", status: "à valider", by: "Ahou Diabaté (gouvernante)", hours: "07:00–15:00" },
     ],
+    // Profils d'accès du personnel, associés aux postes RH (EF-ACC-012)
     profiles: [
-      { role: "Femme de chambre", zones: "Chambres de l'étage affecté, lingerie", hours: "Poste + 15 min", privacy: "Refusé en mode intimité" },
-      { role: "Technicien maintenance", zones: "Locaux techniques, chambres sur ordre de travail", hours: "Poste + 30 min", privacy: "Refusé en mode intimité" },
-      { role: "Bagagiste", zones: "Bagagerie, parking, ascenseurs", hours: "Poste", privacy: "Pas d'accès chambres" },
-      { role: "Agent de sécurité", zones: "Toutes portes communes, chambres sur incident", hours: "24 h/24", privacy: "Passe d'urgence journalisé" },
+      { role: "Femme de chambre", post: "Femme de chambre", doors: ["ROOMS_FLOOR", "L-LING", "L-ASC"], margin: 15, days: "Tous les jours", privacy: "Refusé en mode intimité" },
+      { role: "Technicien maintenance", post: "Technicien de maintenance", doors: ["ROOMS_WO", "L-TECH", "L-LING", "L-ASC"], margin: 30, days: "Lun–Sam", privacy: "Refusé en mode intimité" },
+      { role: "Bagagiste", post: "Bagagiste", doors: ["L-PARK", "L-ASC"], margin: 0, days: "Tous les jours", privacy: "Pas d'accès chambres" },
+      { role: "Agent de sécurité", post: "Agent de sécurité", doors: ["L-ASC", "L-GYM", "L-PISC", "L-PARK", "L-SPA", "L-SAL", "L-BAR", "L-TECH", "L-LING"], margin: 0, days: "Tous les jours", privacy: "Chambres : passe d'urgence journalisé" },
     ],
     staff: [
       { id: "B-11", name: "Amenan Koffi", role: "Femme de chambre", zone: "Étage 2", shift: "07:00–15:00", status: "actif", last: "2026-11-26" },
@@ -79,6 +101,11 @@
     cards: { blank: 340, recycle: 52, lost: 7, billed: 3 },
     emergency: null,
     reads: [],
+    sims: [], // essais d'accès du simulateur
+    lockSeq: {}, // plus haut n° de séquence vu par chaque serrure autonome
+    pkgs: { "R-2048": "DETENTE" }, // forfaits achetés (rat.package) par séjour
+    mobileAuto: true, // clé mobile émise automatiquement au check-in (EF-ACC-005)
+    emOtp: null, // code à usage unique du second valideur (EF-ACC-016)
     idSeq: 3021, // compteur des identifiants émis
   }
   const C = D.acc
@@ -108,11 +135,28 @@
 
   // ---------- Synchronisation avec les séjours (fof.stay.* → acc) ----------
   const lockOf = (no) => C.locks.find((l) => l.room === no)
-  const areasFor = (r) => ["Ascenseur", "Piscine", "Salle de sport", "Parking", ...(r.type === "SUI" || (G(r.guest) || {}).vip ? ["Salon exécutif"] : [])]
+  // Droits aux espaces communs : catégorie, fidélité (CRM), forfait (RAT), horaires ; restrictions des accompagnants (EF-ACC-011, EF-ACC-004)
+  const tierOf = (r) => (D.crm && D.crm.accounts && D.crm.accounts[r.guest] ? D.crm.accounts[r.guest].tier : "—")
+  const pkgOf = (r) => { const code = C.pkgs[r.id]; return code ? ((D.rat && D.rat.packages) || []).find((x) => x.code === code) || { code, name: code, components: [] } : null }
+  const rights = (r, holder = "principal") => AREAS.map((a) => {
+    let ok = true, why = "Tous les séjours"
+    const t = tierOf(r), g = G(r.guest) || {}
+    if (a.name === "Ascenseur") why = `Étage ${String(r.room || "").charAt(0)} et rez-de-chaussée`
+    if (a.name === "Spa") { const k = pkgOf(r), spa = k && /spa|massage|d[ée]tente/i.test(k.name + JSON.stringify(k.components || [])); ok = spa || t === "Platine"; why = spa ? `Forfait ${k.name} (RAT)` : t === "Platine" ? "Fidélité Platine (CRM)" : "Ni forfait spa ni niveau Platine" }
+    if (a.name === "Salon exécutif") { ok = r.type === "SUI" || ["Or", "Platine"].includes(t) || !!g.vip; why = r.type === "SUI" ? "Catégorie Suite" : ["Or", "Platine"].includes(t) ? `Fidélité ${t} (CRM)` : g.vip ? "Client VIP" : `Catégorie ${T(r.type).label}, fidélité ${t} : non éligible` }
+    if (holder === "enfant" && CHILD_DENY.includes(a.name)) { ok = false; why = "Accompagnant enfant : accès restreint" }
+    return { ...a, ok, why }
+  })
+  const areasFor = (r, holder) => rights(r, holder).filter((x) => x.ok).map((x) => x.name)
+  const roomsOf = (c) => c.rooms || [c.room]
+  const inWin = (t, a, b) => (a <= b ? t >= a && t <= b : t >= a || t <= b)
+  const shiftMin = (hm, m) => { const [h, mm] = hm.split(":").map(Number), x = (((h * 60 + mm + m) % 1440) + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0") }
+  const doorLabel = (d) => DOOR_TOKENS[d] || (C.locks.find((l) => l.id === d) || {}).door || d
   const validTo = (r) => `${r.to} 13:00` // départ prévu 12 h + 1 h de grâce (RG-FOF-02)
   const nextSeq = (no) => (C.seq[no] = (C.seq[no] || 0) + 1)
   const mkCred = (r, type, extra = {}) => {
-    const c = { id: (type === "mobile" ? "M-" : "K-") + C.idSeq++, resId: r.id, room: r.room, type, seq: type === "carte" ? nextSeq(r.room) : null, from: r.from, to: validTo(r), status: "active", areas: areasFor(r), version: 1, ...extra }
+    const holder = extra.holder || "principal"
+    const c = { id: (type === "mobile" ? "M-" : "K-") + C.idSeq++, resId: r.id, room: r.room, rooms: [r.room], holder, type, seq: type === "carte" ? nextSeq(r.room) : null, from: r.from, to: validTo(r), status: "active", areas: areasFor(r, holder), version: 1, ...extra }
     C.creds.unshift(c)
     return c
   }
@@ -121,16 +165,41 @@
   const sync = () => {
     D.reservations.forEach((r) => {
       const mine = C.creds.filter((c) => c.resId === r.id && ["active", "en cours"].includes(c.status))
-      if (r.status === "arrivee" && r.key === "active" && !C.creds.some((c) => c.resId === r.id && c.status !== "échec")) {
-        const c = mkCred(r, "carte", { encoder: C.enc })
-        ev("Ch. " + r.room, "Carte " + c.id, "encodage", "accusé matériel", "check-in (fof.stay.checked-in)")
+      if (r.status === "arrivee") {
+        const fresh = !C.creds.some((c) => c.resId === r.id)
+        // fof.stay.checked-in : carte associée au séjour, clé mobile émise automatiquement (EF-ACC-005)
+        if (r.key === "active" && !C.creds.some((c) => c.resId === r.id && c.type === "carte" && c.status !== "échec")) {
+          const c = mkCred(r, "carte", { encoder: C.enc })
+          ev("Ch. " + r.room, "Carte " + c.id, "encodage", "accusé matériel", "fof.stay.checked-in · carte associée au séjour")
+        }
+        const g = G(r.guest) || {}
+        if (fresh && C.mobileAuto && (g.email || g.phone)) {
+          const c = mkCred(r, "mobile", { encoder: "SDK mobile" })
+          ev("Ch. " + r.room, label(c), "émission clé mobile", "accusé SDK", "fof.stay.checked-in · émission automatique")
+        }
       }
+      // Recalcul des droits aux espaces communs (RG-ACC-07) : forfait, fidélité ou catégorie modifiés
+      if (r.status === "arrivee") C.creds.filter((c) => c.resId === r.id && ["active", "à réencoder"].includes(c.status)).forEach((c) => {
+        const now = areasFor(r, c.holder)
+        if (now.join() === (c.areas || []).join()) return
+        const was = c.areas || []
+        c.areas = now
+        if (!C.areasReady) return
+        c.version += 1
+        const plus = now.filter((x) => !was.includes(x)), minus = was.filter((x) => !now.includes(x))
+        ev("Ch. " + c.room, label(c), "recalcul des droits", "mise à jour à distance", "RG-ACC-07 · " + [plus.length ? "+" + plus.join(", +") : "", minus.length ? "−" + minus.join(", −") : ""].filter(Boolean).join(" "))
+      })
+      // Clé partagée : une chambre secondaire libérée est retirée de la clé (EF-ACC-027)
+      C.creds.filter((c) => c.resId === r.id && c.rooms && c.rooms.length > 1 && ["active", "à réencoder"].includes(c.status)).forEach((c) => {
+        const keep = c.rooms.filter((no, i) => i === 0 || occupant(no))
+        if (keep.length !== c.rooms.length) { ev("Ch. " + c.rooms.filter((x) => !keep.includes(x)).join(", "), label(c), "retrait de chambre", "mise à jour", "clé partagée : chambre secondaire libérée"); c.rooms = keep; c.version += 1 }
+      })
       if (r.status !== "arrivee") mine.forEach((c) => { c.status = "révoquée"; c.reason = "check-out"; ev("Ch. " + c.room, label(c), "révocation", lockOf(c.room)?.kind === "en ligne" || c.type === "mobile" ? "immédiate" : "à l'expiration encodée", "fof.stay.checked-out") })
       else mine.forEach((c) => {
         if (c.room !== r.room) {
           const old = c.room
           ev("Ch. " + old, label(c), "transfert", "ancienne chambre révoquée", `fof.stay.room-moved → ch. ${r.room}`)
-          Object.assign(c, { room: r.room, version: c.version + 1, areas: areasFor(r) })
+          Object.assign(c, { room: r.room, rooms: [r.room, ...roomsOf(c).filter((x) => x !== old && x !== r.room)], version: c.version + 1, areas: areasFor(r, c.holder) })
           if (c.type === "carte") c.status = "à réencoder"
         }
         if (c.to !== validTo(r)) {
@@ -141,6 +210,56 @@
         }
       })
     })
+    C.areasReady = true
+  }
+
+  // Décision d'une serrure face à un identifiant (simulateur d'accès, EF-ACC-004/009/011/012/027)
+  const decideStaff = (s, l, t) => {
+    if (s.status !== "actif") return [false, `badge ${s.status} (hrm.shift / RG-ACC-08)`]
+    const p = C.profiles.find((x) => x.role === s.role)
+    if (!p) return [false, "aucun profil d'accès pour ce poste"]
+    if (!(DAYS[p.days] || DAYS["Tous les jours"]).includes(day(today).getDay())) return [false, `jour non autorisé par le profil (${p.days})`]
+    const [a, b] = s.shift.split("–")
+    if (!inWin(t, shiftMin(a, -p.margin), shiftMin(b, p.margin))) return [false, `hors poste (${s.shift}, marge ${p.margin} min)`]
+    if (l.room) {
+      const ok = (p.doors.includes("ROOMS_FLOOR") && l.zone === s.zone) || (p.doors.includes("ROOMS_WO") && C.workOrders.some((w) => w.door === l.door))
+      if (!ok) return [false, "chambre hors périmètre du profil"]
+      if (occupant(l.room) && l.dnd) return [false, "chambre occupée en mode intimité (RG-ACC-06)"]
+      return [true, `profil ${p.role}`]
+    }
+    if (!p.doors.includes(l.id)) return [false, `porte hors profil ${p.role}`]
+    return [true, `profil ${p.role}`]
+  }
+  const decide = (who, l, t) => {
+    if (/verrouillage forcé/.test(l.state)) return [false, "lockdown en cours"]
+    const s = C.staff.find((x) => x.id === who)
+    if (s) return decideStaff(s, l, t)
+    const c = C.creds.find((x) => x.id === who)
+    if (!c) return [false, "identifiant inconnu"]
+    if (["échec", "à réencoder"].includes(c.status)) return [false, `carte ${c.status}`]
+    const autonomous = (l.room || l.pair) && l.kind === "hors ligne" && c.type === "carte"
+    // Une serrure en ligne ou une clé mobile connaît l'état cloud ; une serrure autonome ne lit que la carte
+    if (!autonomous && c.status !== "active") return [false, c.status === "perdue" ? "identifiant déclaré perdu : invalidé (EF-ACC-009)" : `identifiant ${c.status}`]
+    if (`${today} ${t}` > c.to || today < c.from) return [false, "hors période de validité (RG-ACC-01)"]
+    if (l.pair) return l.pair.every((no) => roomsOf(c).includes(no)) ? [true, "chambres communicantes sur la même clé"] : [false, "porte de communication condamnée : les deux chambres ne sont pas sur la clé"]
+    if (l.room) {
+      if (!roomsOf(c).includes(l.room)) return [false, "chambre non encodée sur l'identifiant"]
+      if (autonomous) {
+        const seen = C.lockSeq[l.room] || 0
+        if (c.seq < seen) return [false, `n° de séquence ${c.seq} < ${seen} : carte annulée par une carte plus récente`]
+        if (c.seq > seen) {
+          C.lockSeq[l.room] = c.seq
+          C.creds.filter((x) => roomsOf(x).includes(l.room) && x.type === "carte" && x.seq < c.seq && x.status === "perdue").forEach((x) => { x.reason = `invalidée à la serrure par la séquence ${c.seq}`; ev(l.door, label(x), "invalidation par séquence", "carte perdue annulée", `1re utilisation de ${c.id}`) })
+        }
+        if (c.status === "perdue") return [true, "serrure autonome : la carte perdue reste valable jusqu'à la 1re utilisation de la nouvelle"]
+      }
+      return [true, roomsOf(c).length > 1 ? "clé partagée" : "chambre encodée"]
+    }
+    const a = AREAS.find((x) => x.lock === l.id)
+    if (!a) return [false, "porte de service : non accessible aux clients"]
+    if (!(c.areas || []).includes(a.name)) return [false, `${a.name} non inclus : ${rights(R(c.resId), c.holder).find((x) => x.name === a.name).why}`]
+    if (!inWin(t, a.hours[0], a.hours[1])) return [false, `${a.name} fermé (horaires ${a.hours.join("–")})`]
+    return [true, `${a.name} autorisé`]
   }
   const label = (c) => (c.type === "mobile" ? "Clé mobile " : "Carte ") + c.id
   const credBadge = (s) => badge(s, s === "active" ? "on" : ["perdue", "échec", "à réencoder"].includes(s) ? "dark" : ["en cours"].includes(s) ? "outline" : "")
@@ -159,8 +278,8 @@
       const tab = p[0] || "sejours"
       return pageHead("Clés et identifiants", "Cartes et clés mobiles des séjours, passes et badges du personnel, lecture de carte, stock. Encodeurs et serrures simulés.")
         + cloudBanner()
-        + subtabs("acc-cles", [["sejours", "Clés des séjours"], ["passes", "Passes et personnel"], ["lecture", "Lecture et stock de cartes"]], tab)
-        + ({ sejours: stayKeys, passes: passesTab, lecture: readTab }[tab] || stayKeys)()
+        + subtabs("acc-cles", [["sejours", "Clés des séjours"], ["passes", "Passes et personnel"], ["simul", "Tester un accès"], ["lecture", "Lecture et stock de cartes"]], tab)
+        + ({ sejours: stayKeys, passes: passesTab, simul: simTab, lecture: readTab }[tab] || stayKeys)()
     },
     materiel(p) {
       sync()
@@ -189,27 +308,51 @@
     const active = creds.filter((c) => c.status === "active").length
     const lock = lockOf(r.room)
     const encs = C.encoders
+    const others = stays.filter((x) => x.id !== r.id)
+    const ids = creds.map((c) => c.id)
+    const stayEv = C.events.filter((e) => /^fof\.stay/.test(e.detail) && ids.some((id) => e.cred.endsWith(" " + id))).slice(0, 8)
+    const mob = creds.filter((c) => c.type === "mobile")
     return split(listItems(stays.map((x) => { const n = C.creds.filter((c) => c.resId === x.id && c.status === "active").length; return { id: x.id, title: `Ch. ${x.room} · ${gname(x)}`, sub: `${n} clé(s) active(s) · départ ${fd(x.to)}`, badge: C.creds.some((c) => c.resId === x.id && c.status === "à réencoder") ? " " + badge("À réencoder", "dark") : "" } }), r.id, "acc-cles/sejours").replace(/go\('acc-cles\/sejours\/([^']+)'\)/g, "ui.accStay='$1';render()"),
       `<div class="card"><div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(gname(r))}</span>${badge(`Serrure ${lock?.kind || "—"}`, "outline")}</div>
         <div class="muted">${esc(r.id)} · validité jusqu'au ${fd(r.to)} 13:00 (départ + 1 h de grâce, RG-ACC-01) · espaces : ${esc(areasFor(r).join(", "))}</div>
         <h3>Identifiants</h3>
-        ${tbl(["Identifiant", "Type", "N° séq.", "Validité", "Version", "Statut", ""], creds.map((c) => [esc(c.id), esc(c.type), c.seq ?? "—", `${fd(c.from)} → ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}`, "v" + c.version, credBadge(c.status) + (c.reason ? ` ${ref(c.reason)}` : ""),
+        ${tbl(["Identifiant", "Type", "Titulaire", "Contenu encodé", "N° séq.", "Validité", "Version", "Statut", ""], creds.map((c) => [esc(c.id), esc(c.type), esc(HOLDERS[c.holder] || HOLDERS.principal),
+          `ch. ${esc(roomsOf(c).join(" + "))}${connects(roomsOf(c)).map((l) => ` · ${esc(l.door)}`).join("")}<div class="muted">${esc((c.areas || []).join(", ") || "aucun espace")}</div>`,
+          c.seq ?? "—", `${fd(c.from)} → ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}`, "v" + c.version, credBadge(c.status) + (c.reason ? ` ${ref(c.reason)}` : ""),
           c.status === "active" ? `<span class="row" style="flex-wrap:nowrap">${btn("Perdue", `A.acc.lost(${q(c.id)})`, "ghost sm")}${btn("Révoquer", `A.acc.revoke(${q(c.id)})`, "ghost sm")}</span>`
           : c.status === "à réencoder" || c.status === "échec" ? btn("Réencoder", `A.acc.reencode(${q(c.id)})`, "sm") : ""]), "Aucun identifiant.")}
+        <p class="muted">Encodé sur la carte : chambre(s), espaces communs autorisés, début et fin de validité, n° de séquence (une « nouvelle clé » annule les précédentes) — EF-ACC-002.</p>
         <h3>Émettre</h3>
         <div class="form">
           ${field("acc-enc", "Encodeur", select("acc-enc", encs.map((e) => [e.id, `${e.id} · ${e.post} · ${e.status}`]), C.enc, `onchange="D.acc.enc=this.value"`))}
           ${field("acc-n", "Nombre de cartes", select("acc-n", ["1", "2"], "1"))}
+          ${field("acc-holder", "Titulaire", select("acc-holder", Object.entries(HOLDERS), "principal"))}
           <div style="align-self:end"><label class="row" style="color:var(--ink)"><input type="checkbox" id="acc-fail" ${C.failNext ? "checked" : ""} onchange="D.acc.failNext=this.checked"> Simuler un échec d'encodage</label></div>
+          <div class="full"><label>Chambres supplémentaires sur la même clé (famille, groupe, suite)</label><div class="row">${others.length ? others.map((x) => `<label class="row" style="color:var(--ink);margin:0"><input type="checkbox" id="acc-sh-${esc(x.room)}"> Ch. ${esc(x.room)} · ${esc(gname(x))}${pairOf(r.room) === x.room ? " (communicante)" : ""}</label>`).join("") : ref("Aucune autre chambre en séjour.")}</div>
+            <p class="muted" style="margin:4px 0 0">${pairOf(r.room) ? `Ch. ${esc(r.room)} communique avec la ${esc(pairOf(r.room))} : la porte de communication n'est encodée que si les deux chambres sont sur la clé.` : "Pas de chambre communicante."} EF-ACC-027</p></div>
         </div>
+        <p class="muted">Accompagnant enfant : ni minibar, ni bar, ni salon exécutif. Une clé par personne, droits propres (EF-ACC-004).</p>
         <div id="acc-err"></div>
         ${encodingMsg ? `<div style="margin-top:10px">${esc(encodingMsg)}</div><div class="bar"><i></i></div>` : `<div class="row" style="margin-top:12px">
           ${btn("Dupliquer (garde les clés existantes)", `A.acc.issue(${q(r.id)}, 'duplicate')`)}
           ${btn("Nouvelle clé (annule les précédentes)", `A.acc.issue(${q(r.id)}, 'new')`, "ghost")}
           ${btn("Envoyer une clé mobile", `A.acc.mobile(${q(r.id)})`, "ghost")}</div>`}
-        <p class="muted">${active} clé(s) active(s) sur ${MAX_KEYS} autorisées sans validation (RG-FOF-03). Aucun succès affiché sans accusé du matériel ; 3 tentatives puis échec signalé (RG-ACC-10). EF-ACC-001 à 010.</p>
+        <p class="muted">${active} clé(s) active(s) sur ${MAX_KEYS} autorisées sans validation (RG-FOF-03). Duplicata : même n° de séquence, les clés existantes restent valides ; nouvelle clé : séquence + 1, les précédentes sont annulées (EF-ACC-003). Aucun succès affiché sans accusé du matériel ; 3 tentatives puis échec signalé (RG-ACC-10). Émission en une action (EF-ACC-001). Perte : invalidation immédiate en ligne, par n° de séquence hors ligne, journal et alerte (EF-ACC-009).</p>
+        <h3>Droits aux espaces communs</h3>
+        <div class="form">${field("acc-pkg", "Forfait acheté (RAT / SPA)", select("acc-pkg", [["", "Aucun"], ...((D.rat && D.rat.packages) || []).map((k) => [k.code, k.name])], C.pkgs[r.id] || "", `onchange="A.acc.setPkg(${q(r.id)}, this.value)"`))}
+          ${field("acc-tier", "Niveau de fidélité (CRM)", `<input id="acc-tier" value="${esc(tierOf(r))}" disabled>`)}${field("acc-cat", "Catégorie", `<input id="acc-cat" value="${esc(T(r.type).label)}" disabled>`)}</div>
+        ${tbl(["Espace", "Horaires", "Droit", "Motif"], rights(r).map((a) => [esc(a.name), esc(a.hours.join("–")), a.ok ? badge("Autorisé", "on") : badge("Refusé", "dark"), ref(a.why)]))}
+        <p class="muted">Calculés selon la catégorie, le niveau de fidélité (CRM), le forfait (RAT/SPA) et les horaires ; recalculés à chaque changement (RG-ACC-07) et poussés aux serrures en ligne. EF-ACC-011</p>
+        <h3>Événements de séjour reçus</h3>
+        ${tbl(["Horodatage", "Identifiant", "Événement", "Effet"], stayEv.map((e) => [esc(e.at.slice(11)) + ` ${ref(fd(e.at.slice(0, 10)))}`, esc(e.cred), esc(e.detail.split(" ")[0]), esc(e.type + " · " + e.result)]), "Aucun événement fof.stay.* pour ce séjour.")}
+        <p class="muted">fof.stay.checked-in : carte associée et clé mobile émise automatiquement ${C.mobileAuto ? "(activé)" : "(désactivé)"} ${btn(C.mobileAuto ? "Désactiver" : "Activer", "D.acc.mobileAuto=!D.acc.mobileAuto;render()", "ghost sm")} (EF-ACC-005). fof.stay.extended : prolongation à distance en ligne, réencodage signalé hors ligne (EF-ACC-006). fof.stay.room-moved : ancienne chambre révoquée, nouvelle attribuée (EF-ACC-007). fof.stay.checked-out : tous les identifiants révoqués (EF-ACC-008). ${btn("Prolonger / changer de chambre", "go('sej-mouv/chambre')", "ghost sm")}</p>
+        ${mob.length ? `<h3>Clé mobile dans l'application client</h3><div class="row" style="align-items:flex-start">${phone(mob.map((c) => `<div class="card" style="margin-bottom:8px"><strong>Chambre ${esc(roomsOf(c).join(" + "))}</strong><div class="muted">${esc(c.id)} · jusqu'au ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}</div>
+          ${c.status === "active" ? `<div style="margin-top:8px">${btn("Approcher le téléphone (BLE/NFC)", `A.acc.tap(${q(c.id)})`, "sm")}</div>` : `<div style="margin-top:8px">${badge(c.status === "révoquée" ? "Clé révoquée à distance" : c.status, "dark")}</div>`}</div>`).join(""), "Application client")}
+          <p class="muted" style="max-width:280px">Clé émise via le SDK du fabricant (simulé), ouverture en BLE ou NFC. « Révoquer » la retire à distance du téléphone, immédiatement. EF-ACC-010</p></div>` : ""}
       </div>`)
   }
+  const pairOf = (no) => { const l = C.locks.find((x) => x.pair && x.pair.includes(no)); return l ? l.pair.find((x) => x !== no) : null }
+  const connects = (rooms) => C.locks.filter((l) => l.pair && l.pair.every((no) => rooms.includes(no)))
 
   // ---------- Passes et personnel ----------
   function passesTab() {
@@ -223,9 +366,30 @@
         `<div class="full">${btn("Soumettre à validation", "A.acc.requestPass()", "ghost")}</div>`]) + `<p class="muted">Attribution nominative, durée limitée et double validation (EF-ACC-014). Un passe général exige le rôle Responsable sécurité.</p>`, 'style="margin-top:14px"')}</section>
       <section><h2>Badges du personnel</h2>
       ${tbl(["Badge", "Employé", "Profil", "Poste", "Dernier usage", "Statut", ""], C.staff.map((s) => [esc(s.id), esc(s.name), esc(`${s.role} · ${s.zone}`), esc(s.shift), fd(s.last), badge(s.status, s.status === "actif" ? "on" : /30 j/.test(s.status) ? "dark" : ""),
-        s.status === "actif" ? btn("Fin de poste", `A.acc.shift(${q(s.id)}, false)`, "ghost sm") : btn(/30 j/.test(s.status) ? "Réactiver (validation)" : "Début de poste", `A.acc.shift(${q(s.id)}, true)`, "ghost sm")]))}
-      <p class="muted">Activation au pointage et suspension en fin de poste (hrm.shift.started / ended, simulés). Badge inutilisé 30 jours suspendu automatiquement (RG-ACC-08).</p>
-      <h3>Profils d'accès</h3>${tbl(["Poste", "Zones", "Plages", "Mode intimité"], C.profiles.map((x) => [esc(x.role), esc(x.zones), esc(x.hours), esc(x.privacy)]))}</section></div>`
+        /révoqué/.test(s.status) ? "" : `<span class="row" style="flex-wrap:nowrap">${s.status === "actif" ? btn("Fin de poste", `A.acc.shift(${q(s.id)}, false)`, "ghost sm") : btn(/30 j/.test(s.status) ? "Réactiver (validation)" : "Début de poste", `A.acc.shift(${q(s.id)}, true)`, "ghost sm")}${btn("Départ", `A.acc.terminate(${q(s.id)})`, "ghost sm")}</span>`]))}
+      <p class="muted">Activation au pointage et suspension en fin de poste (hrm.shift.started / ended), révocation définitive au départ (hrm.employee.terminated), événements RH simulés — EF-ACC-013. Badge inutilisé 30 jours suspendu automatiquement (RG-ACC-08). ${btn("Appliquer la règle des 30 jours", "A.acc.idleRule()", "ghost sm")}</p>
+      <h3>Profils d'accès</h3>${tbl(["Profil", "Poste RH", "Portes et zones", "Plages", "Jours", "Mode intimité"], C.profiles.map((x) => { const n = ((D.hrm && D.hrm.emps) || []).filter((e) => e.job === x.post).length; return [esc(x.role), esc(x.post) + ` ${ref(n + " employé(s) RH")}`, esc(x.doors.map(doorLabel).join(", ")), esc(`Poste ± ${x.margin} min`), esc(x.days), esc(x.privacy)] }))}
+      ${profileEditor()}</section></div>`
+  }
+  function profileEditor() {
+    const p = C.profiles.find((x) => x.role === ui.accProf) || C.profiles[0]
+    const opts = [...Object.keys(DOOR_TOKENS), ...C.locks.filter((l) => !l.room && !l.pair).map((l) => l.id)]
+    return card(`Modifier le profil « ${p.role} »`, `${form([field("pf-role", "Profil", select("pf-role", C.profiles.map((x) => x.role), p.role, `onchange="ui.accProf=this.value;render()"`)),
+        field("pf-days", "Jours", select("pf-days", Object.keys(DAYS), p.days)), field("pf-margin", "Marge autour du poste (min)", input("pf-margin", String(p.margin), 'type="number" min="0" max="120"')),
+        `<div class="full"><label>Portes et zones</label><div class="row">${opts.map((d) => `<label class="row" style="color:var(--ink);margin:0"><input type="checkbox" id="pf-${esc(d)}" ${p.doors.includes(d) ? "checked" : ""}> ${esc(doorLabel(d))}</label>`).join("")}</div></div>`,
+        `<div class="full" id="pf-err"></div>`, `<div class="full">${btn("Enregistrer le profil", `A.acc.saveProfile(${q(p.role)})`)}</div>`])}
+      <p class="muted">Zones, portes, plages horaires et jours par poste RH ; vérifiés à chaque présentation de badge (onglet « Tester un accès »). EF-ACC-012</p>`, 'style="margin-top:14px"')
+  }
+
+  // ---------- Simulateur d'accès ----------
+  function simTab() {
+    const creds = C.creds.filter((c) => c.status !== "échec")
+    const who = [...creds.map((c) => [c.id, `${label(c)} · ch. ${roomsOf(c).join("+")} · ${HOLDERS[c.holder] || ""} · ${c.status}`]), ...C.staff.map((s) => [s.id, `Badge ${s.id} · ${s.name} · ${s.role} · ${s.status}`])]
+    return `<div class="cols"><section>${card("Présenter un identifiant à une porte", `${form([field("sim-who", "Carte, clé mobile ou badge", select("sim-who", who, ui.accSimWho || who[0]?.[0])),
+        field("sim-door", "Porte", select("sim-door", C.locks.map((l) => [l.id, `${l.door} · ${l.kind}`]), ui.accSimDoor || "L-PISC")), field("sim-time", "Heure", input("sim-time", ui.accSimTime || nowT(), 'type="time"')),
+        `<div class="full" id="sim-err"></div>`, `<div class="full">${btn("Présenter", "A.acc.present()")}</div>`])}
+      <p class="muted">La serrure applique : validité (RG-ACC-01), chambres encodées et clés partagées (EF-ACC-027), porte communicante, espaces et horaires (EF-ACC-011), restrictions enfant (EF-ACC-004), n° de séquence des serrures autonomes (EF-ACC-009), profils du personnel et poste en cours (EF-ACC-012, EF-ACC-013), mode intimité (RG-ACC-06), lockdown. Chaque essai est journalisé.</p>`)}</section>
+      <section><h2>Derniers essais</h2>${tbl(["Heure", "Identifiant", "Porte", "Résultat", "Motif"], C.sims.map((x) => [esc(x.t), esc(x.who), esc(x.door), x.ok ? badge("Accordé", "on") : badge("Refusé", "dark"), ref(x.why)]), "Aucun essai.")}</section></div>`
   }
 
   // ---------- Lecture de carte et stock ----------
@@ -244,15 +408,31 @@
   // ---------- Passerelle et encodeurs ----------
   function gatewayTab() {
     const g = C.gateway, certDays = nights(today, g.cert)
+    const issues = supervisionIssues()
     return `<div class="cols"><section>${card(`Passerelle edge ${g.id}`, `<div class="row between"><strong>${g.cloud ? "Connectée au cloud" : "Autonome (hors ligne)"}</strong>${badge(g.cloud ? "En ligne" : "Mode dégradé", g.cloud ? "on" : "dark")}</div>
         ${tbl(["Élément", "Valeur"], [["Version de l'agent", esc(g.version)], ["Dernier battement", esc(g.cloud ? g.beat : "— (liaison coupée)")], ["Liaison", "Sortante uniquement, TLS 1.3 + mTLS"],
           ["Certificat", `${esc(g.certFp)} · expire le ${fd(g.cert)} (J-${certDays})${certDays <= 10 ? " " + badge("Renouvellement auto", "outline") : ""}`], ["Haute disponibilité", g.ha ? "Passerelle secondaire active" : "Non (passerelle unique)"],
           ["Adaptateur", esc(g.adapter)], ["Capacités", esc(g.caps.join(", "))], ["File locale", `${g.queue.length} événement(s)`]])}
-        <div class="row" style="margin-top:12px">${g.cloud ? btn("Simuler une coupure Internet", "A.acc.cloud(false)", "ghost") : btn("Rétablir la connexion et resynchroniser", "A.acc.cloud(true)", "accent")}${btn("Renouveler le certificat", "A.acc.renewCert()", "ghost")}</div>`)}</section>
+        <div class="row" style="margin-top:12px">${g.cloud ? btn("Simuler une coupure Internet", "A.acc.cloud(false)", "ghost") : btn("Rétablir la connexion et resynchroniser", "A.acc.cloud(true)", "accent")}${btn("Renouveler le certificat", "A.acc.renewCert()", "ghost")}</div>`)}
+      ${card("Supervision du parc", `${tbl(["Élément", "Contrôle", "Constat"], issues.map((x) => [esc(x.what), esc(x.check), badge(x.text, "dark")]), "Aucune anomalie.")}
+        <p class="muted">${issues.length} anomalie(s) : connectivité, version, batterie et certificats de la passerelle, des encodeurs et des serrures. ${btn("Lancer la supervision et alerter", "A.acc.supervise()", "ghost sm")} EF-ACC-025</p>`, 'style="margin-top:14px"')}</section>
       <section><h2>Encodeurs</h2>${tbl(["Encodeur", "Poste", "#Temps moyen", "#Réussis", "#Échecs", "Statut", ""], C.encoders.map((e) => [esc(e.id), esc(e.post), (sum(e.ms) / e.ms.length / 1000).toFixed(1) + " s", e.ok, e.fail, badge(e.status, e.status === "prêt" ? "on" : "dark"),
         btn(e.status === "prêt" ? "Simuler une panne" : "Remettre en service", `A.acc.toggleEnc(${q(e.id)})`, "ghost sm")]))}
         <p class="muted">En cas de panne, un autre encodeur prêt du même établissement est proposé automatiquement.</p>
         ${g.queue.length ? `<h3>File locale (en attente de resynchronisation)</h3>${tbl(["Horodatage", "Événement"], g.queue.map((x) => [esc(x.at), esc(x.text)]))}` : ""}</section></div>`
+  }
+
+  function supervisionIssues() {
+    const g = C.gateway, out = [], certDays = nights(today, g.cert)
+    if (!g.cloud) out.push({ what: "Passerelle " + g.id, check: "Connectivité", text: "liaison cloud perdue", type: "Passerelle hors ligne", door: g.id })
+    if (g.version < GW_LATEST) out.push({ what: "Passerelle " + g.id, check: "Version", text: `agent ${g.version} (${GW_LATEST} disponible)`, type: "Version obsolète", door: g.id })
+    if (certDays <= 10) out.push({ what: "Passerelle " + g.id, check: "Certificat", text: `expire dans ${certDays} j`, type: "Certificat à renouveler", door: g.id })
+    C.encoders.filter((e) => e.status !== "prêt").forEach((e) => out.push({ what: e.id + " · " + e.post, check: "Connectivité", text: e.status, type: "Encodeur hors service", door: e.id }))
+    offline().forEach((l) => out.push({ what: l.door, check: "Connectivité", text: "injoignable", type: "Serrure hors ligne", door: l.door }))
+    lowBat().forEach((l) => out.push({ what: l.door, check: "Batterie", text: l.battery + " %", type: "Batterie faible", door: l.door }))
+    const old = C.locks.filter((l) => l.fw < FW_LATEST)
+    if (old.length) out.push({ what: `${old.length} serrure(s)`, check: "Firmware", text: `${old[0].fw} (${FW_LATEST} disponible)`, type: "Firmware obsolète", door: `${old.length} serrures` })
+    return out
   }
 
   // ---------- Parc de serrures ----------
@@ -262,11 +442,11 @@
     const list = C.locks.filter((l) => f === "toutes" || (f === "alerte" ? l.offline || (l.battery != null && l.battery < 20) : f === "ligne" ? l.kind === "en ligne" : l.kind === "hors ligne"))
     return `${roleBar()}${chips("accLockF", { toutes: "Toutes", alerte: "En alerte", ligne: "En ligne", horsligne: "Hors ligne (autonomes)" }, { toutes: C.locks.length, alerte: lowBat().length + offline().length })}
       ${tbl(["Porte", "Zone", "Type", "État", "#Batterie", "Firmware", "Dernier contact", ""], list.map((l) => [esc(l.door) + (l.dnd ? " " + badge("Ne pas déranger", "outline") : "") + (occupied(l) ? ` ${ref("occupée")}` : ""), esc(l.zone), esc(l.kind),
-        l.offline ? badge("Injoignable", "dark") : esc(l.state), l.battery == null ? "secteur" : l.battery < 20 ? `<strong>${l.battery} %</strong>` : l.battery + " %", esc(l.fw) + (l.fw < "4.2.0" && l.kind !== "en ligne" ? ` ${ref("maj dispo")}` : ""), esc(l.last.slice(11) ? fd(l.last.slice(0, 10)) + " " + l.last.slice(11) : l.last),
-        l.kind === "en ligne" ? `<span class="row" style="flex-wrap:nowrap">${btn("Ouvrir", `A.acc.command(${q(l.id)}, 'open')`, "ghost sm")}${l.room ? "" : btn(l.state === "mode bureau" ? "Fin mode bureau" : "Mode bureau", `A.acc.command(${q(l.id)}, 'office')`, "ghost sm")}${btn("État", `A.acc.command(${q(l.id)}, 'status')`, "ghost sm")}</span>`
+        l.offline ? badge("Injoignable", "dark") : esc(l.state) + (l.doorOpen ? ` ${badge("porte ouverte", "dark")}` : ""), l.battery == null ? "secteur" : l.battery < 20 ? `<strong>${l.battery} %</strong>` : l.battery + " %", esc(l.fw) + (l.fw < "4.2.0" && l.kind !== "en ligne" ? ` ${ref("maj dispo")}` : ""), esc(l.last.slice(11) ? fd(l.last.slice(0, 10)) + " " + l.last.slice(11) : l.last),
+        l.kind === "en ligne" ? `<span class="row" style="flex-wrap:nowrap">${btn("Ouvrir", `A.acc.command(${q(l.id)}, 'open')`, "ghost sm")}${btn("Verrouiller", `A.acc.command(${q(l.id)}, 'lock')`, "ghost sm")}${l.room ? "" : btn(l.state === "mode bureau" ? "Fin mode bureau" : "Mode bureau", `A.acc.command(${q(l.id)}, 'office')`, "ghost sm")}${btn("État", `A.acc.command(${q(l.id)}, 'status')`, "ghost sm")}</span>`
         : btn("Collecter le journal", `A.acc.collect(${q(l.id)})`, "ghost sm")]))}
       <div id="cmd-err"></div>
-      <p class="muted">Ouvrir à distance une chambre occupée exige un motif et le rôle Agent / Responsable sécurité ou Duty manager (RG-ACC-04). Les serrures hors ligne remontent leur journal via lecteur de collecte (EF-ACC-020). « Ne pas déranger » transmis au housekeeping (EF-ACC-018).</p>`
+      <p class="muted">Ouvrir à distance une chambre occupée exige un motif et le rôle Agent / Responsable sécurité ou Duty manager (RG-ACC-04). Les serrures hors ligne remontent leur journal via lecteur de collecte (EF-ACC-020). « Ne pas déranger » transmis au housekeeping (EF-ACC-018). Commandes à distance des serrures en ligne : ouvrir, verrouiller, mode bureau (passage libre), état (verrouillage, porte, batterie), succès affiché seulement sur accusé matériel — EF-ACC-015.</p>`
   }
 
   // ---------- Architecture §10.13 ----------
@@ -325,11 +505,14 @@
         ${tbl(["Serrure", "Accusé", "Délai"], e.results.map((x) => [esc(x.door), x.ok ? badge("Confirmé", "on") : badge("Non confirmé", "dark"), x.ok ? (x.ms / 1000).toFixed(1) + " s" : ref(x.why)]))}
         <p class="muted">${e.results.filter((x) => !x.ok).length} serrure(s) non confirmée(s) : intervention physique requise.</p>
         <div class="form">${field("em-second2", "Second valideur pour la levée", select("em-second2", ["", "Arsène Gbané (responsable sécurité)", "Kouamé Ahoua (duty manager)", "Jean-Marc Tanoh (directeur d'exploitation)"], ""))}<div style="align-self:end">${btn("Lever l'action d'urgence", "A.acc.release()", "accent")}</div></div><div id="em-err"></div>`
-      : form([field("em-kind", "Action", select("em-kind", ["Lockdown", "Ouverture d'urgence (évacuation)"], "Lockdown")),
-          field("em-zone", "Zone", select("em-zone", ["Étage 1", "Étage 2", "Étage 3", "Espaces communs", "Établissement"], "Étage 2")),
-          field("em-reason", "Motif", input("em-reason", "", 'placeholder="Ex. intrusion signalée aile étage 2"')),
-          field("em-second", "Second valideur (quatre yeux)", select("em-second", ["", "Arsène Gbané (responsable sécurité)", "Kouamé Ahoua (duty manager)", "Jean-Marc Tanoh (directeur d'exploitation)"], "")),
-          `<div class="full" id="em-err"></div>`, `<div class="full">${btn("Déclencher", "A.acc.emergency()")}</div>`]))}</section>
+      : form([field("em-kind", "Action", select("em-kind", ["Lockdown", "Ouverture d'urgence (évacuation)"], (ui.accEm || {}).kind || "Lockdown")),
+          field("em-zone", "Zone", select("em-zone", ["Étage 1", "Étage 2", "Étage 3", "Espaces communs", "Établissement"], (ui.accEm || {}).zone || "Étage 2")),
+          field("em-reason", "Motif", input("em-reason", (ui.accEm || {}).reason || "", 'placeholder="Ex. intrusion signalée aile étage 2"')),
+          field("em-second", "Second valideur (quatre yeux)", select("em-second", ["", "Arsène Gbané (responsable sécurité)", "Kouamé Ahoua (duty manager)", "Jean-Marc Tanoh (directeur d'exploitation)"], (ui.accEm || {}).second || "")),
+          field("em-otp", "Code à usage unique du second valideur", input("em-otp", "", 'inputmode="numeric" placeholder="6 chiffres"')),
+          `<div class="full">${C.emOtp ? ref(`Code envoyé à ${C.emOtp.to} à ${C.emOtp.at} (simulé : ${C.emOtp.code})`) : ref("Envoyez d'abord un code au second valideur.")}</div>`,
+          `<div class="full" id="em-err"></div>`, `<div class="full row">${btn("Envoyer le code au second valideur", "A.acc.sendOtp()", "ghost")}${btn("Déclencher", "A.acc.emergency()")}</div>`]))}
+        <p class="muted">Double authentification : rôle habilité de l'initiateur + code à usage unique du second valideur ; zone ou établissement entier ; tout est tracé au journal immuable. EF-ACC-016</p></section>
       <section><h2>Règles</h2><p class="muted">Lockdown et ouverture d'urgence : deux utilisateurs habilités (RG-ACC-05), sauf déclenchement par l'alarme incendie. Rôle exigé : Agent ou Responsable sécurité, ou Duty manager. Accusé de chaque serrure attendu en moins de 5 s ; les serrures autonomes ne reçoivent pas l'ordre et sont listées comme non confirmées (US-ACC-04).</p>
         ${btn("Simuler l'alarme incendie (ouverture automatique)", "A.acc.fire()", "ghost")}</section></div>`
   }
@@ -372,7 +555,7 @@
 
   // ---------- Actions ----------
   const canSecurity = () => ["Agent de sécurité", "Responsable sécurité", "Duty manager"].includes(C.role)
-  const encodeCards = (r, n, mode, done) => {
+  const encodeCards = (r, n, mode, done, opts = {}) => {
     let enc = C.encoders.find((e) => e.id === C.enc)
     if (enc.status !== "prêt") {
       const alt = C.encoders.find((e) => e.status === "prêt")
@@ -397,12 +580,16 @@
         return render()
       }
       if (mode === "new") C.creds.filter((c) => c.resId === r.id && c.type === "carte" && c.status === "active").forEach((c) => { c.status = "révoquée"; c.reason = "remplacée (n° de séquence)" })
+      const extra = { encoder: enc.id, holder: opts.holder || "principal", ...(opts.rooms && opts.rooms.length ? { rooms: [r.room, ...opts.rooms] } : {}) }
+      let seqNew = null
       for (let i = 0; i < n; i++) {
-        const c = mkCred(r, "carte", { encoder: enc.id })
+        const c = mkCred(r, "carte", extra)
         if (mode === "duplicate") c.seq = C.seq[r.room] = Math.max(1, C.seq[r.room] - 1) // duplicata : même séquence
+        else if (seqNew) c.seq = C.seq[r.room] = seqNew // les cartes d'une même « nouvelle clé » partagent la séquence
+        seqNew = c.seq
         enc.ok += 1
         enc.ms.push(1800 + Math.floor(Math.random() * 900))
-        ev("Ch. " + r.room, "Carte " + c.id, "encodage", "accusé matériel", mode === "new" ? "nouvelle clé" : "duplicata")
+        ev("Ch. " + roomsOf(c).join("+"), "Carte " + c.id, "encodage", "accusé matériel", `${mode === "new" ? "nouvelle clé" : "duplicata"} · séq. ${c.seq} · ${HOLDERS[c.holder]}${roomsOf(c).length > 1 ? " · clé partagée" : ""}`)
       }
       r.key = "active"
       toast(`${n} carte(s) encodée(s) sur ${enc.id}${C.gateway.cloud ? "" : " (mode local)"}`)
@@ -421,7 +608,59 @@
         if (!who) return
         ev("Ch. " + r.room, "—", "dérogation", "validée", `limite de clés — ${who}`)
       }
-      encodeCards(r, n, mode)
+      const holder = val("acc-holder") || "principal"
+      const rooms = inHouse().filter((x) => x.id !== r.id && document.getElementById("acc-sh-" + x.room)?.checked).map((x) => x.room)
+      if (rooms.length && !confirm(`Les chambres ${rooms.join(", ")} seront aussi ouvertes par cette clé. Confirmer la clé partagée ?`)) return
+      encodeCards(r, n, mode, null, { holder, rooms })
+    },
+    setPkg(resId, code) {
+      if (code) C.pkgs[resId] = code; else delete C.pkgs[resId]
+      toast(code ? "Forfait enregistré : droits recalculés (RG-ACC-07)" : "Forfait retiré : droits recalculés (RG-ACC-07)")
+      render()
+    },
+    tap(cid) {
+      const c = C.creds.find((x) => x.id === cid), l = lockOf(c.room)
+      const [ok, why] = decide(cid, l, nowT())
+      ev(l.door, label(c), "ouverture", ok ? "accordée" : "refusée", `BLE · ${why}`)
+      toast(ok ? `${l.door} ouverte (clé mobile)` : `Refus : ${why}`)
+      render()
+    },
+    present() {
+      const who = val("sim-who"), l = C.locks.find((x) => x.id === val("sim-door")), t = val("sim-time") || nowT()
+      if (!who || !l) return err("sim-err", "Choisissez un identifiant et une porte.")
+      const [ok, why] = decide(who, l, t)
+      const credLabel = C.staff.some((x) => x.id === who) ? "Badge " + who : label(C.creds.find((x) => x.id === who))
+      ev(l.door, credLabel, "ouverture", ok ? "accordée" : "refusée", `${why} · essai ${t}`)
+      C.sims.unshift({ t, who: credLabel, door: l.door, ok, why })
+      C.sims = C.sims.slice(0, 8)
+      ui.accSimWho = who; ui.accSimDoor = l.id; ui.accSimTime = t
+      toast(ok ? `Accès accordé : ${l.door}` : `Accès refusé : ${why}`)
+      render()
+    },
+    saveProfile(role) {
+      const p = C.profiles.find((x) => x.role === role)
+      const doors = [...Object.keys(DOOR_TOKENS), ...C.locks.filter((l) => !l.room && !l.pair).map((l) => l.id)].filter((d) => document.getElementById("pf-" + d)?.checked)
+      if (!doors.length) return err("pf-err", "Au moins une porte ou zone.")
+      Object.assign(p, { doors, margin: Math.max(0, Number(val("pf-margin")) || 0), days: val("pf-days") })
+      ev("—", "Profil " + p.role, "modification du profil d'accès", "enregistrée", `${doors.length} porte(s)/zone(s) · ${p.days} · marge ${p.margin} min · ${C.role}`)
+      toast(`Profil ${p.role} enregistré, appliqué aux badges du poste`)
+      render()
+    },
+    terminate(id) {
+      const s = C.staff.find((x) => x.id === id)
+      if (!confirm(`Départ de ${s.name} (hrm.employee.terminated) : révoquer définitivement le badge ?`)) return
+      s.status = "révoqué (départ)"
+      C.passes.filter((x) => x.holder.startsWith(s.name) && x.status === "active").forEach((x) => { x.status = "révoquée" })
+      ev("—", "Badge " + s.id, "révocation", "badge révoqué", `hrm.employee.terminated · ${s.name}`)
+      toast(`Badge de ${s.name} révoqué et passes retirés`)
+      render()
+    },
+    idleRule() {
+      const lim = addDays(today, -30)
+      const hit = C.staff.filter((x) => x.last < lim && !/30 j|révoqué/.test(x.status))
+      hit.forEach((x) => { x.status = "suspendu (30 j sans usage)"; ev("—", "Badge " + x.id, "suspension", "automatique", "RG-ACC-08 · 30 jours sans usage") })
+      toast(hit.length ? `${hit.length} badge(s) suspendu(s)` : "Aucun badge inutilisé depuis 30 jours à suspendre")
+      render()
     },
     reencode(cid) {
       const c = C.creds.find((x) => x.id === cid), r = R(c.resId)
@@ -450,7 +689,7 @@
     revoke(cid) {
       const c = C.creds.find((x) => x.id === cid)
       Object.assign(c, { status: "révoquée", reason: "manuelle" })
-      ev("Ch. " + c.room, label(c), "révocation", "accusée", USER)
+      ev("Ch. " + c.room, label(c), "révocation", c.type === "mobile" ? "révocation à distance (SDK fabricant)" : "accusée", USER)
       toast(`${label(c)} révoquée`)
       render()
     },
@@ -494,7 +733,7 @@
     },
     read() {
       const id = val("rd-card"), c = C.creds.find((x) => x.id === id)
-      C.reads.unshift(c ? `<strong>${esc(c.id)}</strong> · chambre ${esc(c.room)} · séq. ${c.seq ?? "—"} · valide jusqu'au ${esc(c.to)} · titulaire ${esc(gname(R(c.resId)))} · ${credBadge(c.status)}`
+      C.reads.unshift(c ? `<strong>${esc(c.id)}</strong> · chambre ${esc(c.room)} · séq. ${c.seq ?? "—"} · valide jusqu'au ${esc(c.to)} · titulaire ${esc(gname(R(c.resId)))} (${esc(HOLDERS[c.holder] || HOLDERS.principal)}) · chambres ${esc(roomsOf(c).join(" + "))} · espaces ${esc((c.areas || []).join(", "))} · ${credBadge(c.status)}`
         : `<strong>Carte vierge</strong> · aucune donnée encodée, prête pour l'émission`)
       ev("Encodeur " + val("rd-enc"), c ? "Carte " + c.id : "Carte vierge", "lecture", "lue", "")
       toast("Carte lue")
@@ -525,6 +764,14 @@
       }
       render()
     },
+    supervise() {
+      const list = supervisionIssues()
+      let n = 0
+      list.forEach((x) => { if (!C.alarms.some((a) => a.status === "ouverte" && a.type === x.type && a.door === x.door)) { C.alarms.unshift({ id: uid("AL"), at: `${today} ${nowT()}`, type: x.type, door: x.door, detail: `Supervision : ${x.check.toLowerCase()} — ${x.text}`, status: "ouverte" }); n++ } })
+      ev("Passerelle " + C.gateway.id, "Supervision", "contrôle du parc", `${list.length} anomalie(s)`, `${n} nouvelle(s) alerte(s)`)
+      toast(`${list.length} anomalie(s), ${n} nouvelle(s) alerte(s) créée(s)`)
+      render()
+    },
     renewCert() { C.gateway.cert = addDays(today, 30); C.gateway.certFp = hash(String(Date.now())).toUpperCase().replace(/(..)(..).*(..)/, "$1:$2:…:$3"); toast("Certificat renouvelé pour 30 jours"); render() },
     toggleEnc(id) { const e = C.encoders.find((x) => x.id === id); e.status = e.status === "prêt" ? "hors service" : "prêt"; if (e.status !== "prêt" && C.enc === id) C.enc = (C.encoders.find((x) => x.status === "prêt") || e).id; toast(`${id} : ${e.status}`); render() },
     command(lid, cmd) {
@@ -543,10 +790,12 @@
           toast(`${l.door} : LOCK_UNREACHABLE après 3 tentatives`)
         } else {
           if (cmd === "office") l.state = l.state === "mode bureau" ? "verrouillée" : "mode bureau"
-          if (cmd === "status") l.last = `${today} ${nowT()}`
-          ev(l.door, "Commande à distance", cmd === "open" ? "ouverture à distance" : cmd === "office" ? "mode bureau" : "lecture d'état", "accusé matériel", `${C.role}${l.pendingWhy ? " · " + l.pendingWhy : ""}`)
+          if (cmd === "open") l.state = "déverrouillée (ouverture à distance)"
+          if (cmd === "lock") { if (l.doorOpen) { ev(l.door, "Commande à distance", "verrouillage", "refusé", "porte ouverte : pêne bloqué"); toast(`${l.door} : porte ouverte, verrouillage impossible`); return render() } l.state = "verrouillée" }
+          l.last = `${today} ${nowT()}`
+          ev(l.door, "Commande à distance", { open: "ouverture à distance", office: "mode bureau", lock: "verrouillage", status: "lecture d'état" }[cmd], "accusé matériel", `${C.role}${l.pendingWhy ? " · " + l.pendingWhy : ""}`)
           l.pendingWhy = null
-          toast(`${l.door} : ${cmd === "status" ? `verrouillée, batterie ${l.battery ?? "secteur"}${l.battery != null ? " %" : ""}` : "commande acquittée"}`)
+          toast(`${l.door} : ${cmd === "status" ? `${l.state}, porte ${l.doorOpen ? "ouverte" : "fermée"}, batterie ${l.battery ?? "secteur"}${l.battery != null ? " %" : ""}` : "commande acquittée"}`)
         }
         render()
       }, 800)
@@ -606,7 +855,20 @@
       if (!canSecurity()) return err("em-err", "Rôle sécurité ou duty manager requis.")
       if (!reason) return err("em-err", "Motif obligatoire.")
       if (!second) return err("em-err", "Second valideur obligatoire (principe des quatre yeux, RG-ACC-05).")
-      runEmergency(kind, zone, reason, `${USER} — ${C.role}`, second)
+      if (!C.emOtp || C.emOtp.to !== second) return err("em-err", "Envoyez un code au second valideur sélectionné.")
+      if (val("em-otp") !== C.emOtp.code) { ev(zone, "—", kind.toLowerCase(), "refusé", `code du second valideur invalide · ${C.role}`); return err("em-err", "Code du second valideur invalide : tentative journalisée.") }
+      C.emOtp = null
+      ui.accEm = null
+      runEmergency(kind, zone, reason, `${USER} — ${C.role}`, `${second} (code vérifié)`)
+    },
+    sendOtp() {
+      const second = val("em-second")
+      ui.accEm = { kind: val("em-kind"), zone: val("em-zone"), reason: val("em-reason"), second }
+      if (!second) return err("em-err", "Choisissez le second valideur.")
+      C.emOtp = { to: second, code: String(100000 + Math.floor(Math.random() * 900000)), at: nowT() }
+      ev("—", "—", "code second valideur", "envoyé", second)
+      toast(`Code envoyé à ${second} (simulé)`)
+      render()
     },
     fire() { runEmergency("Ouverture d'urgence (évacuation)", "Établissement", "Alarme incendie (déclenchement automatique)", "Système incendie", "non requis (alarme incendie)") },
     release() {

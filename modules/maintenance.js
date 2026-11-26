@@ -56,7 +56,21 @@
     ],
     // tâches du jour : temps standard (minutes) par type
     std: { "Départ": 45, "Recouche": 20, "Nettoyage approfondi": 90, "Couverture du soir": 10 },
-    dnd: { "202": "09:40" },
+    // Ne pas déranger / mode intimité : remonté par les serrures ou signalé ; la tâche est replanifiée (EF-HKM-006)
+    dnd: { "202": { at: "09:40", retry: "14:00", src: "Signalé par l'étage" } },
+    // statuts détaillés en complément du statut de base (EF-HKM-001) : nettoyage en cours, inspectée, hors service vendable
+    rs: { "201": "en_cours" },
+    inspected: { "302": "2026-11-25 11:20" },
+    oos: { "203": "Télévision en panne (chambre vendable)" },
+    // secteurs (étage → femme de chambre), présence issue du pointage RH (simulé), crédit de temps par poste (EF-HKM-003)
+    sectors: { 1: D.housekeepers[0], 2: D.housekeepers[1], 3: D.housekeepers[2] },
+    presence: { [D.housekeepers[0]]: "06:58", [D.housekeepers[1]]: "07:04", [D.housekeepers[2]]: null },
+    credit: 420,
+    // application mobile du personnel (EF-HKM-004) : mode hors ligne et file de synchronisation
+    mobUser: D.housekeepers[0],
+    offline: false,
+    queue: [],
+    notifs: [{ at: "09:12", to: "Réception", text: "Chambre 302 inspectée : prête à la vente" }],
     deepClean: ["105"],
     proposal: null,
     checklist: ["Lit fait selon le standard", "Salle de bain propre et sèche", "Sols et poussière", "Produits d'accueil complets", "Minibar contrôlé", "Climatisation et éclairage fonctionnels", "Aucun objet oublié"],
@@ -95,6 +109,15 @@
   const isRoom = (t) => !!room(t)
   const nextDue = (p) => addDays(p.last, p.freq)
   const openBlocking = (no) => M.orders.filter((o) => o.target === no && o.blocking && o.status !== "clos")
+  const openFor = (target, source) => M.orders.find((o) => o.target === target && o.source === source && o.status !== "clos")
+  const hhmm = (h) => NOW.slice(11, 16).replace(/^(\d\d)/, (x) => String(Math.min(23, Number(x) + h)).padStart(2, "0"))
+  // EF-HKM-001 : propreté détaillée et occupation
+  const CS = { propre: ["Propre", "on"], inspectee: ["Inspectée", "on"], a_inspecter: ["Propre, à inspecter", "outline"], en_cours: ["En cours de nettoyage", "outline"], sale: ["Sale", ""], hors_commande: ["Hors commande", "dark"] }
+  const OCC = { libre: ["Libre", "outline"], occupee: ["Occupée", ""], depart: ["Départ", "dark"], arrivee: ["Arrivée", "on"] }
+  const cleanState = (r) => r.hk === "hs" ? "hors_commande" : r.hk === "inspection" ? "a_inspecter" : r.hk === "sale" ? (M.rs[r.no] === "en_cours" ? "en_cours" : "sale") : M.inspected[r.no] ? "inspectee" : "propre"
+  const occState = (no) => { const o = occupant(no); if (o) return o.to === today ? "depart" : "occupee"; return D.reservations.some((r) => r.room === no && r.from === today && r.status === "confirmee") ? "arrivee" : "libre" }
+  const syncStates = () => D.rooms.forEach((r) => { if (r.hk !== "propre") delete M.inspected[r.no]; if (r.hk !== "sale") delete M.rs[r.no] })
+  const accLocks = () => (D.acc && D.acc.locks) || []
 
   // ---------- Écran 1 : Maintenance technique ----------
   function maintenance(p) {
@@ -123,11 +146,12 @@
 
   function newOrderForm() {
     const targets = [...D.rooms.map((r) => [r.no, "Chambre " + r.no]), ...["Hall", "Restaurant", "Piscine", "Spa", "Local technique", "Cuisine"].map((x) => [x, x])]
-    return card("Nouvel ordre de travail", form([
+    return card("Nouvel ordre de travail", `<p class="muted" style="margin-top:0">Déclaration par tout employé ou client, priorité, affectation, pièces, durée et clôture ${muted("EF-HKM-008")}</p>` + form([
       field("o-title", "Problème constaté", input("o-title", "", 'placeholder="Ex. climatisation bruyante"'), "full"),
       field("o-target", "Lieu / cible", select("o-target", targets, "101")),
       field("o-prio", "Priorité", select("o-prio", Object.entries(PRIO).map(([k, [l]]) => [k, l]), "normale")),
       field("o-source", "Déclaré par", select("o-source", ["Employé", "Client", "IoT", "Serrure"], "Employé")),
+      field("o-by", "Nom du déclarant (employé ou client)", input("o-by", "", 'placeholder="Ex. Hervé Gnagne, réception"')),
       field("o-assignee", "Affecter à", select("o-assignee", [["", "— plus tard —"], ...M.techs], "")),
       field("o-desc", "Description", input("o-desc", "", 'placeholder="Détails utiles au technicien"'), "full"),
       `<div class="full"><label class="row" style="color:var(--ink)"><input type="checkbox" id="o-block"> Ordre bloquant : la chambre est mise hors commande tant qu'il est ouvert ${muted("EF-HKM-010")}</label></div>`,
@@ -149,6 +173,8 @@
       ${tbl(["Pièce", "#Qté", "#Coût"], o.parts.map((x) => [esc(x.label), x.qty, money(x.qty * x.cost)]), "Aucune pièce.", o.parts.length ? `<tfoot><tr><td colspan="2">Total pièces</td><td class="num">${money(partsTotal)}</td></tr></tfoot>` : "")}
       ${o.status !== "clos" ? `<div class="row" style="margin-top:8px;flex-wrap:nowrap">${input("o-part", "", 'placeholder="Pièce nécessaire (ex. joint)"')}${input("o-pcost", "", 'type="number" min="0" step="500" placeholder="Coût" style="max-width:120px"')}${btn("Demander la pièce", `A.mnt.requestPart(${q(o.id)})`, "ghost")}</div>
         <p class="muted" style="font-size:12px">La demande part aux Achats (PRC) et l'ordre passe en « attente pièces ».</p>
+        ${D.prc ? `<div class="row" style="margin-top:8px;flex-wrap:nowrap">${select("o-stock", D.prc.items.filter((i) => i.family === "Pièces techniques").map((i) => { const st = D.prc.stock.find((x) => x.item === i.code && x.store === i.store); return [i.code, `${i.name} — stock ${st ? st.qty : 0}`] }), "")}${btn("Prendre en stock", `A.mnt.takePart(${q(o.id)})`, "ghost")}</div>
+        <p class="muted" style="font-size:12px">Sortie du magasin technique vers le centre de coût Technique ; en rupture, une demande d'achat est créée ${muted("EF-HKM-008")}</p>` : ""}
         <h3>Clôture</h3>
         <div class="row" style="flex-wrap:nowrap">${input("o-min", "", 'type="number" min="1" placeholder="Durée (min)" style="max-width:150px"')}${btn("Clôturer l'ordre", `A.mnt.close(${q(o.id)})`, "accent")}</div>` : ""}`)
   }
@@ -172,8 +198,15 @@
         const alert = s.leak ? "Fuite détectée" : s.temp > 29 ? "Température élevée" : ""
         return [esc(s.room), `${s.temp.toFixed(1)} °C`, `${s.hum} %`, s.kwh.toFixed(1), s.presence ? "Oui" : "Non", s.leak ? badge("Oui", "on") : "Non",
           alert ? badge(alert, "on") : badge("Normal", "outline"),
-          s.leak ? "" : btn("Simuler une fuite", `A.mnt.simLeak(${q(s.room)})`, "ghost sm")]
+          (s.temp > 29 && !s.leak ? (openFor(s.room, "IoT") ? badge(openFor(s.room, "IoT").id, "outline") : btn("Créer l'ordre", `A.mnt.iotOrder(${q(s.room)})`, "sm")) + " " : "") + (s.leak ? "" : btn("Simuler une fuite", `A.mnt.simLeak(${q(s.room)})`, "ghost sm"))]
       }))
+      + `<h2>Événements de serrure ${muted("EF-HKM-012 · batterie faible, serrure hors ligne (simulé)")}</h2>`
+      + (() => {
+        const ev = accLocks().filter((l) => l.offline || (l.battery != null && l.battery < 20))
+        return tbl(["Porte", "Événement", "Ordre de travail"], ev.map((l) => { const t = l.room || l.door, o = openFor(t, "Serrure")
+          return [esc(l.door), l.offline ? badge("Serrure hors ligne", "dark") : badge(`Batterie ${l.battery} %`, "on"), o ? `${badge(o.id, "outline")} ${muted(OST[o.status][0])}` : btn("Créer l'ordre", `A.mnt.lockOrder(${q(l.id)})`, "sm")] }), "Aucun événement de serrure en cours.")
+          + `<div class="row" style="margin-top:8px">${btn("Traiter toutes les alertes (IoT et serrures)", "A.mnt.scanAlerts()", "ghost sm")}${muted("Un ordre par alerte ; pas de doublon si un ordre est déjà ouvert sur la même cible.")}</div>`
+      })()
       + `<p class="muted">Une alerte de fuite crée un ordre critique et bloquant ; si la chambre est occupée, le relogement est proposé (US-HKM-02). Les chambres libres sans présence passent la climatisation en mode économie (EF-HKM-014, simulé).</p>`
       + `<h2>Maintenance prédictive</h2>`
       + M.predictions.map((x) => aiBox(`${EQ(x.equip).label} — risque de panne ${Math.round(x.risk * 100)} % sous ${x.horizon}`, x.why + " Proposition : ordre préventif, à valider par le responsable technique.",
@@ -200,9 +233,10 @@
   // ---------- Écran 2 : Gouvernance (tâches, inspections, objets trouvés) ----------
   function governance(p) {
     const tab = p[0] || "taches"
-    return pageHead("Gouvernance et qualité", "Tâches du jour générées depuis les séjours, inspections avec check-list, objets trouvés et produits d'accueil. Statuts et répartition simple : écran « Statut des chambres ».")
-      + subtabs("mnt-hk", [["taches", "Tâches du jour"], ["inspections", "Inspections"], ["objets", "Objets trouvés"], ["produits", "Produits d'accueil"]], tab)
-      + ({ taches: tabTasks, inspections: tabInspections, objets: tabLost, produits: tabAmenities }[tab] || tabTasks)(p.slice(1))
+    syncStates()
+    return pageHead("Gouvernance et qualité", "Statuts détaillés, tâches du jour générées depuis les séjours, application mobile du personnel, inspections avec check-list, objets trouvés et produits d'accueil.")
+      + subtabs("mnt-hk", [["taches", "Tâches du jour"], ["statuts", "Statuts des chambres"], ["mobile", "Application mobile"], ["inspections", "Inspections"], ["objets", "Objets trouvés"], ["produits", "Produits d'accueil"]], tab)
+      + ({ taches: tabTasks, statuts: tabStatus, mobile: tabMobile, inspections: tabInspections, objets: tabLost, produits: tabAmenities }[tab] || tabTasks)(p.slice(1))
   }
 
   // EF-HKM-002 : génération des tâches du jour selon les séjours
@@ -218,7 +252,7 @@
       t.push({ room: x.no, kind: "Départ", arrival: arrTypes.some((a) => a.type === x.type), vip: false, note: "libérée, sale" }))
     M.deepClean.forEach((no) => t.push({ room: no, kind: "Nettoyage approfondi", vip: false }))
     // RG-HKM-03 : arrivées imminentes et VIP d'abord
-    const rank = (k) => (k.kind === "Couverture du soir" ? 9 : 0) + (k.arrival ? 0 : 2) + (k.vip ? 0 : 1)
+    const rank = (k) => (k.kind === "Couverture du soir" ? 9 : 0) + (M.dnd[k.room] ? 5 : 0) + (k.arrival ? 0 : 2) + (k.vip ? 0 : 1)
     return t.map((k) => ({ ...k, minutes: M.std[k.kind], dnd: M.dnd[k.room], who: D.assignments[k.room] || "" })).sort((a, b) => rank(a) - rank(b) || a.room.localeCompare(b.room))
   }
 
@@ -226,18 +260,60 @@
     const tasks = dayTasks()
     const load = (h) => tasks.filter((k) => k.who === h).reduce((s, k) => s + k.minutes, 0)
     const prop = M.proposal
-    return cards(D.housekeepers.map((h) => kpi(h, load(h) + " min", `${tasks.filter((k) => k.who === h).length} tâche(s) · crédit 420 min`)))
+    return cards(D.housekeepers.map((h) => kpi(h, load(h) + " min", `${tasks.filter((k) => k.who === h).length} tâche(s) · crédit ${M.credit} min${load(h) > M.credit ? " · DÉPASSÉ" : ""}${M.presence[h] ? "" : " · absente"}`)))
+      + card("Secteurs, crédits de temps et présence", tbl(["Femme de chambre", "Pointage (RH, simulé)", "Secteur", "#Charge", ""], D.housekeepers.map((h) => [esc(h),
+          M.presence[h] ? badge("Présente depuis " + M.presence[h], "on") : badge("Absente / non pointée", "dark"),
+          `<span class="row" style="flex-wrap:nowrap">${[1, 2, 3].map((f) => `<label class="row" style="color:var(--ink);margin:0 6px 0 0"><input type="checkbox" ${M.sectors[f] === h ? "checked" : ""} onchange="A.mnt.setSector(${f}, ${q(h)})"> Étage ${f}</label>`).join("")}</span>`,
+          `${load(h)} / ${M.credit} min`, btn(M.presence[h] ? "Marquer absente" : "Simuler le pointage", `A.mnt.togglePresence(${q(h)})`, "ghost sm")]))
+        + `<div class="row" style="margin-top:8px">${btn("Affecter par secteur", "A.mnt.bySector()", "sm")}${muted("Secteur d'abord ; si la titulaire est absente ou au-delà de son crédit, la collègue présente la moins chargée. Affectation manuelle dans la colonne « Attribuée à ». EF-HKM-003")}</div>`)
       + `<h2>Tâches du jour ${muted("EF-HKM-002 · priorité : arrivées imminentes et VIP (RG-HKM-03)")}</h2>`
       + tbl(["Chambre", "Tâche", "#Crédit", "Priorité", "Ne pas déranger", "Attribuée à"], tasks.map((k) => [
         `<strong>${esc(k.room)}</strong> ${muted(T(room(k.room).type).label)}`, esc(k.kind) + (k.note ? " " + muted(k.note) : ""), k.minutes + " min",
         (k.arrival ? badge("Arrivée attendue", "on") + " " : "") + (k.vip ? badge("VIP", "dark") : "") || muted("standard"),
-        k.dnd ? `${badge("DND depuis " + k.dnd, "outline")} ${muted("replanifiée à 14 h")} ${btn("Levé", `A.mnt.clearDnd(${q(k.room)})`, "ghost sm")}` : btn("Signaler DND", `A.mnt.setDnd(${q(k.room)})`, "ghost sm"),
-        esc(k.who || "—"),
+        k.dnd ? `${badge("DND depuis " + k.dnd.at, "outline")} ${muted(k.dnd.src)}<br>${muted("replanifiée à")} ${select("dr-" + k.room, ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"].includes(k.dnd.retry) ? ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"] : [k.dnd.retry, "12:00", "14:00", "16:00"], k.dnd.retry, `style="max-width:90px;display:inline-block" onchange="A.mnt.retry(${q(k.room)}, this.value)"`)} ${btn("Levé", `A.mnt.clearDnd(${q(k.room)})`, "ghost sm")}` : btn("Signaler DND", `A.mnt.setDnd(${q(k.room)})`, "ghost sm"),
+        k.kind === "Couverture du soir" ? esc(k.who || "—") : select("ta-" + k.room, [["", "—"], ...D.housekeepers.map((h) => [h, h + (M.presence[h] ? "" : " (absente)")])], k.who, `style="max-width:200px" onchange="A.mnt.assignTask(${q(k.room)}, this.value)"`),
       ]))
-      + `<p class="muted">Le « Ne pas déranger » remonte normalement des serrures (simulé ici) ; l'entrée du personnel dans une chambre occupée n'est autorisée que pendant une tâche assignée (RG-HKM-04).</p>`
+      + `<div class="row" style="margin-top:8px">${btn("Synchroniser « Ne pas déranger » depuis les serrures", "A.mnt.syncDnd()", "ghost sm")}${muted("Ne pas déranger et mode intimité remontés par les serrures (simulé) : la tâche passe en fin de liste, est replanifiée et l'application bloque l'entrée. EF-HKM-006")}</div>`
+      + `<p class="muted">L'entrée du personnel dans une chambre occupée n'est autorisée que pendant une tâche assignée (RG-HKM-04).</p>`
       + aiBox("Optimisation des tâches", prop ? `Proposition : ${prop.map((x) => `${x.room} → ${x.who}`).join(", ")}. Regroupement par étage, arrivées en premier, charge équilibrée. À valider par la gouvernante générale.`
         : "Calcule une affectation qui minimise les déplacements entre étages et traite d'abord les chambres attendues à l'arrivée. Repli sans IA : affectation par secteur (étage).",
         prop ? btn("Valider la proposition", "A.mnt.applyProposal()", "sm") + btn("Rejeter", "A.mnt.dropProposal()", "ghost sm") : btn("Proposer une affectation", "A.mnt.propose()", "sm"))
+  }
+
+  function tabStatus() {
+    const st = D.rooms.map((r) => ({ r, c: cleanState(r), o: occState(r.no) }))
+    return cards(Object.entries(CS).map(([k, [l]]) => kpi(l, st.filter((x) => x.c === k).length, "chambres")).concat([kpi("Hors service", Object.keys(M.oos).length, "restent vendables")]))
+      + `<h2>Propreté et occupation ${muted("EF-HKM-001")}</h2>`
+      + tbl(["Chambre", "Propreté", "Occupation", "Technique", "Action"], st.map(({ r, c, o }) => [
+        `<strong>${esc(r.no)}</strong> ${muted(T(r.type).label + " · étage " + r.floor)}`,
+        b2(CS, c) + (c === "inspectee" ? " " + muted(dt(M.inspected[r.no])) : "") + (M.dnd[r.no] ? " " + badge("Ne pas déranger", "outline") : ""),
+        b2(OCC, o),
+        c === "hors_commande" ? `${badge("Hors commande", "dark")} ${muted(r.note || "ordre bloquant")}` : M.oos[r.no] ? `${badge("Hors service", "outline")} ${muted(M.oos[r.no])} ${btn("Rétablir", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm")}` : btn("Déclarer hors service", `A.mnt.toggleOos(${q(r.no)})`, "ghost sm"),
+        c === "sale" ? btn("Commencer le nettoyage", `A.mnt.roomAct(${q(r.no)}, 'start')`, "ghost sm")
+          : c === "en_cours" ? btn("Terminer le nettoyage", `A.mnt.roomAct(${q(r.no)}, 'done')`, "sm")
+          : c === "a_inspecter" ? btn("Inspecter", `go('mnt-hk/inspections/${esc(r.no)}')`, "ghost sm")
+          : c === "hors_commande" ? btn("Voir les ordres", "go('mnt-ot/ordres')", "ghost sm")
+          : c === "propre" ? btn("Remettre à sale", `A.mnt.roomAct(${q(r.no)}, 'dirty')`, "ghost sm") : muted("prête à la vente"),
+      ]))
+      + `<p class="muted">Cycle : sale → en cours de nettoyage → propre, à inspecter → inspectée (rôle inspecteur, RG-HKM-02). « Hors service » signale un défaut mineur, la chambre reste vendable ; « hors commande » la retire de la vente tant qu'un ordre bloquant est ouvert (EF-HKM-010). Une chambre libérée au check-out passe à sale / départ (RG-HKM-01).</p>`
+  }
+
+  function tabMobile() {
+    const h = M.mobUser
+    const mine = dayTasks().filter((k) => k.who === h && k.kind !== "Couverture du soir")
+    const body = `<div class="row between" style="margin-bottom:8px"><strong>${esc(h)}</strong>${M.offline ? badge("Hors ligne", "dark") : badge("En ligne", "on")}</div>
+      ${M.offline ? `<p class="muted" style="font-size:12px;margin:0 0 8px">Pas de réseau : ${M.queue.length} mise(s) à jour en file, envoyées au retour du réseau.</p>` : ""}
+      ${mine.length ? mine.map((k) => { const r = room(k.room), c = cleanState(r), pend = M.queue.filter((x) => x.no === k.room).map((x) => x.act)
+        const eff = pend.includes("done") ? "a_inspecter" : pend.includes("start") ? "en_cours" : c
+        return `<div class="card" style="padding:10px;margin-bottom:8px"><div class="row between"><strong>Ch. ${esc(k.room)}</strong>${b2(CS, eff)}</div>
+          <div class="muted" style="font-size:12px">${esc(k.kind)} · ${k.minutes} min${k.arrival ? " · arrivée attendue" : ""}${k.vip ? " · VIP" : ""}${pend.length ? " · en attente de synchro" : ""}</div>
+          ${k.dnd ? `<p class="err" style="margin:6px 0">Ne pas déranger : ne pas entrer avant ${esc(k.dnd.retry)}</p>` : ""}
+          <div class="row" style="margin-top:6px">${eff === "sale" ? btn("Commencer", `A.mnt.mob(${q(k.room)}, 'start')`, "sm") : eff === "en_cours" ? btn("Terminé", `A.mnt.mob(${q(k.room)}, 'done')`, "sm") : ""}${k.dnd ? "" : btn("Ne pas déranger", `A.mnt.mob(${q(k.room)}, 'dnd')`, "ghost sm")}</div></div>` }).join("") : `<p class="muted">Aucune chambre attribuée.</p>`}
+      <div class="row" style="margin-top:8px">${btn(M.offline ? "Retrouver le réseau (synchroniser)" : "Passer hors ligne", "A.mnt.toggleOffline()", "ghost sm")}</div>`
+    return `<p class="muted">Vue de l'application du personnel d'étage : liste ordonnée par priorité, statut mis à jour en un geste, y compris sans réseau ${muted("EF-HKM-004 · US-HKM-01")}</p>`
+      + `<div class="row" style="flex-wrap:nowrap;margin-bottom:10px"><label for="mob-user" style="margin:0">Connectée en tant que</label>${select("mob-user", D.housekeepers, h, `onchange="A.mnt.mobUser(this.value)"`)}</div>`
+      + split(phone(body, "Étages — mes chambres"), card("Notifications envoyées", tbl(["Heure", "Destinataire", "Message"], M.notifs.map((n) => [esc(n.at), esc(n.to), esc(n.text)]), "Aucune notification."))
+        + card("File hors ligne", tbl(["Heure", "Chambre", "Action"], M.queue.map((x) => [esc(x.at), esc(x.no), esc({ start: "Début de nettoyage", done: "Nettoyage terminé", dnd: "Ne pas déranger" }[x.act])]), "File vide : tout est synchronisé.")))
   }
 
   function tabInspections(p) {
@@ -320,7 +396,7 @@
     createOrder() {
       const title = val("o-title"), target = val("o-target")
       if (!title) return ($("#o-err").innerHTML = `<div class="err">Décrivez le problème constaté.</div>`)
-      const o = newOrder({ title, target, prio: val("o-prio"), source: val("o-source"), assignee: val("o-assignee"), desc: val("o-desc"), blocking: $("#o-block").checked })
+      const o = newOrder({ title, target, prio: val("o-prio"), source: val("o-source"), assignee: val("o-assignee"), desc: val("o-desc"), blocking: $("#o-block").checked, by: val("o-by") || (val("o-source") === "Client" ? "Client (via l'application)" : "Utilisateur connecté") })
       const occ = o.blocking && occupant(target)
       toast(o.blocking && isRoom(target) ? `${o.id} créé — chambre ${target} hors commande${occ ? ", relogement à proposer" : ""}` : `${o.id} créé`)
       go("mnt-ot/ordres/" + o.id)
@@ -378,12 +454,126 @@
       toast("Prédiction ignorée")
       render()
     },
-    setDnd(no) { M.dnd[no] = NOW.slice(11); toast(`Chambre ${no} : tâche replanifiée (Ne pas déranger)`); render() },
+    setDnd(no) { M.dnd[no] = { at: NOW.slice(11), retry: hhmm(2), src: "Signalé par l'étage" }; toast(`Chambre ${no} : tâche replanifiée à ${hhmm(2)} (Ne pas déranger)`); render() },
     clearDnd(no) { delete M.dnd[no]; toast(`Chambre ${no} : Ne pas déranger levé`); render() },
+    retry(no, t) { if (M.dnd[no]) M.dnd[no].retry = t; toast(`Chambre ${no} : passage replanifié à ${t}`); render() },
+    syncDnd() {
+      let on = 0, off = 0
+      accLocks().filter((l) => l.room).forEach((l) => {
+        if (l.dnd && !M.dnd[l.room]) { M.dnd[l.room] = { at: NOW.slice(11), retry: hhmm(2), src: "Serrure (mode intimité)" }; on++ }
+        if (!l.dnd && M.dnd[l.room] && /^Serrure/.test(M.dnd[l.room].src)) { delete M.dnd[l.room]; off++ }
+      })
+      toast(on || off ? `${on} « Ne pas déranger » reçu(s) des serrures, ${off} levé(s) — tâches replanifiées` : "Serrures synchronisées : aucun changement")
+      render()
+    },
+    // EF-HKM-003 : secteurs, présence, crédits
+    setSector(f, h) { M.sectors[f] = h; toast(`Étage ${f} : secteur de ${h}`); render() },
+    togglePresence(h) { M.presence[h] = M.presence[h] ? null : NOW.slice(11); toast(M.presence[h] ? `${h} pointée à ${M.presence[h]} (simulé)` : `${h} marquée absente`); render() },
+    assignTask(no, h) {
+      if (h && !M.presence[h]) { toast(`${h} n'a pas pointé : affectation impossible`); return render() }
+      if (h) D.assignments[no] = h; else delete D.assignments[no]
+      const load = dayTasks().filter((k) => k.who === h && k.kind !== "Couverture du soir").reduce((s, k) => s + k.minutes, 0)
+      toast(h ? `Chambre ${no} → ${h}${load > M.credit ? ` — attention, crédit dépassé (${load} / ${M.credit} min)` : ""}` : `Chambre ${no} désaffectée`)
+      render()
+    },
+    bySector() {
+      const tasks = dayTasks().filter((k) => k.kind !== "Couverture du soir")
+      const present = D.housekeepers.filter((h) => M.presence[h])
+      if (!present.length) return toast("Aucune femme de chambre pointée")
+      const load = Object.fromEntries(present.map((h) => [h, 0]))
+      let moved = 0
+      tasks.forEach((k) => {
+        const owner = M.sectors[room(k.room).floor]
+        let who = owner && M.presence[owner] && load[owner] + k.minutes <= M.credit ? owner : present.slice().sort((a, b) => load[a] - load[b])[0]
+        load[who] += k.minutes
+        if (D.assignments[k.room] !== who) moved++
+        D.assignments[k.room] = who
+      })
+      toast(`${tasks.length} tâche(s) affectée(s) par secteur (${moved} changement(s))`)
+      render()
+    },
+    // EF-HKM-001 / EF-HKM-004 : transitions de propreté (écran et application mobile)
+    roomAct(no, act, quiet) {
+      const r = room(no)
+      if (act === "start") {
+        if (r.hk !== "sale") return quiet ? "état changé" : toast("La chambre n'est pas à nettoyer")
+        if (M.dnd[no]) return quiet ? "Ne pas déranger" : toast(`Ne pas déranger : entrée interdite avant ${M.dnd[no].retry}`)
+        M.rs[no] = "en_cours"
+      } else if (act === "done") {
+        if (r.hk !== "sale") return quiet ? "état changé" : toast("Aucun nettoyage en cours")
+        r.hk = "inspection"; delete M.rs[no]
+        M.notifs.unshift({ at: NOW.slice(11), to: "Gouvernante d'étage", text: `Chambre ${no} nettoyée : à inspecter` })
+      } else if (act === "dirty") { r.hk = "sale"; delete M.inspected[no] }
+      else if (act === "dnd") M.dnd[no] = { at: NOW.slice(11), retry: hhmm(2), src: "Application mobile" }
+      if (quiet) return ""
+      toast({ start: `Chambre ${no} : nettoyage en cours`, done: `Chambre ${no} : à inspecter — gouvernante notifiée`, dirty: `Chambre ${no} : sale`, dnd: `Chambre ${no} : replanifiée` }[act])
+      render()
+    },
+    toggleOos(no) {
+      if (M.oos[no]) { delete M.oos[no]; toast(`Chambre ${no} rétablie`); return render() }
+      const why = prompt(`Chambre ${no} hors service (reste vendable) : motif`, "Télévision en panne")
+      if (!why) return
+      M.oos[no] = why
+      toast(`Chambre ${no} hors service — signalée à la maintenance, reste vendable`)
+      render()
+    },
+    mobUser(h) { M.mobUser = h; render() },
+    mob(no, act) {
+      if (act === "start" && M.dnd[no]) return toast(`Ne pas déranger : ne pas entrer avant ${M.dnd[no].retry}`)
+      if (M.offline) { M.queue.push({ no, act, at: NOW.slice(11) }); toast(`Hors ligne : mise à jour en file (${M.queue.length})`); return render() }
+      actions.roomAct(no, act)
+    },
+    toggleOffline() {
+      if (!M.offline) { M.offline = true; toast("Application hors ligne (simulé)"); return render() }
+      M.offline = false
+      const q0 = M.queue.splice(0), ko = q0.map((x) => actions.roomAct(x.no, x.act, true)).filter(Boolean)
+      toast(`${q0.length - ko.length} mise(s) à jour synchronisée(s)${ko.length ? `, ${ko.length} rejetée(s) (conflit : ${ko.join(", ")})` : ""}`)
+      render()
+    },
+    // EF-HKM-012 : ordres sur alertes IoT et serrures
+    iotOrder(no) {
+      if (openFor(no, "IoT")) return toast("Un ordre IoT est déjà ouvert pour cette chambre")
+      const s = M.iot.find((x) => x.room === no)
+      const o = newOrder({ title: "Température anormale", target: no, prio: "haute", source: "IoT", by: "Capteur IoT", equip: M.equipments.find((e) => e.loc === no && e.kind === "Climatisation")?.id, desc: `Alerte capteur (simulé) : ${s.temp.toFixed(1)} °C, humidité ${s.hum} %.` })
+      toast(`${o.id} créé sur alerte de température`)
+      render()
+    },
+    lockOrder(id, quiet) {
+      const l = accLocks().find((x) => x.id === id), t = l.room || l.door
+      if (openFor(t, "Serrure")) return quiet ? null : toast("Un ordre est déjà ouvert pour cette serrure")
+      const o = newOrder({ title: l.offline ? "Serrure hors ligne" : "Batterie faible serrure", target: t, prio: l.offline ? "haute" : "normale", source: "Serrure", by: "Système serrures", desc: l.offline ? `Aucun battement reçu de ${l.door} (simulé).` : `Batterie à ${l.battery} % sur ${l.door} (simulé).` })
+      if (quiet) return o
+      toast(`${o.id} créé sur événement de serrure`)
+      render()
+    },
+    scanAlerts() {
+      let n = 0
+      M.iot.filter((s) => s.temp > 29 && !s.leak && !openFor(s.room, "IoT")).forEach((s) => { n++; newOrder({ title: "Température anormale", target: s.room, prio: "haute", source: "IoT", by: "Capteur IoT", desc: `Alerte capteur (simulé) : ${s.temp.toFixed(1)} °C.` }) })
+      accLocks().filter((l) => l.offline || (l.battery != null && l.battery < 20)).forEach((l) => { if (actions.lockOrder(l.id, true)) n++ })
+      toast(n ? `${n} ordre(s) de travail créé(s) depuis les alertes` : "Toutes les alertes ont déjà un ordre ouvert")
+      render()
+    },
+    takePart(id) {
+      const o = OT(id), it = D.prc.items.find((i) => i.code === val("o-stock"))
+      if (!it) return
+      const st = D.prc.stock.find((x) => x.item === it.code && x.store === it.store)
+      if (!st || st.qty < 1) {
+        o.parts.push({ label: it.name, qty: 1, cost: it.cost }); o.status = "attente_pieces"
+        pushPurchase(`${it.name} (pour ${id})`, it.cost, "Technique")
+        toast(`Rupture de ${it.name} : demande d'achat créée, ordre en attente pièces`)
+        return render()
+      }
+      A.prc.consume([{ label: it.name, qty: 1 }], "Technique")
+      o.parts.push({ label: it.name, qty: 1, cost: it.cost, fromStock: true })
+      toast(`${it.name} sorti du magasin technique pour ${id}`)
+      render()
+    },
     propose() {
       // regroupement par étage, puis équilibrage de la charge
       const tasks = dayTasks().filter((k) => k.kind !== "Couverture du soir")
-      const load = Object.fromEntries(D.housekeepers.map((h) => [h, 0]))
+      const present = D.housekeepers.filter((h) => M.presence[h])
+      if (!present.length) return toast("Aucune femme de chambre pointée")
+      const load = Object.fromEntries(present.map((h) => [h, 0]))
       const floorOwner = {}
       M.proposal = []
       tasks.forEach((k) => {
@@ -409,6 +599,7 @@
       const score = Math.round(((M.checklist.length - ko.length) / M.checklist.length) * 100)
       M.inspections.unshift({ id: "INS-" + M.insSeq++, room: no, date: NOW, by: val("i-by"), hk: D.assignments[no] || "—", score, photos: Number(val("i-photos")) || 0, ko })
       room(no).hk = score >= 80 ? "propre" : "sale"
+      if (score >= 80) { M.inspected[no] = NOW; M.notifs.unshift({ at: NOW.slice(11), to: "Réception", text: `Chambre ${no} inspectée : prête à la vente` }) }
       toast(score >= 80 ? `Chambre ${no} inspectée (${score}/100) — prête à la vente` : `Chambre ${no} refusée (${score}/100) — renvoyée en nettoyage`)
       go("mnt-hk/inspections")
     },

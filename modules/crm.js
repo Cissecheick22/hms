@@ -86,6 +86,33 @@
       { id: "ENT-2", name: "Agence Akwaba Voyages Exemple", kind: "Agence de voyage", taxId: "IATA 00-0 0000 0", contract: "Commission 10 %, allotement 2 STD", members: ["G2", "G5"], ca: 1890000 },
       { id: "ENT-3", name: "Séminaire Transports Lagune Exemple", kind: "Groupe", taxId: "—", contract: "Bloc 6 chambres 03-05/12 (option), Grand-Bassam", members: ["G3"], ca: 0 },
     ],
+    // Profil unique au niveau du tenant (EF-CRM-001) : établissements du groupe et séjours qui y ont eu lieu
+    tenant: "Groupe Exemple",
+    props: [
+      { id: "P1", name: D.hotel, city: "Abidjan" },
+      { id: "P3", name: "Hôtel Exemple Yamoussoukro", city: "Yamoussoukro" },
+      { id: "P2", name: "Hôtel Exemple Plage", city: "Assinie" },
+    ],
+    groupStays: [
+      { id: "Y-0412", guest: "G1", prop: "P3", from: "2026-06-12", to: "2026-06-14", room: "Suite", amount: 236000, extras: 41000 },
+      { id: "Y-0388", guest: "G4", prop: "P3", from: "2026-03-02", to: "2026-03-05", room: "Supérieure", amount: 171000, extras: 18500 },
+      { id: "Y-0371", guest: "G3", prop: "P3", from: "2026-01-20", to: "2026-01-21", room: "Standard", amount: 42000, extras: 0 },
+      { id: "Y-0425", guest: "G6", prop: "P3", from: "2026-08-08", to: "2026-08-10", room: "Standard", amount: 84000, extras: 12000 },
+    ],
+    // Préférences structurées (EF-CRM-003), recopiées dans la fiche réception pour être signalées aux arrivées
+    prefs: {
+      G1: { boisson: "Eau de coco fraîche", langue: "Français" },
+      G2: { langue: "Français" },
+      G4: { allergies: "Arachides", oreiller: "Moelleux", langue: "Français" },
+      G6: { etage: "Bas", allergies: "Fruits de mer", langue: "Bambara, français" },
+    },
+    prefSent: {},
+    // Statuts VIP et consignes d'accueil (EF-CRM-006)
+    vip: {
+      G1: { level: "VIP 2", welcome: "Accueil par le directeur de l'hébergement", gift: "Corbeille de fruits et mot du directeur" },
+      G4: { level: "VIP 1", welcome: "Accueil personnalisé par le chef de réception", gift: "Bouteille d'eau et assortiment de fruits" },
+    },
+    vipTasks: {},
   }
   const S = D.crm
 
@@ -95,7 +122,7 @@
   const tierRank = (code) => S.tiers.findIndex((t) => t.code === code)
   const tierFor = (ytd) => [...S.tiers].reverse().find((t) => ytd >= t.min).code
   const cons = (id) => S.consents[id] || { email: false, sms: false, whatsapp: false, groupe: false, ia: false, date: "—", source: "Aucun" }
-  const staysOf = (id) => D.reservations.filter((r) => r.guest === id && r.status !== "annulee")
+  const staysOf = (id) => D.reservations.filter((r) => r.guest === id && !["annulee", "noshow", "deloge"].includes(r.status))
   const doneStays = (id) => D.reservations.filter((r) => r.guest === id && r.status === "partie")
   const revenueOf = (id) => staysOf(id).reduce((s, r) => s + folio(r).total, 0)
   const CEDEAO = ["Côte d'Ivoire", "Sénégal", "Ghana", "Mali", "Burkina Faso", "Togo", "Bénin", "Niger", "Guinée", "Nigeria"]
@@ -118,14 +145,51 @@
     return { clv, churn }
   }
 
+  const PREF_CATS = [
+    ["oreiller", "Oreiller", ["", "Ferme", "Moelleux", "Hypoallergénique"]],
+    ["etage", "Étage", ["", "Bas", "Élevé", "Proche ascenseur"]],
+    ["lit", "Type de lit", ["", "Double", "Twin", "King", "Lit bébé"]],
+    ["allergies", "Allergies alimentaires déclarées", null],
+    ["boisson", "Boissons", null],
+    ["langue", "Langue", ["", "Français", "English", "Español", "العربية", "Bambara, français"]],
+  ]
+  const VIP_LEVELS = ["VIP 1", "VIP 2", "VIP 3"]
+  const prefsOf = (id) => S.prefs[id] || {}
+  const prefLabel = (k) => PREF_CATS.find((c) => c[0] === k)[1]
+  const PREF_RE = new RegExp("^(" + PREF_CATS.map((c) => c[1]).join("|") + ") : ")
+  // Recopie dans G(id).prefs (lu par la réception, le check-in et l'arrivée) ; idempotent
+  const syncPrefs = (id) => {
+    const g = G(id)
+    if (!g) return
+    g.prefs = g.prefs.filter((x) => !PREF_RE.test(x)).concat(Object.entries(prefsOf(id)).filter(([, v]) => v).map(([k, v]) => `${prefLabel(k)} : ${v}`))
+  }
+  Object.keys(S.prefs).forEach(syncPrefs)
+  const prefTags = (id) => {
+    const p = prefsOf(id), e = Object.entries(p).filter(([, v]) => v)
+    return e.length ? e.map(([k, v]) => badge(`${prefLabel(k)} : ${v}`, k === "allergies" ? "dark" : "")).join(" ") : `<span class="muted">Aucune préférence structurée</span>`
+  }
+  const prop = (pid) => S.props.find((x) => x.id === pid)
+  const tenantId = (id) => "CLI-" + String(1000 + Number(String(id).replace(/\D/g, "") || 0)).padStart(5, "0")
+  // Séjours du client dans tout le groupe : ceux de cet établissement (D.reservations) et ceux des autres (S.groupStays)
+  const groupStaysOf = (id) => [
+    ...D.reservations.filter((r) => r.guest === id).map((r) => { const f = folio(r), lodging = nights(r.from, r.to) * r.rate
+      return { id: r.id, prop: "P1", from: r.from, to: r.to, room: T(r.type).label, amount: ["annulee", "noshow", "deloge"].includes(r.status) ? 0 : f.total, extras: f.total - lodging, status: r.status } }),
+    ...S.groupStays.filter((x) => x.guest === id).map((x) => ({ ...x, amount: x.amount + x.extras, status: "partie" })),
+  ].sort((a, b) => (a.from < b.from ? 1 : -1))
+  // RG-CRM-01 : un séjour d'un autre établissement n'est visible que si le partage groupe est consenti
+  const visibleFrom = (row, viewer, id) => row.prop === viewer || cons(id).groupe
+  const upcoming = (id) => D.reservations.filter((r) => r.guest === id && ["confirmee", "arrivee"].includes(r.status))
+  const soonArrivals = () => D.reservations.filter((r) => r.status === "confirmee" && r.from >= today && r.from <= addDays(today, 3) || r.status === "arrivee" && r.from === today)
+  const vipTask = (rid) => (S.vipTasks[rid] = S.vipTasks[rid] || { gift: false, welcome: false })
+
   // ---------- Écrans ----------
   const views = {
     crm(p) {
       const tab = p[0] || "synthese"
-      const body = { synthese: syntheseTab, segments: segmentsTab, fidelite: fideliteTab, campagnes: campagnesTab, avis: avisTab }[tab] || syntheseTab
+      const body = { synthese: syntheseTab, profil: profilTab, arrivees: arriveesTab, segments: segmentsTab, fidelite: fideliteTab, campagnes: campagnesTab, avis: avisTab }[tab] || syntheseTab
       return pageHead("Fidélité et marketing", "Programme de fidélité, segments, campagnes et avis clients (données d'exemple). Les profils détaillés restent dans Fiches clients.",
         btn("Fiches clients", "go('clients')", "ghost"))
-        + subtabs("crm", [["synthese", "Synthèse et IA"], ["segments", "Segments"], ["fidelite", "Programme de fidélité"], ["campagnes", "Campagnes"], ["avis", "Avis clients"]], tab)
+        + subtabs("crm", [["synthese", "Synthèse et IA"], ["profil", "Profil 360"], ["arrivees", "VIP et préférences des arrivées"], ["segments", "Segments"], ["fidelite", "Programme de fidélité"], ["campagnes", "Campagnes"], ["avis", "Avis clients"]], tab)
         + body(p)
     },
     relation(p) {
@@ -176,6 +240,69 @@
         x.churn >= 50 ? badge("Réactivation", "dark") : x.clv > 1000000 ? badge("Fidéliser", "on") : badge("Développer", "outline")]))}`
   }
 
+  function profilTab(p) {
+    const gs = D.guests.filter((g) => !g.erased)
+    const g = gs.find((x) => x.id === p[1]) || gs[0]
+    const id = g.id, c = cons(id), a = acct(id), viewer = ui.crmViewer || "P1"
+    const rows = groupStaysOf(id), vis = rows.filter((r) => visibleFrom(r, viewer, id)), hidden = rows.length - vis.length
+    const ca = vis.reduce((s, r) => s + r.amount, 0), spend = vis.reduce((s, r) => s + Math.max(0, r.extras), 0)
+    const revs = S.reviews.filter((r) => r.guest === id), comps = S.complaints.filter((x) => x.guest === id)
+    const v = S.vip[id] || {}, up = upcoming(id)
+    const left = `<h3>Profils</h3>` + listItems(gs.map((x) => ({ id: x.id, title: x.name, sub: `${tenantId(x.id)} · ${x.nationality || "—"}`, badge: vip(x) })), id, "crm/profil")
+    const right = card("", `<div class="row between"><span class="big">${esc(g.name)}</span><span class="row">${vip(g)}${btn("Fiche réception", `go('clients/${esc(id)}')`, "ghost sm")}</span></div>
+      <div class="muted">Profil unique ${esc(tenantId(id))} au niveau du tenant « ${esc(S.tenant)} », partagé entre ${S.props.length} établissements selon les consentements · EF-CRM-001</div>
+      <div class="row" style="margin-top:10px"><label for="crm-viewer">Consulter depuis</label>${select("crm-viewer", S.props.map((x) => [x.id, `${x.name} (${x.city})`]), viewer, `onchange="ui.crmViewer=this.value;render()"`)}
+        ${c.groupe ? badge("Partage groupe consenti", "on") : badge("Partage groupe refusé", "outline")}
+        ${btn(c.groupe ? "Retirer le partage groupe" : "Enregistrer le consentement « partage groupe »", `A.crm.consent(${q(id)}, 'groupe', ${!c.groupe})`, "ghost sm")}</div>
+      ${hidden ? `<div class="err" style="margin-top:10px">${hidden} séjour(s) dans d'autres établissements masqué(s) : consentement « partage groupe » absent (RG-CRM-01).</div>` : ""}
+
+      <h3>Historique et valeur client</h3>
+      <div class="grid">${kpi("CA cumulé", money(ca), "séjours visibles, extras inclus")}${kpi("Dépenses annexes", money(spend), "restaurant, bar, services")}${kpi("Séjours", vis.filter((r) => !["annulee", "noshow", "deloge"].includes(r.status)).length, "valides, tous établissements visibles")}${kpi("Fidélité", a ? `${a.tier} · ${a.points.toLocaleString("fr-FR")} pts` : "Non membre", a ? a.no : "")}</div>
+      ${tbl(["Séjour", "Établissement", "Dates", "Chambre", "Statut", "#Dépenses annexes", "#Total"], vis.map((r) => [esc(r.id), esc(prop(r.prop).name), `${fd(r.from)}/${r.from.slice(2, 4)} → ${fd(r.to)}`, esc(r.room), pill(STATUS, r.status), money(Math.max(0, r.extras)), money(r.amount)]), "Aucun séjour visible.")}
+      <h3>Avis et réclamations</h3>
+      ${tbl(["Date", "Nature", "Détail", "Suite"], [
+        ...revs.map((r) => [fd(r.date) + "/" + r.date.slice(2, 4), badge("Avis NPS " + r.nps, r.nps >= 9 ? "on" : r.nps <= 6 ? "dark" : ""), esc(r.text), r.reply ? "Réponse publiée" : `<button class="link" onclick="go('crm/avis')">Répondre</button>`]),
+        ...comps.map((x) => [fd(x.opened) + "/" + x.opened.slice(2, 4), badge("Réclamation " + x.cat, "outline"), esc(x.desc), x.status === "resolue" ? `Résolue${x.comp ? " · " + money(x.comp) : ""}` : `<button class="link" onclick="go('crm-relation/reclamations')">${esc(x.status)}</button>`]),
+      ], "Aucun avis ni réclamation.")}
+      <p class="muted">EF-CRM-004</p>
+
+      <h3>Préférences</h3>
+      <div class="tags">${prefTags(id)}</div>
+      ${form([...PREF_CATS.map(([k, l, opts]) => field("crm-p-" + k, l, opts ? select("crm-p-" + k, opts.map((o) => [o, o || "—"]), prefsOf(id)[k] || "") : input("crm-p-" + k, prefsOf(id)[k] || "", k === "allergies" ? 'placeholder="Ex. arachides, gluten"' : ""))),
+        `<div class="full row">${btn("Enregistrer les préférences", `A.crm.savePrefs(${q(id)})`)}<span class="muted">Signalées sur chaque réservation, au check-in et au housekeeping · EF-CRM-003</span></div>`])}
+      ${up.length ? tbl(["Réservation à venir", "Dates", "Signalement"], up.map((r) => [esc(r.id), `${fd(r.from)} → ${fd(r.to)}`, prefTags(id) + (S.prefSent[r.id] ? " " + badge("Transmis HK et cuisine", "on") : "")])) : ""}
+
+      <h3>Statut VIP et consignes</h3>
+      ${form([
+        `<div style="align-self:end"><label class="row" style="color:var(--ink)"><input type="checkbox" id="crm-v-on" ${g.vip ? "checked" : ""}> Client VIP</label></div>`,
+        field("crm-v-level", "Niveau", select("crm-v-level", VIP_LEVELS, v.level || "VIP 1")),
+        field("crm-v-welcome", "Consigne d'accueil", input("crm-v-welcome", v.welcome || "", 'placeholder="Ex. accueil par le directeur"'), "full"),
+        field("crm-v-gift", "Cadeau d'arrivée", input("crm-v-gift", v.gift || "", 'placeholder="Ex. corbeille de fruits"'), "full"),
+        `<div class="full row">${btn("Enregistrer le statut VIP", `A.crm.saveVip(${q(id)})`)}<span class="muted">Génère les alertes accueil et cadeau des arrivées · EF-CRM-006</span></div>`])}`)
+    return split(left, right)
+  }
+
+  function arriveesTab() {
+    const list = soonArrivals().sort((a, b) => (a.from < b.from ? -1 : 1))
+    const vips = list.filter((r) => G(r.guest).vip)
+    const late = vips.filter((r) => r.from === today && (!vipTask(r.id).gift || !vipTask(r.id).welcome))
+    const allergies = list.filter((r) => prefsOf(r.guest).allergies)
+    return cards([kpi("Arrivées J à J+3", list.length, "réservations confirmées"), kpi("Arrivées VIP", vips.length, "alertes accueil et cadeau"), kpi("Allergies déclarées", allergies.length, "à signaler à la cuisine")])
+      + late.map((r) => `<div class="err" style="margin-top:10px">Alerte VIP : ${esc(G(r.guest).name)} (${esc(S.vip[r.guest]?.level || "VIP")}) arrive aujourd'hui, ${[!vipTask(r.id).gift && "cadeau non préparé", !vipTask(r.id).welcome && "accueil non confirmé"].filter(Boolean).join(" et ")}.</div>`).join("")
+      + `<h2>Alertes VIP</h2>`
+      + tbl(["Arrivée", "Client", "Niveau", "Consigne d'accueil", "Cadeau", "Cadeau prêt", "Accueil fait"], vips.map((r) => {
+        const v = S.vip[r.guest] || {}, t = vipTask(r.id)
+        return [`${fd(r.from)} · ${esc(r.id)}`, guestLink(r.guest) + vip(G(r.guest)), esc(v.level || "À définir"), v.welcome ? esc(v.welcome) : `<button class="link" onclick="go('crm/profil/${esc(r.guest)}')">À configurer</button>`, esc(v.gift || "—"),
+          `<input type="checkbox" aria-label="Cadeau prêt ${esc(r.id)}" ${t.gift ? "checked" : ""} onchange="A.crm.vipTask(${q(r.id)}, 'gift', this.checked)">`,
+          `<input type="checkbox" aria-label="Accueil fait ${esc(r.id)}" ${t.welcome ? "checked" : ""} onchange="A.crm.vipTask(${q(r.id)}, 'welcome', this.checked)">`]
+      }), "Aucune arrivée VIP sur la période.")
+      + `<p class="muted">Le bandeau VIP apparaît aussi sur l'arrivée et le check-in (US-CRM-01). EF-CRM-006</p>`
+      + `<h2>Préférences à signaler</h2>`
+      + tbl(["Arrivée", "Client", "Type", "Préférences", ""], list.map((r) => [`${fd(r.from)} · ${esc(r.id)}`, guestLink(r.guest) + vip(G(r.guest)), esc(T(r.type).label), prefTags(r.guest) + (G(r.guest).prefs.filter((x) => !PREF_RE.test(x)).length ? `<div class="muted">Notes : ${esc(G(r.guest).prefs.filter((x) => !PREF_RE.test(x)).join(", "))}</div>` : ""),
+        S.prefSent[r.id] ? badge("Transmis", "on") : btn("Transmettre au HK et à la cuisine", `A.crm.sendPrefs(${q(r.id)})`, "ghost sm")]), "Aucune arrivée.")
+      + `<p class="muted">Préférences transmises au housekeeping avant l'arrivée ; une allergie déclarée est signalée à la cuisine (simulé). EF-CRM-003</p>`
+  }
+
   function segmentsTab(p) {
     const cur = seg(p[1]) || S.segments[0]
     const ms = members(cur)
@@ -202,6 +329,7 @@
     const a = acct(id), g = G(id), t = tierOf(a.tier), next = S.tiers[tierRank(a.tier) + 1]
     const toCredit = D.reservations.filter((r) => r.guest === id && ["arrivee", "partie"].includes(r.status) && !S.credited.includes(r.id))
     const left = `<h3>Membres</h3>` + listItems(ids.map((x) => ({ id: x, title: G(x).name, sub: `${acct(x).no} · ${acct(x).points.toLocaleString("fr-FR")} pts`, badge: " " + badge(acct(x).tier, tierRank(acct(x).tier) >= 2 ? "on" : "") })), id, "crm/fidelite")
+      + `<p class="muted">Règle d'accumulation : ${S.earn} point par tranche de 100 FCFA d'hébergement, crédité après check-out et folio soldé (RG-CRM-03) ; expiration après ${S.expiryMonths} mois d'inactivité. EF-CRM-009</p>`
       + `<h3>Niveaux</h3>` + tbl(["Niveau", "#Seuil 12 mois", "Avantages"], S.tiers.map((x) => [`<strong>${esc(x.code)}</strong>`, x.min.toLocaleString("fr-FR") + " pts", `<span class="muted">${esc(x.perks.join(" · "))}</span>`]))
     const right = card("", `<div class="row between"><span class="big">${guestLink(id)}</span>${badge(a.tier, tierRank(a.tier) >= 2 ? "on" : "")}</div>
       <div class="muted">Carte ${esc(a.no)} · dernière activité ${fd(a.last)}/${a.last.slice(2, 4)}</div>
@@ -479,6 +607,37 @@
     addGdpr() {
       S.gdpr.unshift({ id: "RGPD-" + String(S.gdpr.length + 4).padStart(2, "0"), guest: val("crm-g-guest"), type: val("crm-g-type"), received: today, status: "a-traiter", idOk: false })
       toast("Demande enregistrée, échéance dans 30 jours")
+      render()
+    },
+    savePrefs(id) {
+      const p = {}
+      PREF_CATS.forEach(([k]) => { const v = val("crm-p-" + k); if (v) p[k] = v })
+      if (p.allergies && p.allergies.length < 3) return toast("Précisez l'allergie déclarée")
+      S.prefs[id] = p
+      syncPrefs(id)
+      const up = upcoming(id)
+      up.forEach((r) => delete S.prefSent[r.id])
+      toast(`Préférences enregistrées${up.length ? ` et signalées sur ${up.length} réservation(s)` : ""}${p.allergies ? " — allergie à transmettre à la cuisine" : ""}`)
+      render()
+    },
+    sendPrefs(rid) {
+      const r = R(rid), p = prefsOf(r.guest)
+      S.prefSent[rid] = today
+      toast(`Préférences de ${G(r.guest).name} transmises au housekeeping${p.allergies ? " et allergie signalée à la cuisine" : ""} (simulé)`)
+      render()
+    },
+    saveVip(id) {
+      const g = G(id), on = $("#crm-v-on").checked, welcome = val("crm-v-welcome"), gift = val("crm-v-gift")
+      if (on && !welcome) return toast("Un client VIP doit avoir une consigne d'accueil")
+      g.vip = on
+      if (on) S.vip[id] = { level: val("crm-v-level"), welcome, gift }
+      else delete S.vip[id]
+      toast(on ? `${g.name} : statut ${S.vip[id].level} enregistré, alertes générées pour ses arrivées` : `${g.name} n'est plus VIP`)
+      render()
+    },
+    vipTask(rid, k, v) {
+      vipTask(rid)[k] = v
+      toast(k === "gift" ? (v ? "Cadeau prêt" : "Cadeau à préparer") : (v ? "Accueil VIP confirmé" : "Accueil VIP à faire"))
       render()
     },
     link() {
