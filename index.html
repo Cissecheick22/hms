@@ -40,6 +40,15 @@
     .logo.lg{width:56px;height:56px;border-radius:14px;font-size:28px;margin:0 auto 14px}
     #tabs{flex:1;overflow-y:auto;overflow-x:hidden;padding:2px 10px 12px}
     .navtitle{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin:16px 10px 6px;white-space:nowrap}
+    .navtools{display:flex;gap:4px;justify-content:flex-end;margin:4px 0 2px}
+    .navtools button{font:inherit;font-size:11px;border:0;background:none;color:var(--ink2);padding:3px 6px;border-radius:6px;cursor:pointer}.navtools button:hover{background:var(--soft);color:var(--ink)}
+    .navgroup{margin-top:2px}
+    .navhead{display:flex!important;gap:8px;align-items:center;width:100%;font:inherit;font-size:11px!important;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)!important;background:none;border:0;border-radius:8px;padding:9px 10px!important;cursor:pointer;white-space:nowrap}
+    .navhead:hover{background:var(--soft)!important;color:var(--ink)!important}.navhead.has{color:var(--ink)!important}
+    .navhead span:first-child{flex:1;text-align:left}.navhead .cnt{font-size:11px;font-weight:500;letter-spacing:0;color:var(--ink2);background:var(--soft);border-radius:99px;padding:0 7px}
+    .navhead svg{transition:transform .15s;transform:rotate(-90deg)}.navgroup.open .navhead svg{transform:none}
+    .navgroup:not(.open) .navitems{display:none}.navitems{padding-bottom:6px}
+    .navhead[aria-current]::before{display:none}
     #tabs button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;font:inherit;font-size:14px;border:0;background:none;color:var(--ink2);border-radius:8px;padding:7px 10px;cursor:pointer;position:relative;white-space:nowrap}
     #tabs button:hover{background:var(--soft);color:var(--ink)}
     #tabs button[aria-current=true]{background:var(--soft);color:var(--ink);font-weight:600}
@@ -49,7 +58,8 @@
     #sbuser{display:flex;gap:10px;align-items:center;padding:6px;min-width:0}
     .sb-foot .collapse{display:flex;gap:10px;align-items:center;font:inherit;font-size:13px;border:0;background:none;color:var(--ink2);border-radius:8px;padding:6px 10px;cursor:pointer}
     .sb-foot .collapse:hover{background:var(--soft);color:var(--ink)}
-    body.sb-collapsed .lbl,body.sb-collapsed .navtitle{display:none}
+    body.sb-collapsed .lbl,body.sb-collapsed .navtitle,body.sb-collapsed .navhead,body.sb-collapsed .navtools{display:none!important}
+    body.sb-collapsed .navgroup .navitems{display:block}
     body.sb-collapsed .navgroup{border-top:1px solid var(--line);margin-top:8px;padding-top:6px}
     body.sb-collapsed #tabs button{justify-content:center;padding:8px 0}
     body.sb-collapsed .sb-brand,body.sb-collapsed #sbuser{justify-content:center;padding-left:0;padding-right:0}
@@ -77,6 +87,7 @@
       body.menu-open #sidebar{transform:none}
       body.menu-open .scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:35}
       body.sb-collapsed .lbl,body.sb-collapsed .navtitle{display:revert}
+      body.sb-collapsed .navhead,body.sb-collapsed .navtools{display:flex!important}body.sb-collapsed .navgroup:not(.open) .navitems{display:none}
       #menu{display:grid}.sb-foot .collapse{display:none}
       .topbar{padding:0 12px}main#app{padding:0 16px}}
     @media (max-width:600px){.topbar .badge,.datepill{display:none}}

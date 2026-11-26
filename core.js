@@ -215,6 +215,7 @@ const ICON = {
   chevrons: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
   dot: '<circle cx="12" cy="12" r="3"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
 }
 const ico = (k, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ICON.dot}</svg>`
 const SCREEN_ICON = {
@@ -309,10 +310,20 @@ const notifications = () => {
   return n.filter((x) => canSee(x.route.split("/")[0]))
 }
 const toggleDD = (id) => { const el = document.getElementById(id); const open = !el.classList.contains("open"); document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open")); if (open) el.classList.add("open") }
+const NAV_OPEN = (() => { try { return JSON.parse(localStorage.getItem("hms-nav") || "{}") } catch (e) { return {} } })()
+const saveNav = () => localStorage.setItem("hms-nav", JSON.stringify(NAV_OPEN))
+const toggleGroup = (name) => { NAV_OPEN[name] = !NAV_OPEN[name]; saveNav(); render() }
+const setAllGroups = (open) => { HMS.groups.forEach((g) => (NAV_OPEN[g.name] = open)); saveNav(); render() }
 const toggleSidebar = () => { document.body.classList.toggle("sb-collapsed"); localStorage.setItem("hms-sb", document.body.classList.contains("sb-collapsed") ? "1" : "") }
 function renderShell(u, s, nav) {
-  $("#tabs").innerHTML = HMS.groups.map((g) => ({ ...g, items: g.items.filter((x) => canSee(x.id, u)) })).filter((g) => g.items.length).map((g) =>
-    `<div class="navgroup"><div class="navtitle">${esc(g.name)}</div>${g.items.map((x) => `<button data-id="${esc(x.id)}" aria-current="${x.id === nav}" title="${esc(x.label)}" onclick="go('${esc(x.id)}')">${ico(SCREEN_ICON[x.id])}<span class="lbl">${esc(x.label)}</span></button>`).join("")}</div>`).join("")
+  // Sections pliables : état retenu dans le navigateur ; la section de l'écran affiché s'ouvre quand on y arrive
+  const groups = HMS.groups.map((g) => ({ ...g, items: g.items.filter((x) => canSee(x.id, u)) })).filter((g) => g.items.length)
+  const active = (HMS.screens[nav] || s).group
+  if (ui.navLastGroup !== active) { NAV_OPEN[active] = true; ui.navLastGroup = active; saveNav() }
+  $("#tabs").innerHTML = `<div class="navtools"><button onclick="setAllGroups(true)">Tout déplier</button><button onclick="setAllGroups(false)">Tout replier</button></div>`
+    + groups.map((g) => { const open = !!NAV_OPEN[g.name], has = g.name === active
+      return `<div class="navgroup ${open ? "open" : ""}"><button class="navhead ${has ? "has" : ""}" aria-expanded="${open}" onclick="toggleGroup(${q(g.name)})"><span>${esc(g.name)}</span><span class="cnt">${g.items.length}</span>${ico("chev", 14)}</button>
+        <div class="navitems">${g.items.map((x) => `<button data-id="${esc(x.id)}" aria-current="${x.id === nav}" title="${esc(x.label)}" onclick="go('${esc(x.id)}')">${ico(SCREEN_ICON[x.id])}<span class="lbl">${esc(x.label)}</span></button>`).join("")}</div></div>` }).join("")
   $("#sbuser").innerHTML = `<span class="avatar">${initials(u.name)}</span><span class="lbl"><strong>${esc(u.name)}</strong><span class="muted" style="display:block;font-size:12px">${esc(u.role)}</span></span>`
   const parent = HMS.screens[nav] || s
   $("#crumb").innerHTML = `<span class="muted">${esc(parent.group)}</span><span class="sep">/</span><strong>${esc(parent.label || "")}</strong>`
