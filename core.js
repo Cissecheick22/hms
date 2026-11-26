@@ -100,22 +100,123 @@ const columns = (labels, values, fmt = (v) => v) => {
   const max = Math.max(1, ...values)
   return `<div class="cols-chart">${values.map((v, i) => `<div class="col" title="${esc(labels[i])} : ${esc(fmt(v))}"><span class="num">${esc(fmt(v))}</span><i style="height:${(v / max) * 100}%"></i><span class="muted">${esc(labels[i])}</span></div>`).join("")}</div>`
 }
+// ---------- Graphiques (SVG) ----------
+// Palette catégorielle validée (ordre fixe, jamais recyclé) : --s1 … --s6 dans index.html, clair et sombre.
+// Survol : chaque point / segment porte une info-bulle. Un seul axe par graphique.
+const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)"]
+const shortNum = (n) => (Math.abs(n) >= 1e6 ? (Math.round(n / 1e5) / 10).toLocaleString("fr-FR") + " M" : Math.abs(n) >= 1e4 ? Math.round(n / 1000).toLocaleString("fr-FR") + " k" : Math.round(n).toLocaleString("fr-FR"))
+const legend = (items) => `<div class="legend">${items.map((it, i) => `<span><i style="background:${it.color || SERIES[i]}"></i>${esc(it.name)}</span>`).join("")}</div>`
+// Courbe (une ou plusieurs séries sur le même axe) : labels[], series [{ name, values[] }]
+const lineChart = (labels, series, { fmt = shortNum, height = 220, area = true, max } = {}) => {
+  const W = 640, H = height, L = 46, R = 12, T = 12, B = 28, n = labels.length
+  const top = max ?? Math.max(1, ...series.flatMap((s) => s.values)) * 1.1
+  const x = (i) => L + (n === 1 ? 0 : (i * (W - L - R)) / (n - 1)), y = (v) => T + (H - T - B) * (1 - v / top)
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(top * f)}" y2="${y(top * f)}" class="gl"/><text x="${L - 6}" y="${y(top * f) + 4}" class="ax" text-anchor="end">${esc(fmt(top * f))}</text>`).join("")
+  const step = Math.ceil(n / 8)
+  const xl = labels.map((l, i) => ((i % step === 0 && n - 1 - i >= step / 2) || i === n - 1 ? `<text x="${x(i)}" y="${H - 8}" class="ax" text-anchor="middle">${esc(l)}</text>` : "")).join("")
+  const paths = series.map((s, k) => {
+    const pts = s.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+    const c = s.color || SERIES[k]
+    return (area && series.length === 1 ? `<path d="M${pts[0]} L${pts.join(" L")} L${x(n - 1)},${y(0)} L${x(0)},${y(0)} Z" fill="${c}" opacity=".12"/>` : "")
+      + `<polyline points="${pts.join(" ")}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      + `<circle cx="${x(n - 1)}" cy="${y(s.values[n - 1])}" r="4" fill="${c}" stroke="var(--surface)" stroke-width="2"/>`
+  }).join("")
+  const hits = labels.map((l, i) => `<g class="hit"><rect x="${x(i) - (W - L - R) / Math.max(1, n - 1) / 2}" y="${T}" width="${(W - L - R) / Math.max(1, n - 1)}" height="${H - T - B}"/><line x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${H - B}"/><title>${esc(l)}&#10;${series.map((s) => `${s.name} : ${fmt(s.values[i])}`).join("&#10;")}</title></g>`).join("")
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((s) => s.name).join(", "))}">${grid}${xl}${paths}${hits}</svg>${series.length > 1 ? legend(series) : ""}</div>`
+}
+// Anneau : items [{ label, value }] ; centre = texte principal
+const donut = (items, { fmt = shortNum, center = "", sub = "" } = {}) => {
+  const total = items.reduce((s, i) => s + i.value, 0) || 1, r = 52, C = 2 * Math.PI * r
+  let acc = 0
+  const segs = items.map((it, i) => { const len = (it.value / total) * C, gap = items.length > 1 && it.value ? 2 : 0
+    const seg = `<circle r="${r}" cx="70" cy="70" fill="none" stroke="${it.color || SERIES[i]}" stroke-width="18" stroke-dasharray="${Math.max(0, len - gap)} ${C}" stroke-dashoffset="${-acc}" transform="rotate(-90 70 70)"><title>${esc(it.label)} : ${esc(fmt(it.value))} (${Math.round((it.value / total) * 100)} %)</title></circle>`
+    acc += len; return seg }).join("")
+  return `<div class="donut"><svg viewBox="0 0 140 140" width="150" height="150"><circle r="${r}" cx="70" cy="70" fill="none" stroke="var(--soft)" stroke-width="18"/>${segs}<text x="70" y="68" text-anchor="middle" class="dc">${esc(center)}</text><text x="70" y="86" text-anchor="middle" class="ax">${esc(sub)}</text></svg>
+    <div class="dlegend">${items.map((it, i) => `<div><i style="background:${it.color || SERIES[i]}"></i><span>${esc(it.label)}</span><strong>${esc(fmt(it.value))}</strong><span class="muted">${Math.round((it.value / total) * 100)} %</span></div>`).join("")}</div></div>`
+}
+// Jauge circulaire (0-100)
+const gauge = (pctVal, label = "") => { const r = 30, C = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pctVal))
+  return `<svg viewBox="0 0 80 80" width="72" height="72" class="gauge"><circle r="${r}" cx="40" cy="40" fill="none" stroke="var(--soft)" stroke-width="8"/><circle r="${r}" cx="40" cy="40" fill="none" stroke="var(--s1)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(v / 100) * C} ${C}" transform="rotate(-90 40 40)"/><text x="40" y="45" text-anchor="middle" class="gv">${Math.round(v)}%</text><title>${esc(label)} : ${Math.round(v)} %</title></svg>` }
+// Mini-courbe pour les indicateurs
+const spark = (values) => { if (!values || values.length < 2) return ""; const W = 96, H = 30, mx = Math.max(...values), mn = Math.min(...values), sp = mx - mn || 1
+  const pts = values.map((v, i) => `${((i / (values.length - 1)) * W).toFixed(1)},${(H - 3 - ((v - mn) / sp) * (H - 6)).toFixed(1)}`).join(" ")
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="spark" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--s1)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>` }
+// Indicateur illustré : icône, valeur, évolution (texte + flèche, jamais la couleur seule), mini-courbe
+const stat = ({ label, value, icon = "chart", delta = null, good = true, hint = "", trend = null, route = "" }) => {
+  const dTone = delta == null ? "" : (delta >= 0) === good ? "ok" : "bad"
+  return `<div class="card stat ${route ? "clickable" : ""}" ${route ? `onclick="go('${esc(route)}')"` : ""}>
+    <div class="stat-top"><span class="stat-ic">${ico(icon, 18)}</span><span class="stat-label">${esc(label)}</span></div>
+    <div class="stat-row"><div class="stat-val">${esc(value)}</div>${spark(trend)}</div>
+    <div class="stat-foot">${delta != null ? `<span class="pill ${dTone}">${delta >= 0 ? "▲" : "▼"} ${esc(Math.abs(Math.round(delta * 10) / 10).toLocaleString("fr-FR"))} %</span>` : ""}<span class="muted">${esc(hint)}</span></div></div>`
+}
+const section = (title, body, action = "") => `<div class="card sec"><div class="sec-head"><h3>${esc(title)}</h3>${action}</div>${body}</div>`
+
 // Suggestion d'IA (simulée) : même présentation dans tous les modules
 const aiBox = (title, text, actions = "") =>
   `<div class="card ai"><div class="row between"><strong>${esc(title)}</strong>${badge("IA · simulé", "outline")}</div><p style="margin:6px 0 0">${esc(text)}</p>${actions ? `<div class="row" style="margin-top:10px">${actions}</div>` : ""}</div>`
 // Cadre de téléphone pour les applications mobiles
 const phone = (html, title = "") => `<div class="phone"><div class="phone-bar">${esc(title)}</div><div class="phone-body">${html}</div></div>`
-const pct = (n) => Math.round(n * 10) / 10 + " %"
+const pct = (n) => (Math.round(n * 10) / 10).toLocaleString("fr-FR") + " %"
 let seq = 1
 const uid = (prefix) => `${prefix}-${Date.now().toString(36).slice(-4)}${seq++}`.toUpperCase()
 
+// ---------- Fenêtre de confirmation ----------
+// askConfirm({ title, text, confirm, danger }) → Promise<boolean>. Échap ou clic hors de la fenêtre = annuler.
+const askConfirm = ({ title = "Confirmer l'action", text = "Êtes-vous sûr ?", confirm = "Confirmer", danger = false } = {}) => new Promise((resolve) => {
+  if (localStorage.getItem("hms-autoconfirm")) return resolve(true) // tests automatiques uniquement
+  const m = document.getElementById("modal")
+  m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mdl-t"><div class="modal-ic ${danger ? "bad" : ""}">${ico(danger ? "trash" : "alert", 20)}</div>
+    <h2 id="mdl-t">${esc(title)}</h2><p>${esc(text)}</p>${danger ? `<p class="muted" style="margin-top:-6px">Cette action ne peut pas être annulée.</p>` : ""}
+    <div class="modal-actions"><button class="btn ghost" data-r="0">Annuler</button><button class="btn ${danger ? "danger" : ""}" data-r="1">${esc(confirm)}</button></div></div>`
+  m.classList.add("open")
+  const done = (r) => { m.classList.remove("open"); m.innerHTML = ""; document.removeEventListener("keydown", key); resolve(r) }
+  const key = (e) => { if (e.key === "Escape") done(false); if (e.key === "Enter") done(true) }
+  m.onclick = (e) => { if (e.target === m) done(false); const b = e.target.closest("[data-r]"); if (b) done(b.dataset.r === "1") }
+  document.addEventListener("keydown", key)
+  setTimeout(() => m.querySelector('[data-r="1"]')?.focus(), 30)
+})
+// Toute action de modification, validation, annulation ou suppression déclenchée par l'utilisateur passe par la fenêtre.
+// Les confirm() natifs des modules ne s'affichent plus : la fenêtre les remplace (une seule question).
+const MUTATE = /^(save|edit|update|set|change|modif|cancel|annul|delete|del|remove|rm|drop|purge|archive|close|clos|cloture|valid|approve|approv|reject|refus|revoke|revoc|suspend|terminate|resil|reset|apply|post|settle|checkout|refund|rembours|pay|lock|unlock|transfer|merge|split|release|disable|deactivate|desactiv|activate|toggle|lettr|extourn|dispose|reform|depart|depar|fire|walk|noshow|move|upgrade|assign|reassign|book|encaiss|factur|invoice|confirm|sign|publish|publi|deliver|livr|return|retour|correct|adjust|ajust|renew|rotate|unlink|detach)/i
+const DESTROY = /(delete|del|remove|rm|drop|purge|cancel|annul|revoke|revoc|terminate|resil|reset|dispose|reform|reject|refus|unlink|detach|archive)/i
+const SAFE = /(tab|view|filter|panel|show|hide|open|expand|collapse|sort|select|pick|preview|search|sim|demo|peek|focus|scroll|print|export|copy|zoom|page|step)/i
+let CONFIRMING = 0
+const nativeConfirm = window.confirm.bind(window)
+window.confirm = (msg) => (CONFIRMING ? true : nativeConfirm(msg)) // déjà confirmé dans la fenêtre : pas de seconde question
+const userEvent = () => { const e = window.event; return e && ["click", "change", "submit", "keydown"].includes(e.type) ? e : null }
+const eventLabel = (e) => {
+  const el = e?.target?.closest?.("button,select,input,a")
+  if (!el) return ""
+  if (el.tagName === "SELECT") return `${document.querySelector(`label[for="${el.id}"]`)?.textContent || "Valeur"} → ${el.options[el.selectedIndex]?.text || el.value}`
+  return (el.textContent || el.value || el.title || "").trim().replace(/\s+/g, " ").slice(0, 90)
+}
+const guard = (name, fn) => {
+  const src = fn.toString(), native = /confirm\(/.test(src)
+  if (/^[^{]*\{\s*(return\s+)?go\(/.test(src) && src.length < 140) return fn // simple navigation vers un écran de saisie
+  if (!native && (!MUTATE.test(name) || SAFE.test(name))) return fn
+  return function (...args) {
+    const e = userEvent()
+    if (CONFIRMING || !e) return fn.apply(this, args)
+    // Jamais d'exécution avant l'accord : le message reprend le libellé du bouton ou du champ modifié
+    const lbl = eventLabel(e)
+    const text = lbl ? `Êtes-vous sûr de vouloir effectuer : « ${lbl} » ?` : "Êtes-vous sûr de vouloir effectuer cette modification ?"
+    const danger = DESTROY.test(name) || /supprim|annul|révoqu|effac|purge|résili/i.test(text)
+    askConfirm({ title: danger ? "Confirmer la suppression" : "Confirmer la modification", text, confirm: danger ? "Oui, confirmer" : "Confirmer", danger }).then((ok) => {
+      if (!ok) return render() // remet les champs (ex. liste déroulante) dans leur état initial
+      CONFIRMING++
+      try { fn.apply(this, args) } finally { CONFIRMING-- }
+    })
+  }
+}
+const guardAll = (obj) => { Object.keys(obj).forEach((k) => { if (typeof obj[k] === "function") obj[k] = guard(k, obj[k]) }); return obj }
+
 // ---------- Registre des modules ----------
 // Ordre d'affichage des groupes dans le menu
-const GROUPS = ["Réception & séjour", "Ventes & clients", "Opérations", "Services", "Personnel", "Finance", "Pilotage & IA", "Plateforme"]
+const GROUPS = ["Vue d'ensemble", "Réception & séjour", "Ventes & clients", "Opérations", "Services", "Personnel", "Finance", "Pilotage & IA", "Plateforme"]
 const HMS = { modules: [], screens: {}, groups: GROUPS.map((name) => ({ name, items: [] })) }
 const A = {} // actions par module : A.<code>.<action>
 HMS.module = ({ code, group, title, phase, spec, screens, actions }) => {
-  if (actions) A[code] = actions
+  if (actions) A[code] = guardAll(actions)
   let g = HMS.groups.find((x) => x.name === group)
   if (!g) HMS.groups.push((g = { name: group, items: [] }))
   screens.forEach((s) => {
@@ -153,12 +254,12 @@ const loadState = () => {
     Object.assign(ui, saved.ui, { encoding: null, done: null })
   } catch (e) {}
 }
-const resetData = () => {
-  if (!confirm("Revenir aux données d'exemple d'origine ? Toutes les modifications faites dans la maquette seront effacées.")) return
+const resetData = () => askConfirm({ title: "Réinitialiser les données", text: "Revenir aux données d'exemple d'origine ? Toutes les modifications faites dans la maquette seront effacées.", confirm: "Réinitialiser", danger: true }).then((ok) => {
+  if (!ok) return
   localStorage.removeItem(STORE)
   location.hash = ""
   location.reload()
-}
+})
 
 // ---------- Navigation ----------
 // ---------- Icônes (tracés au trait, style Lucide) ----------
@@ -216,10 +317,17 @@ const ICON = {
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
   dot: '<circle cx="12" cy="12" r="3"/>',
   chev: '<path d="m6 9 6 6 6-6"/>',
+  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  trend: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4M16.71 13.88l.7.71-2.82 2.82"/>',
+  door: '<path d="M13 4h3a2 2 0 0 1 2 2v14M2 20h3M13 20h9M10 12v.01M13 4.56v16.16a1 1 0 0 1-1.24.97L5 20V5.56a2 2 0 0 1 1.51-1.94l4-1A2 2 0 0 1 13 4.56Z"/>',
+  star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
 }
 const ico = (k, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ICON.dot}</svg>`
 const SCREEN_ICON = {
-  accueil: "home", reservations: "calendar", checkin: "key", checkout: "receipt", "sej-rack": "grid", "sej-mouv": "move", "sej-groupes": "users", "sej-audit": "moon",
+  dashboard: "grid", analytique: "trend", accueil: "home", reservations: "calendar", checkin: "key", checkout: "receipt", "sej-rack": "grid", "sej-mouv": "move", "sej-groupes": "users", "sej-audit": "moon",
   clients: "user", "rat-tarifs": "tag", "rat-distribution": "globe", crm: "heart", "crm-relation": "message",
   chambres: "bed", "acc-cles": "key", "acc-materiel": "lock", "acc-securite": "shield", "mnt-ot": "wrench", "mnt-hk": "check", "prc-achats": "cart", "prc-stocks": "box", "bln-linge": "shirt", "bln-pressing": "shirt",
   fnb: "utensils", spa: "sparkle", "spa-loisirs": "bus", evt: "party",
@@ -248,7 +356,7 @@ const canSee = (id, u = currentUser()) => {
   const s = HMS.screens[id]
   if (!s || !u) return false
   if (s.navAs && s.navAs !== id) return canSee(s.navAs, u)
-  return u.groups === "*" || s.group === "Projet" || u.groups.includes(s.group) || (u.extra || []).includes(id)
+  return u.groups === "*" || s.group === "Projet" || s.group === "Vue d'ensemble" || u.groups.includes(s.group) || (u.extra || []).includes(id)
 }
 const firstScreen = (u) => HMS.groups.flatMap((g) => g.items).find((s) => canSee(s.id, u))?.id
 const AUTH = {
@@ -274,7 +382,7 @@ const AUTH = {
   msg(m, ok = false) { ui.loginMsg = m; ui.loginOk = ok; const email = val("lg-email"); render(); if ($("#lg-email")) $("#lg-email").value = email },
   demo(email) { ui.loginTab = "pwd"; render(); $("#lg-email").value = email; $("#lg-pwd").value = DEMO_PASSWORD },
   peek() { const i = $("#lg-pwd"); i.type = i.type === "password" ? "text" : "password" },
-  logout() { localStorage.removeItem(SESSION); ui.loginMsg = ""; location.hash = "login"; render() },
+  logout() { askConfirm({ title: "Se déconnecter", text: "Fermer la session de cet utilisateur ?", confirm: "Se déconnecter" }).then((ok) => { if (!ok) return; localStorage.removeItem(SESSION); ui.loginMsg = ""; location.hash = "login"; render() }) },
 }
 function loginView() {
   const tab = ui.loginTab || "pwd"
