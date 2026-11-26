@@ -17,6 +17,24 @@
   const cashOpen = () => (D.sej?.shifts || []).some((s) => s.status === "ouverte")
   const nightList = (a, b) => { const l = []; for (let d = a; d < b; d = addDays(d, 1)) l.push(d); return l }
   const round500 = (n) => Math.round(n / 500) * 500
+  // ---------- Indicateurs et graphiques (calculés sur les données de la maquette) ----------
+  const VALID = (r) => !["annulee", "noshow", "deloge"].includes(r.status)
+  const dl = (d) => d.slice(8, 10) + "/" + d.slice(5, 7)
+  const nextDays = (n, from = today) => Array.from({ length: n }, (_, i) => addDays(from, i))
+  const sellableN = () => D.rooms.filter((r) => r.hk !== "hs").length || 1
+  const bookedOcc = (d) => { const free = D.roomTypes.reduce((s, t) => s + Math.max(0, available(t.code, d)), 0); return Math.max(0, Math.min(100, ((sellableN() - free) / sellableN()) * 100)) }
+  const arrCount = (d) => D.reservations.filter((r) => r.from === d && VALID(r)).length
+  const depCount = (d) => D.reservations.filter((r) => r.to === d && VALID(r)).length
+  const hkDonut = () => {
+    const c = (f) => D.rooms.filter(f).length
+    return donut([
+      { label: "Libres et propres", value: c((r) => r.hk === "propre" && !occupant(r.no)), color: "var(--s3)" },
+      { label: "Occupées", value: c((r) => r.hk !== "hs" && !!occupant(r.no)), color: "var(--s1)" },
+      { label: "Sales (libres)", value: c((r) => r.hk === "sale" && !occupant(r.no)), color: "var(--s4)" },
+      { label: "En inspection", value: c((r) => r.hk === "inspection" && !occupant(r.no)), color: "var(--s5)" },
+      { label: "Hors commande", value: c((r) => r.hk === "hs"), color: "var(--s2)" }], { fmt: (v) => v, center: String(D.rooms.length), sub: "chambres" })
+  }
+  const riskTone = (v) => (v >= 30 ? "bad" : v >= 15 ? "warn" : "ok")
 
   // ---------- Données d'exemple propres à la réception (fof) ----------
   D.fof = {
@@ -128,32 +146,33 @@
       const mm = (D.sej?.payLog || []).filter((p) => p.status === "à vérifier").length
       if (mm) risks.push([`${mm} paiement(s) mobile money à vérifier auprès de l'opérateur`, "fol-paiements", "Paiements"])
       if (F.offline) risks.push(["Mode dégradé : connexion perdue, opérations en file d'attente", "checkin", "Check-in"])
-      return `<h1>Réception — ${esc(fdLong(today))}</h1><p class="lead">${esc(D.hotel)} · vue du jour (exemple).</p>
-        <div class="grid">
-          ${kpi("Arrivées", arr.length, `${pend.length} à enregistrer`)}
-          ${kpi("Départs", dep.length, `${dep.filter((r) => r.status === "arrivee").length} à facturer`)}
-          ${kpi("Clients présents", ih.length, `occupation ${Math.round((ih.length / sellable) * 100)} %`)}
-          ${kpi("Chambres prêtes", readyRooms().length, `sur ${free} libres`)}
+      const days = nextDays(7), occ = (ih.length / sellable) * 100, occTomorrow = bookedOcc(addDays(today, 1))
+      const balance = sumA(dep.filter((r) => r.status === "arrivee"), (r) => Math.max(0, folio(r).balance))
+      return pageHead(`Réception — ${fdLong(today)}`, `${D.hotel} · vue du jour (exemple).`,
+          `<span class="row">${btn("Nouvelle réservation", "go('reservations/new')", "ghost")}${btn("Check-in", "go('checkin')")}</span>`)
+        + `<div class="grid g4">
+          ${stat({ label: "Arrivées", value: `${arr.length - pend.length}/${arr.length}`, icon: "key", hint: `${pend.length} à enregistrer · ${arrCount(addDays(today, 1))} demain`, trend: days.map(arrCount), route: "checkin" })}
+          ${stat({ label: "Départs", value: `${dep.filter((r) => r.status === "partie").length}/${dep.length}`, icon: "door", hint: `${dep.filter((r) => r.status === "arrivee").length} à facturer · ${money(balance)} à encaisser`, trend: days.map(depCount), route: "checkout" })}
+          ${stat({ label: "Clients présents", value: String(ih.length), icon: "users", hint: `occupation ${Math.round(occ)} % · demain ${Math.round(occTomorrow)} % réservé`, trend: days.map(bookedOcc), route: "sej-rack" })}
+          ${stat({ label: "Chambres prêtes", value: String(readyRooms().length), icon: "bed", hint: `sur ${free} libres · ${pend.length} arrivée(s) en attente`, route: "chambres" })}
         </div>
-        <div class="cols">
-          <section><h2>Arrivées du jour</h2>${tbl(["Client", "Type", "#Nuits", "Risque IA", ""], arr.map((r) => { const x = r.status === "confirmee" ? riskOf(r.id) : null
-            return [guestLink(r.guest) + vip(G(r.guest)) + (F.online[r.id] ? " " + badge("En ligne", "outline") : ""), esc(T(r.type).label), nights(r.from, r.to), x ? badge(`no-show ${x.noshow} %`, x.noshow >= 30 ? "dark" : x.noshow >= 15 ? "outline" : "") : "—",
-            r.status === "arrivee" ? `<span class="pill on">Ch. ${esc(r.room)}</span>` : `<button class="btn sm" onclick="go('checkin/${esc(r.id)}')">Check-in</button>`] }), "Aucune arrivée prévue.")}</section>
-          <section><h2>Départs du jour</h2>${tbl(["Client", "Chambre", "#Solde", ""], dep.map((r) => [
+        <div class="dash" style="margin-top:16px">
+          <div class="w8">${section(`Arrivées du jour (${arr.length})`, tbl(["Client", "Type", "#Nuits", "Risque IA", ""], arr.map((r) => { const x = r.status === "confirmee" ? riskOf(r.id) : null
+            return [guestLink(r.guest) + vip(G(r.guest)) + (F.online[r.id] ? " " + badge("En ligne", "info") : ""), esc(T(r.type).label), nights(r.from, r.to), x ? badge(`no-show ${x.noshow} %`, riskTone(x.noshow)) : "—",
+            r.status === "arrivee" ? badge(`Ch. ${r.room}`, "ok") : `<button class="btn sm" onclick="go('checkin/${esc(r.id)}')">Check-in</button>`] }), "Aucune arrivée prévue."), btn("Check-in", "go('checkin')", "ghost sm"))}</div>
+          <div class="w4">${section("Statut des chambres", hkDonut(), btn("Voir", "go('chambres')", "ghost sm"))}</div>
+          <div class="w6">${section(`Départs du jour (${dep.length})`, tbl(["Client", "Chambre", "#Solde", ""], dep.map((r) => [
             guestLink(r.guest) + vip(G(r.guest)), esc(r.room), r.status === "partie" ? "—" : money(folio(r).balance),
             r.status === "partie" ? pill(STATUS, "partie") : `<button class="btn sm" onclick="go('checkout/${esc(r.id)}')">Check-out</button>`,
-          ]), "Aucun départ prévu.")}</section>
-        </div>
-        <h2>Risques du jour</h2>
-        ${risks.length ? `<div class="stack">${risks.map(([t, route, l]) => `<div class="card row between"><span>${esc(t)}</span>${btn(l, `go('${route}')`, "ghost sm")}</div>`).join("")}</div>` : `<p class="muted">Aucun risque détecté.</p>`}
-        <p class="muted">Risques calculés sur les données du jour (IA de no-show simulée). EF-FOF-001</p>
-        <h2>VIP et demandes spéciales</h2>
-        ${special.length ? `<div class="grid">${special.map((r) => `<div class="card">
-            <div class="row between"><strong>${guestLink(r.guest)}</strong>${vip(G(r.guest))}</div>
-            <div class="muted">${r.status === "arrivee" ? `En séjour · ch. ${esc(r.room)}` : `Arrive aujourd'hui · ${esc(T(r.type).label)}`}</div>
-            ${r.request ? `<p style="margin:8px 0 0">${esc(r.request)}</p>` : ""}
-            ${G(r.guest).prefs.length ? `<p class="muted" style="margin:6px 0 0">Préférences : ${esc(G(r.guest).prefs.join(", "))}</p>` : ""}
-          </div>`).join("")}</div>` : `<p class="muted">Rien de particulier aujourd'hui.</p>`}`
+          ]), "Aucun départ prévu."), btn("Check-out", "go('checkout')", "ghost sm"))}</div>
+          <div class="w6">${section("Mouvements des 7 prochains jours", lineChart(days.map(dl), [{ name: "Arrivées", values: days.map(arrCount) }, { name: "Départs", values: days.map(depCount) }], { fmt: (v) => String(Math.round(v)), height: 200, max: Math.max(4, ...days.map(arrCount), ...days.map(depCount)) }))}</div>
+          <div class="w6">${section(`Risques du jour (${risks.length})`, (risks.length ? `<div class="feed">${risks.map(([t, route, l]) => `<div><span class="fi">${ico("alert", 15)}</span><span style="flex:1">${esc(t)}</span>${btn(l, `go('${route}')`, "ghost sm")}</div>`).join("")}</div>` : `<p class="muted">Aucun risque détecté.</p>`)
+            + `<p class="muted" style="margin:6px 0 0">Risques calculés sur les données du jour (IA de no-show simulée). EF-FOF-001</p>`)}</div>
+          <div class="w6">${section("Taux d'occupation réservé — 14 jours", lineChart(nextDays(14).map(dl), [{ name: "Occupation (%)", values: nextDays(14).map(bookedOcc) }], { fmt: (v) => Math.round(v) + " %", max: 100, height: 200 }), btn("Planning", "go('reservations')", "ghost sm"))}</div>
+          <div class="w12">${section(`VIP et demandes spéciales (${special.length})`, special.length ? `<div class="feed">${special.map((r) => `<div><span class="avatar sm">${esc(initials(G(r.guest).name))}</span><span><strong>${guestLink(r.guest)}</strong>${vip(G(r.guest))}
+              <br><span class="muted">${r.status === "arrivee" ? `En séjour · ch. ${esc(r.room)}` : `Arrive aujourd'hui · ${esc(T(r.type).label)}`}${r.request ? " · " + esc(r.request) : ""}</span>
+              ${G(r.guest).prefs.length ? `<br><span class="muted">Préférences : ${esc(G(r.guest).prefs.join(", "))}</span>` : ""}</span></div>`).join("")}</div>` : `<p class="muted">Rien de particulier aujourd'hui.</p>`)}</div>
+        </div>`
     },
 
     // #2 Réservations
@@ -162,37 +181,51 @@
       const editing = mode === "new" ? {} : mode === "edit" ? R(p[1]) : null
       const cancelling = mode === "cancel" ? R(p[1]) : null
       const tab = ["canaux", "messages"].includes(mode) ? mode : "liste"
-      const head = `<div class="row between"><h1>Réservations</h1>${editing ? "" : `<button class="btn" onclick="go('reservations/new')">Nouvelle réservation</button>`}</div>
-        <p class="lead">Créer, modifier ou annuler une réservation. La saisie est bloquée si le type de chambre est complet sur une des nuits.</p>
-        ${subtabs("reservations", [["liste", "Liste et planning"], ["canaux", "Canaux : import et réconciliation"], ["messages", "Messages aux clients"]], tab)}`
+      const head = pageHead("Réservations", "Créer, modifier ou annuler une réservation. La saisie est bloquée si le type de chambre est complet sur une des nuits.", editing ? "" : btn("Nouvelle réservation", "go('reservations/new')"))
+        + subtabs("reservations", [["liste", "Liste et planning"], ["canaux", "Canaux : import et réconciliation"], ["messages", "Messages aux clients"]], tab)
       if (tab === "canaux") return head + channelsTab()
       if (tab === "messages") return head + messagesTab()
       const filters = { actives: ["confirmee", "arrivee"], toutes: Object.keys(STATUS), annulee: ["annulee", "noshow", "deloge"] }
       const list = D.reservations.filter((r) => filters[ui.resFilter].includes(r.status)).sort((a, b) => a.from.localeCompare(b.from))
-      const days = Array.from({ length: 14 }, (_, i) => addDays(today, i))
+      const days = nextDays(14)
       const plan = (r) => (PLANS.find((x) => x[0] === r.plan) || [, ""])[1]
+      const upcoming = D.reservations.filter((r) => r.status === "confirmee")
+      const onBooks = sumA(upcoming, (r) => nights(r.from, r.to) * r.rate)
+      const lost = D.reservations.filter((r) => ["annulee", "noshow"].includes(r.status)).length
+      const srcOf = (r) => D.sej?.meta?.[r.id]?.source || r.source || (r.walkin ? "Walk-in" : r.group ? "Groupe" : "Réception")
+      const src = {}; D.reservations.filter(VALID).forEach((r) => { const k = srcOf(r); src[k] = (src[k] || 0) + 1 })
+      const occ14 = days.map(bookedOcc)
       return head + `
         ${editing ? resForm(editing) : ""}
         ${cancelling ? cancelPanel(cancelling) : ""}
         ${ui.race ? card("Saisies simultanées sur la dernière chambre (simulation)", ui.race.map((s) => `<div class="step"><b class="n">${s[0]}</b><div>${esc(s[1])}</div></div>`).join("") + btn("Fermer", "ui.race=null;render()", "ghost sm"), 'style="margin-bottom:16px"') : ""}
-        <div class="chips">${Object.entries({ actives: "À venir et en séjour", toutes: "Toutes", annulee: "Annulées, no-shows, délogés" }).map(([k, l]) =>
+        <div class="grid g4">
+          ${stat({ label: "Réservations à venir", value: String(upcoming.length), icon: "calendar", hint: `${upcoming.filter((r) => r.from <= addDays(today, 7)).length} arrivent sous 7 jours`, trend: days.map(arrCount) })}
+          ${stat({ label: "Hébergement en carnet", value: money(onBooks), icon: "coins", hint: "réservations confirmées (exemple)" })}
+          ${stat({ label: "Occupation réservée à 14 j", value: pct(sumA(occ14) / occ14.length), icon: "bed", delta: occ14[7] != null ? ((occ14[7] - occ14[0]) / Math.max(1, occ14[0])) * 100 : null, hint: "moyenne · évolution J → J+7", trend: occ14 })}
+          ${stat({ label: "Annulations et no-shows", value: String(lost), icon: "alert", good: false, hint: `${pct((lost / Math.max(1, D.reservations.length)) * 100)} des réservations` })}
+        </div>
+        <div class="dash" style="margin-top:16px">
+          <div class="w8">${section("Occupation réservée — 14 jours", lineChart(days.map(dl), [{ name: "Occupation réservée (%)", values: occ14 }], { fmt: (v) => Math.round(v) + " %", max: 100, height: 200 }))}</div>
+          <div class="w4">${section("Origine des réservations", donut(Object.entries(src).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value), { fmt: (v) => v + " rés.", center: String(D.reservations.filter(VALID).length), sub: "réservations" }))}</div>
+          <div class="w12">${section(`Liste des réservations (${list.length})`, `<div class="chips">${Object.entries({ actives: "À venir et en séjour", toutes: "Toutes", annulee: "Annulées, no-shows, délogés" }).map(([k, l]) =>
           `<button aria-pressed="${ui.resFilter === k}" onclick="ui.resFilter='${k}';render()">${l}</button>`).join("")}</div>
         ${tbl(["Réf.", "Client", "Arrivée", "Départ", "#Nuits", "Type", "Occupants", "#Tarif/nuit", "Garantie", "Risque IA annul. / no-show", "Statut", ""], list.map((r) => { const x = r.status === "confirmee" ? riskOf(r.id) : null
-          return [esc(r.id) + (extOf(r) ? `<div class="muted">${esc(extOf(r))}</div>` : "") + (r.multi ? `<div>${badge("Multi " + r.multi, "outline")}</div>` : ""),
+          return [esc(r.id) + (extOf(r) ? `<div class="muted">${esc(extOf(r))}</div>` : "") + (r.multi ? `<div>${badge("Multi " + r.multi, "info")}</div>` : ""),
           guestLink(r.guest) + vip(G(r.guest)), fd(r.from), fd(r.to), nights(r.from, r.to), esc(T(r.type).label), `${r.adults || 1} ad.${r.children ? ` + ${r.children} enf.` : ""}`,
           money(r.rate) + (plan(r) ? `<div class="muted">${esc(plan(r))}</div>` : ""),
           esc(r.guarantee) + (r.guarantee === "Aucune" && r.status === "confirmee" ? `<div class="muted">option jusqu'à 18 h</div>` : r.token ? `<div class="muted">${esc(r.token)}</div>` : ""),
-          x ? `${badge(x.cancel + " %", x.cancel >= 30 ? "dark" : x.cancel >= 15 ? "outline" : "")} ${badge(x.noshow + " %", x.noshow >= 30 ? "dark" : x.noshow >= 15 ? "outline" : "")}` : "—",
+          x ? `${badge(x.cancel + " %", riskTone(x.cancel))} ${badge(x.noshow + " %", riskTone(x.noshow))}` : "—",
           pill(STATUS, r.status) + (r.cancel ? `<div class="muted">frais ${money(r.cancel.fee)}${r.cancel.waived ? " (dérogation)" : ""}</div>` : ""),
           ["confirmee", "arrivee"].includes(r.status) ? `<span class="row" style="flex-wrap:nowrap">
             <button class="btn ghost sm" onclick="go('reservations/edit/${esc(r.id)}')">Modifier</button>
             ${r.status === "confirmee" ? `<button class="btn ghost sm" onclick="A.fof.cancelRes(${q(r.id)})">Annuler</button>` : ""}</span>` : ""] }), "Aucune réservation.")}
         <div class="row" style="margin-top:10px">${btn("Envoyer les rappels pré-arrivée (J-2)", "A.fof.reminders()", "ghost sm")}${btn("Simuler deux saisies simultanées", "A.fof.race()", "ghost sm")}</div>
-        <p class="muted">Réservation complète : occupants, plan tarifaire, source, segment, garantie (EF-RES-001) · multi-chambres (EF-RES-002) · verrou d'inventaire à la création (EF-RES-003) · politique d'annulation et dérogation (EF-RES-011) · confirmations et rappels (EF-RES-013) · probabilités d'annulation et de no-show par IA simulée (EF-RES-015).</p>
-        <h2>Planning des disponibilités — 14 jours</h2>
-        <p class="muted">Chambres libres par type et par nuit (hors chambres hors commande).</p>
+        <p class="muted">Réservation complète : occupants, plan tarifaire, source, segment, garantie (EF-RES-001) · multi-chambres (EF-RES-002) · verrou d'inventaire à la création (EF-RES-003) · politique d'annulation et dérogation (EF-RES-011) · confirmations et rappels (EF-RES-013) · probabilités d'annulation et de no-show par IA simulée (EF-RES-015).</p>`)}</div>
+          <div class="w12">${section("Planning des disponibilités — 14 jours", `<p class="muted" style="margin-top:0">Chambres libres par type et par nuit (hors chambres hors commande).</p>
         <div class="tablewrap"><table><thead><tr><th>Type</th>${days.map((d) => `<th class="num">${esc(wd(d))}<br>${fd(d)}</th>`).join("")}</tr></thead>
-          <tbody>${D.roomTypes.map((t) => `<tr><td>${esc(t.label)}</td>${days.map((d) => { const n = available(t.code, d); return `<td class="num ${n <= 0 ? "cell0" : ""}">${n <= 0 ? "Complet" : n}</td>` }).join("")}</tr>`).join("")}</tbody></table></div>`
+          <tbody>${D.roomTypes.map((t) => `<tr><td>${esc(t.label)}</td>${days.map((d) => { const n = available(t.code, d); return `<td class="num ${n <= 0 ? "cell0" : ""}">${n <= 0 ? "Complet" : n}</td>` }).join("")}</tr>`).join("")}</tbody></table></div>`)}</div>
+        </div>`
     },
 
     // #3 Check-in avec émission de clé
@@ -200,32 +233,56 @@
       const pend = D.reservations.filter((r) => r.from === today && r.status === "confirmee")
       const r = p[0] ? R(p[0]) : pend[0]
       const ol = D.reservations.filter((x) => x.status === "confirmee" && x.from >= today && x.from <= addDays(today, 2)).sort((a, b) => a.from.localeCompare(b.from))
-      return `<div class="row between"><h1>Check-in</h1>${F.offline ? btn(`Connexion rétablie : resynchroniser (${F.queue.length})`, "A.fof.resync()", "accent") : btn("Simuler une perte de connexion", "A.fof.offline()", "ghost")}</div>
-        <p class="lead">Attribuer une chambre, vérifier l'identité, encoder la carte : une seule action (encodeur simulé).</p>
+      const arr = arrivals(), done = arr.filter((x) => x.status === "arrivee"), olDone = ol.filter((x) => F.online[x.id]).length
+      const polTodo = F.police.filter((x) => x.status !== "transmise").length, foreign = pend.filter((x) => isForeign(G(x.guest))).length
+      return pageHead("Check-in", "Attribuer une chambre, vérifier l'identité, encoder la carte : une seule action (encodeur simulé).",
+          F.offline ? btn(`Connexion rétablie : resynchroniser (${F.queue.length})`, "A.fof.resync()", "accent") : btn("Simuler une perte de connexion", "A.fof.offline()", "ghost"))
+        + `<div class="grid g4">
+          ${stat({ label: "Arrivées enregistrées", value: `${done.length}/${arr.length}`, icon: "key", hint: `${pend.length} à enregistrer`, trend: nextDays(7).map(arrCount) })}
+          ${stat({ label: "Chambres prêtes", value: String(readyRooms().length), icon: "bed", hint: `pour ${pend.length} arrivée(s) en attente`, route: "chambres" })}
+          ${stat({ label: "Check-in en ligne", value: `${olDone}/${ol.length}`, icon: "phone", hint: "arrivées sous 48 h complétées" })}
+          ${stat({ label: "Fiches de police", value: String(polTodo), icon: "shield", hint: `à transmettre · ${foreign} voyageur(s) étranger(s) attendu(s)` })}
+        </div>
+        <div class="dash" style="margin:16px 0">
+          <div class="w8">${section("Avancement des arrivées du jour", `<div class="row" style="gap:18px;flex-wrap:nowrap">${gauge(arr.length ? (done.length / arr.length) * 100 : 100, "Arrivées enregistrées")}
+            <div style="flex:1">${bars([{ label: "Enregistrées", value: done.length }, { label: "À enregistrer", value: pend.length }, { label: "Check-in en ligne complété", value: pend.filter((x) => F.online[x.id]).length }, { label: "Fiche de police requise", value: foreign }], (v) => v)}</div></div>
+            <h3 style="margin:16px 0 6px;font-size:14px">Arrivées prévues — 7 jours</h3>${columns(nextDays(7).map(dl), nextDays(7).map(arrCount), (v) => v)}`)}</div>
+          <div class="w4">${section("Statut des chambres", hkDonut(), btn("Voir", "go('chambres')", "ghost sm"))}</div>
+        </div>`
+        + `
         ${F.offline ? `<div class="err">Mode dégradé : connexion au cloud perdue. Arrivées lues dans le cache local (synchronisé le ${esc(F.cacheAt)}), clés encodées via la passerelle edge locale, pré-autorisations carte différées. ${F.queue.length} opération(s) en file. EF-FOF-016</div>` : ""}
         <div class="split">
           <div><h3>Arrivées à enregistrer${F.offline ? " (cache local)" : ""}</h3><div class="list">${pend.map((x) => `<button aria-current="${x === r}" onclick="go('checkin/${esc(x.id)}')">
-            <strong>${esc(G(x.guest).name)}</strong>${vip(G(x.guest))}${F.online[x.id] ? " " + badge("En ligne", "outline") : ""}${isForeign(G(x.guest)) ? " " + badge("Fiche de police", "dark") : ""}<div class="muted">${esc(x.id)} · ${esc(T(x.type).label)} · ${nights(x.from, x.to)} nuit(s)</div></button>`).join("") || `<p class="muted">Toutes les arrivées du jour sont enregistrées.</p>`}</div>
+            <strong>${esc(G(x.guest).name)}</strong>${vip(G(x.guest))}${F.online[x.id] ? " " + badge("En ligne", "info") : ""}${isForeign(G(x.guest)) ? " " + badge("Fiche de police", "warn") : ""}<div class="muted">${esc(x.id)} · ${esc(T(x.type).label)} · ${nights(x.from, x.to)} nuit(s)</div></button>`).join("") || `<p class="muted">Toutes les arrivées du jour sont enregistrées.</p>`}</div>
             <h3>Check-in en ligne et mobile</h3>
             ${tbl(["Client", "État", ""], ol.map((x) => { const o = F.online[x.id]
-              return [esc(G(x.guest).name) + `<div class="muted">arrivée ${fd(x.from)}</div>`, o ? badge(`Complété · arrivée ${o.eta}`, "on") : olSent(x.id) ? badge("Lien envoyé", "outline") : "—",
+              return [esc(G(x.guest).name) + `<div class="muted">arrivée ${fd(x.from)}</div>`, o ? badge(`Complété · arrivée ${o.eta}`, "ok") : olSent(x.id) ? badge("Lien envoyé", "info") : badge("À envoyer", "warn"),
                 !o && !olSent(x.id) ? btn("Envoyer le lien", `A.fof.olLink(${q(x.id)})`, "ghost sm") : !o ? btn("Le client complète", `A.fof.olDone(${q(x.id)})`, "ghost sm") : x.from === today ? btn("Chambre prête : clé mobile", `A.fof.mobileCheckin(${q(x.id)})`, "sm") : ef("clé le jour J")] }), "Aucune arrivée sous 48 h.")}
             <p class="muted">Le client remplit pièce, fiche de police et signature en ligne ; le jour J, la clé mobile est activée dès qu'une chambre est prête, sans passage au comptoir. EF-FOF-005</p>
           </div>
           <div>${r ? checkinPanel(r) : ""}</div>
         </div>
-        <h2>Fiches de police</h2>
-        ${tbl(["N°", "Date", "Client", "Nationalité", "Pièce", "Séjour", "Provenance → destination", "Statut", ""], F.police.map((x) => [esc(x.id), `${fd(x.date)} ${esc(x.at || "")}`, esc(G(x.guest)?.name || x.name || "—"), esc(x.nationality), esc(x.doc), esc(x.resId || "—"), `${esc(x.from)} → ${esc(x.to)}`,
-          badge(x.status, x.status === "transmise" ? "on" : "outline"), x.status === "transmise" ? ef(x.sentAt || "") : btn("Transmettre", `A.fof.sendPolice(${q(x.id)})`, "ghost sm")]), "Aucune fiche.")}
+        <div style="margin-top:16px">${section(`Fiches de police (${F.police.length})`, `${tbl(["N°", "Date", "Client", "Nationalité", "Pièce", "Séjour", "Provenance → destination", "Statut", ""], F.police.map((x) => [esc(x.id), `${fd(x.date)} ${esc(x.at || "")}`, esc(G(x.guest)?.name || x.name || "—"), esc(x.nationality), esc(x.doc), esc(x.resId || "—"), `${esc(x.from)} → ${esc(x.to)}`,
+          badge(x.status, x.status === "transmise" ? "ok" : "warn"), x.status === "transmise" ? ef(x.sentAt || "") : btn("Transmettre", `A.fof.sendPolice(${q(x.id)})`, "ghost sm")]), "Aucune fiche.")}
         ${F.police.some((x) => x.status !== "transmise") ? `<div class="row" style="margin-top:8px">${btn("Transmettre toutes les fiches (télédéclaration simulée)", "A.fof.sendPolice()", "ghost sm")}</div>` : ""}
-        <p class="muted">Fiche obligatoire pour tout voyageur étranger, au check-in comme au walk-in (RG-FOF-07). Télédéclaration aux services de police simulée. EF-CRM-013</p>`
+        <p class="muted">Fiche obligatoire pour tout voyageur étranger, au check-in comme au walk-in (RG-FOF-07). Télédéclaration aux services de police simulée. EF-CRM-013</p>`)}</div>`
     },
 
     // #4 Check-out et facture
     checkout(p) {
       const list = inHouse().sort((a, b) => a.to.localeCompare(b.to))
       const r = p[0] ? R(p[0]) : list[0]
-      return `<h1>Check-out</h1><p class="lead">Contrôler le folio, encaisser, éditer la facture et révoquer la clé du client.</p>
+      const dep = departures(), todo = dep.filter((x) => x.status === "arrivee"), gone = dep.filter((x) => x.status === "partie")
+      const bal = sumA(list, (x) => Math.max(0, folio(x).balance)), balToday = sumA(todo, (x) => Math.max(0, folio(x).balance))
+      const billed = sumA(gone, (x) => folio(x).total)
+      return pageHead("Check-out", "Contrôler le folio, encaisser, éditer la facture et révoquer la clé du client.")
+        + `<div class="grid g4">
+          ${stat({ label: "Départs du jour", value: `${gone.length}/${dep.length}`, icon: "door", hint: `${todo.length} à facturer`, trend: nextDays(7).map(depCount) })}
+          ${stat({ label: "À encaisser aujourd'hui", value: money(balToday), icon: "wallet", hint: "soldes des départs du jour" })}
+          ${stat({ label: "Soldes en séjour", value: money(bal), icon: "receipt", hint: `${list.length} client(s) en séjour`, route: "fol-folios" })}
+          ${stat({ label: "Facturé aujourd'hui", value: money(billed), icon: "file", hint: `${gone.length} facture(s) émise(s)` })}
+        </div>
+        <div style="margin:16px 0">${section("Solde par chambre en séjour", list.length ? bars(list.map((x) => ({ label: `Ch. ${x.room} · ${G(x.guest).name}${x.to === today ? " (départ)" : ""}`, value: Math.max(0, folio(x).balance) })), money) : `<p class="muted">Aucun client en séjour.</p>`)}</div>
         <div class="split">
           <div><h3>Clients en séjour</h3><div class="list">${list.map((x) => `<button aria-current="${x === r}" onclick="go('checkout/${esc(x.id)}')">
             <strong>Ch. ${esc(x.room)} · ${esc(G(x.guest).name)}</strong>
@@ -239,8 +296,14 @@
       const sent = r.invoiceSent || []
       return `<div class="row between noprint"><h1>Facture ${esc(r.invoice)}</h1>
           <span class="row"><button class="btn ghost" onclick="go('checkout')">Check-out suivant</button><button class="btn" onclick="print()">Imprimer</button></span></div>
-        <p class="lead noprint">Séjour clôturé${r.express ? " en express check-out (garantie prélevée)" : ""}. <span class="pill on">Clé révoquée</span> La carte de la chambre ${esc(r.room)} n'ouvre plus la porte (simulation). Chambre passée en « sale ».</p>
-        <div class="card noprint" style="margin-bottom:14px"><div class="row between"><span>${sent.length ? `Facture envoyée par ${esc(sent.join(" et "))} à ${esc(g.name)} (simulé)` : "Facture remise imprimée, non envoyée"}</span>
+        <p class="lead noprint">Séjour clôturé${r.express ? " en express check-out (garantie prélevée)" : ""}. ${badge("Clé révoquée", "ok")} La carte de la chambre ${esc(r.room)} n'ouvre plus la porte (simulation). Chambre passée en « sale ».</p>
+        <div class="grid g4 noprint" style="margin-bottom:16px">
+          ${stat({ label: "Total TTC", value: money(f.total), icon: "receipt", hint: `${f.lines.length} ligne(s)` })}
+          ${stat({ label: "Réglé", value: money(f.paid), icon: "wallet", hint: r.payMode || "—" })}
+          ${stat({ label: "TVA incluse", value: money(taxes(f.lines).tva), icon: "calc", hint: `taux ${F.fisc.tva} %` })}
+          ${stat({ label: "Taxe de séjour", value: money(taxes(f.lines).sej), icon: "building", hint: "hors champ TVA" })}
+        </div>
+        <div class="card noprint" style="margin-bottom:14px"><div class="row between"><span>${sent.length ? badge("Envoyée", "ok") + " " : badge("Non envoyée", "warn") + " "}${sent.length ? `Facture envoyée par ${esc(sent.join(" et "))} à ${esc(g.name)} (simulé)` : "Facture remise imprimée, non envoyée"}</span>
           <span class="row">${btn("Envoyer par e-mail", `A.fof.resend(${q(r.id)}, 'E-mail')`, "ghost sm")}${btn("Envoyer par WhatsApp", `A.fof.resend(${q(r.id)}, 'WhatsApp')`, "ghost sm")}</span></div>
           <p class="muted" style="margin:4px 0 0">Envoi de la facture au départ (EF-FOL-016, EF-FOF-009).</p></div>
         <div class="card invoice">
@@ -260,11 +323,21 @@
     chambres() {
       const counts = Object.fromEntries(Object.keys(HK).map((k) => [k, D.rooms.filter((r) => r.hk === k).length]))
       const rooms = D.rooms.filter((r) => ui.hkFilter === "toutes" || r.hk === ui.hkFilter)
-      return `<div class="row between"><h1>Chambres</h1><button class="btn" onclick="A.fof.autoAssign()">Répartir les chambres sales</button></div>
-        <p class="lead">État de chaque chambre et répartition des tâches entre les femmes de chambre.</p>
-        <div class="grid">${D.housekeepers.map((h) => { const nos = D.rooms.filter((r) => D.assignments[r.no] === h).map((r) => r.no)
-          return `<div class="card"><div class="muted">${esc(h)}</div><div class="kpi">${nos.length}</div><div class="muted">${nos.length ? "Chambres " + esc(nos.join(", ")) : "Aucune chambre attribuée"}</div></div>` }).join("")}</div>
-        <h2>État des chambres</h2>
+      const sellable = D.rooms.filter((r) => r.hk !== "hs").length, unassigned = D.rooms.filter((r) => r.hk === "sale" && !D.assignments[r.no]).length
+      const pendArr = arrivals().filter((r) => r.status === "confirmee").length
+      return pageHead("Chambres", "État de chaque chambre et répartition des tâches entre les femmes de chambre.", btn("Répartir les chambres sales", "A.fof.autoAssign()"))
+        + `<div class="grid g4">
+          ${stat({ label: "Prêtes à la vente", value: String(readyRooms().length), icon: "check", hint: `${pendArr} arrivée(s) en attente` })}
+          ${stat({ label: "À nettoyer", value: String(counts.sale || 0), icon: "sparkle", hint: `${unassigned} non attribuée(s)` })}
+          ${stat({ label: "En inspection", value: String(counts.inspection || 0), icon: "filecheck", hint: "contrôle gouvernante" })}
+          ${stat({ label: "Occupation", value: pct((inHouse().length / Math.max(1, sellable)) * 100), icon: "bed", hint: `${inHouse().length}/${sellable} chambres vendables`, trend: nextDays(7).map(bookedOcc) })}
+        </div>
+        <div class="dash" style="margin:16px 0">
+          <div class="w4">${section("Statut des chambres", hkDonut())}</div>
+          <div class="w8">${section("Charge des femmes de chambre", bars(D.housekeepers.map((h) => { const nos = D.rooms.filter((r) => D.assignments[r.no] === h).map((r) => r.no)
+              return { label: `${h}${nos.length ? " · ch. " + nos.join(", ") : ""}`, value: nos.length } }), (v) => v + " ch.")
+            + `<p class="muted" style="margin:8px 0 0">${unassigned ? `${unassigned} chambre(s) sale(s) sans attribution : utiliser « Répartir les chambres sales ».` : "Toutes les chambres sales sont attribuées."}</p>`)}</div>
+        </div>
         <div class="chips"><button aria-pressed="${ui.hkFilter === "toutes"}" onclick="ui.hkFilter='toutes';render()">Toutes (${D.rooms.length})</button>
           ${Object.entries(HK).map(([k, [l]]) => `<button aria-pressed="${ui.hkFilter === k}" onclick="ui.hkFilter='${k}';render()">${l} (${counts[k]})</button>`).join("")}</div>
         <div class="grid">${rooms.map((r) => { const o = occupant(r.no)
@@ -285,14 +358,22 @@
       const g = G(p[0]) || D.guests[0]
       const stays = D.reservations.filter((r) => r.guest === g.id).sort((a, b) => b.from.localeCompare(a.from))
       const done = stays.filter((r) => r.status === "partie")
-      return `<h1>Clients</h1><p class="lead">Coordonnées, historique des séjours et préférences.</p>
+      const spend = (r) => nights(r.from, r.to) * r.rate
+      return pageHead("Clients", "Coordonnées, historique des séjours et préférences.")
+        + `<div class="grid g4" style="margin-bottom:16px">
+          ${stat({ label: "Clients", value: String(D.guests.length), icon: "users", hint: `${D.guests.filter((x) => x.vip).length} VIP` })}
+          ${stat({ label: "En séjour", value: String(inHouse().length), icon: "bed", hint: "clients présents", route: "sej-rack" })}
+          ${stat({ label: "Clients étrangers", value: String(D.guests.filter(isForeign).length), icon: "globe", hint: "fiche de police requise" })}
+          ${stat({ label: "Clients revenus", value: String(D.guests.filter((x) => D.reservations.filter((r) => r.guest === x.id && VALID(r)).length > 1).length), icon: "refresh", hint: "au moins deux séjours" })}
+        </div>
         <div class="split">
           <div><input placeholder="Rechercher un client" aria-label="Rechercher un client" oninput="A.fof.filterGuests(this.value)" style="margin-bottom:10px">
             <div class="list" id="glist">${D.guests.map((x) => `<button data-name="${esc(x.name.toLowerCase())}" aria-current="${x === g}" onclick="go('clients/${esc(x.id)}')">
               <strong>${esc(x.name)}</strong>${vip(x)}<div class="muted">${esc(x.phone)}</div></button>`).join("")}</div></div>
           <div class="card">
             <div class="row between"><span class="big">${esc(g.name)}</span>${vip(g)}</div>
-            <div class="grid" style="margin:14px 0">${kpi("Séjours effectués", done.length, "historique")}${kpi("Nuitées", done.reduce((s, r) => s + nights(r.from, r.to), 0), "séjours effectués")}${kpi("Dépense hébergement", money(done.reduce((s, r) => s + nights(r.from, r.to) * r.rate, 0)), "exemple")}</div>
+            <div class="grid g4" style="margin:14px 0">${stat({ label: "Séjours effectués", value: String(done.length), icon: "calendar", hint: `${stays.length} réservation(s) au total` })}${stat({ label: "Nuitées", value: String(done.reduce((s, r) => s + nights(r.from, r.to), 0)), icon: "moon", hint: "séjours effectués" })}${stat({ label: "Dépense hébergement", value: money(done.reduce((s, r) => s + spend(r), 0)), icon: "coins", hint: "exemple" })}</div>
+            ${stays.filter(VALID).length > 1 ? `<h3>Dépense par séjour</h3>${columns(stays.filter(VALID).slice().reverse().map((r) => fd(r.from)), stays.filter(VALID).slice().reverse().map(spend), shortNum)}` : ""}
             <h3>Coordonnées</h3>
             <div class="form">
               <div><label for="c-name">Nom</label><input id="c-name" value="${esc(g.name)}"></div>
@@ -369,7 +450,7 @@
     const rows = F.channelCopy.map((x) => {
       const r = x.resId && R(x.resId)
       const diffs = r ? ["from", "to", "type", "rate"].filter((k) => r[k] !== x[k]) : []
-      const st = !r ? badge("Absente du PMS", "dark") : diffs.length ? badge("Écart : " + diffs.map((k) => ({ from: "arrivée", to: "départ", type: "type", rate: "tarif" })[k]).join(", "), "outline") : badge("Rapprochée", "on")
+      const st = !r ? badge("Absente du PMS", "bad") : diffs.length ? badge("Écart : " + diffs.map((k) => ({ from: "arrivée", to: "départ", type: "type", rate: "tarif" })[k]).join(", "), "warn") : badge("Rapprochée", "ok")
       return [esc(x.ext), esc(x.channel), r ? esc(r.id) : "—", esc(r ? G(r.guest).name : x.guest), `${fd(x.from)} → ${fd(x.to)} · ${esc(x.type)} · ${money(x.rate)}`,
         r ? `${fd(r.from)} → ${fd(r.to)} · ${esc(r.type)} · ${money(r.rate)}` : "—", st + (x.note ? ef(x.note) : ""),
         !r ? btn("Importer", `A.fof.importExt(${q(x.ext)})`, "sm") : diffs.length ? btn("Aligner sur le canal", `A.fof.alignExt(${q(x.ext)})`, "ghost sm") : ""]
@@ -387,12 +468,12 @@
   function checkinPanel(r) {
     const g = G(r.guest)
     if (ui.done && ui.done.id === r.id) { const d = R(r.id)
-      return `<div class="card"><span class="pill on">Clé encodée</span>
+      return `<div class="card"><span class="pill ok">Clé encodée</span>
       <div class="big" style="margin:10px 0 4px">Chambre ${esc(d.room)} — ${esc(g.name)}</div>
       <p class="muted">${esc(ui.done.card)} valable jusqu'au ${fd(d.to)} à 13 h (départ 12 h + 1 h de grâce, simulation). Séjour ouvert, folio créé.</p>
       <p class="muted">CGV signées (${esc(d.cgv?.how || "tablette")}) · ${esc(d.preauth?.mode || "")} ${d.preauth ? money(d.preauth.amount) : ""}${ui.done.police ? ` · fiche de police ${esc(ui.done.police)}` : ""}${F.offline ? " · en file de resynchronisation" : ""}</p>
       <div class="row"><button class="btn" onclick="ui.done=null;go('checkin')">Arrivée suivante</button><button class="btn ghost" onclick="go('accueil')">Tableau de bord</button></div></div>` }
-    if (ui.encFail === r.id && ui.ckJob) return `<div class="card"><span class="pill dark">Échec d'encodage</span>
+    if (ui.encFail === r.id && ui.ckJob) return `<div class="card"><span class="pill bad">Échec d'encodage</span>
       <p>La carte n'a pas été détectée sur ${esc(ui.ckJob.enc)} (CARD_NOT_PRESENT). Le séjour n'est pas encore ouvert.</p>
       <div class="row">${btn("Réessayer", `A.fof.encode(${q(r.id)}, 'retry')`, "accent")}${btn("Autre encodeur", `A.fof.encode(${q(r.id)}, 'other')`, "ghost")}${btn("Abandonner", "ui.encFail=null;ui.ckJob=null;render()", "ghost")}</div></div>`
     if (r.status !== "confirmee") return `<div class="card"><p>${esc(r.id)} n'est pas une arrivée à enregistrer (${esc(STATUS[r.status][0])}).</p></div>`
@@ -405,7 +486,7 @@
       <div class="muted">${esc(r.id)} · ${esc(T(r.type).label)} · du ${fd(r.from)} au ${fd(r.to)} · ${nights(r.from, r.to)} nuit(s) · ${money(r.rate)}/nuit · garantie : ${esc(r.guarantee)}</div>
       ${r.request ? `<p style="margin:8px 0 0"><strong>Demande :</strong> ${esc(r.request)}</p>` : ""}
       ${g.prefs.length ? `<p class="muted" style="margin:4px 0 0">Préférences : ${esc(g.prefs.join(", "))}</p>` : ""}
-      ${F.online[r.id] ? `<p style="margin:6px 0 0">${badge("Check-in en ligne complété", "on")} ${ef(`le ${F.online[r.id].at}, pièce et signature reçues`)}</p>` : ""}
+      ${F.online[r.id] ? `<p style="margin:6px 0 0">${badge("Check-in en ligne complété", "ok")} ${ef(`le ${F.online[r.id].at}, pièce et signature reçues`)}</p>` : ""}
       ${best && !enc ? `<div style="margin-top:10px">${aiBox("Attribution proposée", `Ch. ${best.room.no} : ${best.why}. EF-FOF-002`, btn("Choisir cette chambre", `A.fof.pick(${q(best.room.no)})`, "sm"))}</div>` : ""}
       <div class="step"><b class="n">1</b><div><strong>Chambre</strong><p class="muted" style="margin:2px 0 8px">Seules les chambres propres et libres peuvent être attribuées (RG-FOF-01).</p>
         <div class="rooms">${candidates.map((x) => `<label class="${x.hk !== "propre" ? "dis" : ""}"><input type="radio" name="room" value="${esc(x.no)}" ${x.hk !== "propre" || enc ? "disabled" : ""} onchange="A.fof.ckReady()">
@@ -414,7 +495,7 @@
         ${enc ? "" : `<div class="row" style="margin-bottom:8px">${btn("Scanner la pièce (OCR simulé)", `A.fof.ocr(${q(r.id)})`, "ghost sm")}<span id="ocr-out" class="muted"></span></div>`}
         ${!g.nationality && !enc ? field("ck-nat", "Nationalité", select("ck-nat", [["", "— préciser —"], ...NATS], "", `onchange="A.fof.setNat(${q(g.id)}, this.value)"`)) : ""}
         <label class="row" style="color:var(--ink)"><input type="checkbox" id="id-ok" onchange="A.fof.ckReady()" ${enc ? "disabled checked" : ""}> Pièce d'identité présentée et conforme</label>
-        ${isForeign(g) && !enc ? `<div style="margin-top:10px"><strong>Fiche de police</strong> ${badge("Obligatoire", "dark")}<p class="muted" style="margin:2px 0 0">Voyageur étranger (${esc(g.nationality)}) : tous les champs sont exigés avant l'encodage (RG-FOF-07). EF-CRM-013</p>${policeFields(g)}</div>` : ""}</div></div>
+        ${isForeign(g) && !enc ? `<div style="margin-top:10px"><strong>Fiche de police</strong> ${badge("Obligatoire", "warn")}<p class="muted" style="margin:2px 0 0">Voyageur étranger (${esc(g.nationality)}) : tous les champs sont exigés avant l'encodage (RG-FOF-07). EF-CRM-013</p>${policeFields(g)}</div>` : ""}</div></div>
       <div class="step"><b class="n">3</b><div><strong>Conditions et garantie</strong><p class="muted" style="margin:2px 0 8px">Conditions générales signées électroniquement et pré-autorisation (estimation du séjour + caution ${money(F.fisc.caution)} = ${money(preauthAmount(r))}).</p>
         ${enc ? "" : form([field("ck-sign", "Signature des CGV", select("ck-sign", ["Tablette du comptoir", "Lien e-mail au client", "Papier scanné"], F.online[r.id] ? "Lien e-mail au client" : "Tablette du comptoir")),
           field("ck-pa", "Garantie du séjour", select("ck-pa", [F.offline ? "Pré-autorisation carte (différée, mode dégradé)" : "Pré-autorisation carte (TPE simulé)", "Dépôt espèces", "Dépôt Mobile Money", "Compte société (sans dépôt)"], paDef, 'onchange="A.fof.ckReady()"')),

@@ -101,7 +101,7 @@
   const V = D.evt
   const E = (id) => V.events.find((e) => e.id === id)
   const RM = (id) => V.rooms.find((r) => r.id === id)
-  const STS = { prospect: ["Prospect", "outline"], option: ["Option", ""], definitif: ["Définitif", "on"], annule: ["Annulé", "dark"] }
+  const STS = { prospect: ["Prospect", "info"], option: ["Option", "warn"], definitif: ["Définitif", "ok"], annule: ["Annulé", "bad"] }
   const QST = { brouillon: "Brouillon", envoye: "Envoyé", signe: "Signé", refuse: "Refusé" }
   const billed = (e) => Math.max(e.guaranteed, e.actual || 0) // RG-EVT-03
   const lineQty = (e, l) => (l.perCover ? l.perCover * billed(e) : l.qty)
@@ -140,18 +140,36 @@
 
   function pipeline() {
     const cols = ["prospect", "option", "definitif", "annule"]
-    return `<div class="grid">${cols.map((s) => { const list = V.events.filter((e) => e.status === s)
-        return `<div><h3 style="margin-top:0">${esc(STS[s][0])} · ${list.length} · ${esc(money(list.reduce((t, e) => t + amount(e), 0)))}</h3><div class="list">${list.map((e) => `<button onclick="ui.evtSel=${q(e.id)};go('evt/fiche')">
+    const live = V.events.filter((e) => e.status !== "annule")
+    const val = (st) => V.events.filter((e) => e.status === st).reduce((t, e) => t + amount(e), 0)
+    const weighted = val("option") * 0.6 + val("prospect") * 0.2
+    const issued = V.history.issued + V.events.filter((e) => ["envoye", "signe", "refuse"].includes(e.quote)).length, signed = V.history.signed + V.events.filter((e) => e.quote === "signe").length
+    const toCash = V.events.filter((e) => e.status !== "annule").reduce((s, e) => s + e.deposits.filter((d) => !d.paid && d.due <= addDays(today, 7)).reduce((t, d) => t + depAmt(e, d), 0), 0)
+    const next = Array.from({ length: 14 }, (_, k) => addDays(today, k))
+    const covers = next.map((d) => live.filter((e) => e.status !== "prospect").flatMap((e) => e.fns).filter((f) => f.date === d).reduce((s, f) => s + f.covers, 0))
+    const byType = Object.entries(live.reduce((o, e) => ((o[e.type] = (o[e.type] || 0) + amount(e)), o), {})).map(([label, value]) => ({ label, value }))
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Événements confirmés", value: String(V.events.filter((e) => e.status === "definitif").length), icon: "party", hint: money(val("definitif")) + " signés", route: "evt/facturation" })}
+        ${stat({ label: "Pipeline pondéré", value: money(weighted), icon: "trend", hint: "options × 60 % + prospects × 20 %", route: "evt/pilotage" })}
+        ${stat({ label: "Conversion des devis", value: pct((signed / issued) * 100), icon: "filecheck", hint: `${signed} signés / ${issued} émis (90 jours, exemple)` })}
+        ${stat({ label: "Acomptes à encaisser (7 j)", value: money(toCash), icon: "wallet", hint: "échéances échues ou à 7 jours", route: "evt/facturation" })}
+      </div>
+      ${section("Pipeline", `<div class="grid">${cols.map((s) => { const list = V.events.filter((e) => e.status === s)
+        return `<div><h3 style="margin-top:0">${badge(STS[s][0], STS[s][1])} ${list.length} · ${esc(money(list.reduce((t, e) => t + amount(e), 0)))}</h3><div class="list">${list.map((e) => `<button onclick="ui.evtSel=${q(e.id)};go('evt/fiche')">
           <strong>${esc(e.name)} — ${esc(e.org)}</strong><div class="muted">${esc(e.type)} · ${fdy(firstDate(e))} · ${e.guaranteed} pers. · ${esc(money(amount(e)))}</div>
-          <div class="muted">Devis : ${esc(QST[e.quote])}${e.status === "option" ? ` · option jusqu'au ${fdy(e.due)}` : ""}${e.reason ? ` · ${esc(e.reason)}` : ""}</div></button>`).join("") || `<p class="muted">—</p>`}</div></div>` }).join("")}</div>
+          <div class="muted">Devis : ${esc(QST[e.quote])}${e.status === "option" ? ` · option jusqu'au ${fdy(e.due)}` : ""}${e.reason ? ` · ${esc(e.reason)}` : ""}</div></button>`).join("") || `<p class="muted">—</p>`}</div></div>` }).join("")}</div>`)}
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Couverts prévus sur 14 jours (options et définitifs)", columns(next.map(fd), covers, (v) => v))}</div>
+        <div class="w4">${section("Valeur par type d'événement", donut(byType, { fmt: money, center: shortNum(byType.reduce((s, x) => s + x.value, 0)), sub: "FCFA" }))}</div>
+      </div>
       <p class="muted">EF-EVT-002 : prospect → option (avec date d'échéance) → définitif. Une option échue passe automatiquement en annulé (RG-EVT-01).</p>
-      <h2>Nouvelle demande</h2><div class="card">${form([
+      ${section("Nouvelle demande", form([
         field("ev-name", "Intitulé", input("ev-name", "", 'placeholder="Séminaire de direction"')), field("ev-org", "Organisateur", input("ev-org", "", 'placeholder="Société … Exemple"')),
         field("ev-mail", "E-mail du contact", input("ev-mail", "", 'placeholder="prenom.nom@exemple.test"')),
         field("ev-type", "Type", select("ev-type", ["Séminaire", "Conférence", "Banquet", "Mariage", "Cocktail", "Formation", "Gala"], "Séminaire")),
         field("ev-date", "Date", input("ev-date", addDays(today, 21), 'type="date"')), field("ev-pax", "Participants", input("ev-pax", 40, 'type="number" min="1"')),
         field("ev-room", "Salle souhaitée", select("ev-room", V.rooms.map((r) => [r.id, r.name]), "LAG")), field("ev-conf", "Configuration", select("ev-conf", Object.entries(CONF), "classe")),
-        `<div class="full" id="ev-err"></div>`, `<div class="full">${btn("Créer le prospect et le devis brouillon", "A.evt.create()")}</div>`])}</div>`
+        `<div class="full" id="ev-err"></div>`, `<div class="full">${btn("Créer le prospect et le devis brouillon", "A.evt.create()")}</div>`]))}`
   }
 
   function agenda() {
@@ -191,7 +209,7 @@
 
       <h3>Programme</h3>
       ${tbl(["Date", "Horaire", "Espace", "Configuration", "#Couverts", ""], e.fns.map((f) => { const c = clashes(f, e.id, f.id)
-        return [fdy(f.date), `${f.start}–${f.end}`, `${esc(RM(f.room).name)}<div class="muted">${esc(f.label)}</div>`, esc(CONF[f.config]), f.covers, c.length ? badge("Conflit", "dark") : ""] }))}
+        return [fdy(f.date), `${f.start}–${f.end}`, `${esc(RM(f.room).name)}<div class="muted">${esc(f.label)}</div>`, esc(CONF[f.config]), f.covers, c.length ? badge("Conflit", "bad") : ""] }))}
       ${editable ? `<div class="form" style="margin-top:10px">${field("fn-label", "Nouvelle fonction", input("fn-label", "", 'placeholder="Pause-café, dîner…"'))}${field("fn-room", "Espace", select("fn-room", V.rooms.map((r) => [r.id, r.name]), "LAG"))}
         ${field("fn-date", "Date", input("fn-date", firstDate(e), 'type="date"'))}${field("fn-start", "Début", input("fn-start", "12:30", 'type="time"'))}${field("fn-end", "Fin", input("fn-end", "14:00", 'type="time"'))}
         ${field("fn-conf", "Configuration", select("fn-conf", Object.entries(CONF), "banquet"))}${field("fn-cov", "Couverts", input("fn-cov", e.guaranteed, 'type="number" min="1"'))}
@@ -217,7 +235,7 @@
         <div style="align-self:end">${btn("Mettre à jour", `A.evt.covers(${q(e.id)})`, "ghost")}</div><div style="align-self:end" class="muted">Couverts facturés : <strong>${billed(e)}</strong> = max(garanti, réel) · RG-EVT-03</div></div>
 
       <h3>Bloc de chambres (EF-EVT-005)</h3>
-      ${b ? `<p style="margin:0">${b.rooms} × ${esc(T(b.type).label)} du ${fd(b.from)} au ${fd(b.to)} à ${money(b.rate)}/nuit · cut-off ${fdy(b.cutoff)} ${b.created ? badge("Bloc créé dans Réservations", "on") : badge("Prévu, créé à la confirmation", "outline")}</p>
+      ${b ? `<p style="margin:0">${b.rooms} × ${esc(T(b.type).label)} du ${fd(b.from)} au ${fd(b.to)} à ${money(b.rate)}/nuit · cut-off ${fdy(b.cutoff)} ${b.created ? badge("Bloc créé dans Réservations", "ok") : badge("Prévu, créé à la confirmation", "outline")}</p>
         ${b.created ? `<p class="muted" style="margin:4px 0">Pick-up : ${b.picked}/${b.rooms} chambres nominatives${b.released ? " · chambres non prises remises en vente" : ""}.</p>
           ${!b.released && b.picked < b.rooms ? (b.cutoff < today ? btn(`Cut-off dépassé : remettre ${b.rooms - b.picked} chambre(s) en vente`, `A.evt.release(${q(e.id)})`, "sm") : muted("Les chambres non prises seront libérées au cut-off.")) : ""}` : ""}`
         : `<p class="muted">Aucun bloc de chambres.</p>`}
@@ -226,7 +244,7 @@
       ${tbl(["Ligne", "Nature", "#Qté", "#P.U.", "#Montant"], e.lines.map((l) => [esc(l.label), esc(l.kind), lineQty(e, l), money(l.unit), money(lineQty(e, l) * l.unit)]), "", `<tfoot><tr><td colspan="4">Total TTC</td><td class="num">${money(total)}</td></tr></tfoot>`)}
       <div class="row" style="margin-top:8px"><span>Devis : <strong>${esc(QST[e.quote])}</strong>${e.signed ? ` le ${fdy(e.signed)}` : ""}</span>
         ${e.quote === "brouillon" && editable ? btn("Envoyer le devis", `A.evt.sendQuote(${q(e.id)})`, "sm") : ""}${e.quote === "envoye" && editable ? btn("Signature électronique reçue (simulée)", `A.evt.sign(${q(e.id)})`, "sm") : ""}</div>
-      ${tbl(["Échéance", "Date", "#Montant", ""], e.deposits.map((d, i) => [esc(d.label), fdy(d.due), money(depAmt(e, d)), d.paid ? badge("Encaissé", "on") : e.quote === "signe" ? btn("Encaisser", `A.evt.pay(${q(e.id)}, ${i})`, "ghost sm") : muted(d.due < today ? "En retard" : "À venir")]))}
+      ${tbl(["Échéance", "Date", "#Montant", ""], e.deposits.map((d, i) => [esc(d.label), fdy(d.due), money(depAmt(e, d)), d.paid ? badge("Encaissé", "ok") : e.quote === "signe" ? btn("Encaisser", `A.evt.pay(${q(e.id)}, ${i})`, "ghost sm") : muted(d.due < today ? "En retard" : "À venir")]))}
       ${e.quote !== "signe" && editable ? `<div style="margin-top:12px">${V.draft[e.id] ? aiBox("Proposition commerciale (brouillon IA)", V.draft[e.id], btn("Valider et joindre au devis", `A.evt.validateDraft(${q(e.id)})`, "sm"))
         : aiBox("Rédaction de proposition", "Générer une proposition commerciale personnalisée à partir de la demande (programme, salles, menus, bloc de chambres). Le texte est relu et validé par le commercial avant envoi.", btn("Générer la proposition", `A.evt.draft(${q(e.id)})`, "ghost sm"))}</div>` : ""}
 
@@ -239,8 +257,8 @@
   function linenBox(e) {
     const need = linenNeed(e), l = e.linen, lc = (D.bln && D.bln.stock["Lingerie centrale"]) || {}
     if (!l) return `<p class="muted">Besoin estimé : ${need.NAP} nappes, ${need.STB} serviettes de table. La demande est transmise à la buanderie au passage en définitif.</p>`
-    const rows = Object.keys(LINEN).map((k) => [esc(LINEN[k]), l[k], lc[k] ?? "—", (lc[k] || 0) >= l[k] ? badge("Disponible", "on") : badge("Stock insuffisant", "dark")])
-    return `<p style="margin:0">${l.status === "sortie" ? badge(`Linge sorti vers le Restaurant le ${fd(l.out)}`, "on") : badge(`Demande transmise à la buanderie le ${fd(l.at)}`, "outline")}</p>
+    const rows = Object.keys(LINEN).map((k) => [esc(LINEN[k]), l[k], lc[k] ?? "—", (lc[k] || 0) >= l[k] ? badge("Disponible", "ok") : badge("Stock insuffisant", "bad")])
+    return `<p style="margin:0">${l.status === "sortie" ? badge(`Linge sorti vers le Restaurant le ${fd(l.out)}`, "ok") : badge(`Demande transmise à la buanderie le ${fd(l.at)}`, "outline")}</p>
       ${tbl(["Article", "#Demandé", "#Stock lingerie centrale", ""], rows)}
       ${l.status !== "sortie" && D.bln ? `<div class="row" style="margin-top:6px">${btn("Sortir le linge de la lingerie vers le Restaurant", `A.evt.linenOut(${q(e.id)})`, "ghost sm")}</div>` : ""}
       <p class="muted">Stock lu dans Linge et buanderie ; la sortie met à jour ses stocks par lieu.</p>`
@@ -257,10 +275,10 @@
     const prog = tbl(["Date", "Horaire", "Espace", "#Couverts"], e.fns.map((f) => [fdy(f.date), `${f.start}–${f.end}`, `${esc(RM(f.room).name)}<div class="muted">${esc(f.label)}</div>`, f.covers]))
     return `${sel}<p class="muted">Vue de l'organisateur (${esc(e.contact)}), accès par lien sécurisé envoyé par e-mail (simulé). EF-EVT-009</p>
       <div class="cols"><section>${card("1. Programme et fiches de fonction", `${prog}
-        <p style="margin:8px 0">${!e.beo ? badge("BEO non encore générés (événement en option)", "outline") : valid ? badge(`Validé le ${fd(e.portal.validated)} (version ${v})`, "on") : e.portal.validated ? badge(`Version ${v} modifiée depuis votre validation`, "dark") : badge("À valider", "outline")}</p>
+        <p style="margin:8px 0">${!e.beo ? badge("BEO non encore générés (événement en option)", "outline") : valid ? badge(`Validé le ${fd(e.portal.validated)} (version ${v})`, "ok") : e.portal.validated ? badge(`Version ${v} modifiée depuis votre validation`, "bad") : badge("À valider", "outline")}</p>
         ${e.beo && !valid ? btn(`Valider le programme et les BEO (version ${v})`, `A.evt.portalValidate(${q(e.id)})`, "accent") : ""}`)}
         <div style="height:14px"></div>
-        ${card("3. Badges", `${e.participants.length ? `<div class="grid">${e.participants.filter((x) => x.badge).map((x) => `<div class="card" style="padding:10px;text-align:center"><div class="muted">${esc(e.name)}</div><strong>${esc(x.name)}</strong><div>${esc(x.company)}</div>${badge(x.role, x.role === "Participant" ? "outline" : "on")}<div class="muted">${esc(x.badge)} · QR simulé</div></div>`).join("")}</div>` : ""}
+        ${card("3. Badges", `${e.participants.length ? `<div class="grid">${e.participants.filter((x) => x.badge).map((x) => `<div class="card" style="padding:10px;text-align:center"><div class="muted">${esc(e.name)}</div><strong>${esc(x.name)}</strong><div>${esc(x.company)}</div>${badge(x.role, x.role === "Participant" ? "outline" : "ok")}<div class="muted">${esc(x.badge)} · QR simulé</div></div>`).join("")}</div>` : ""}
           <p class="muted">${e.participants.filter((x) => x.badge).length}/${e.participants.length} badge(s) édité(s).</p>
           ${e.participants.some((x) => !x.badge) ? btn("Générer les badges manquants", `A.evt.badges(${q(e.id)})`, "sm") : ""}`)}</section>
       <section>${card(`2. Liste des participants · ${e.participants.length}/${cap}`, `${tbl(["Nom", "Société", "Rôle", "Badge", ""], e.participants.map((x) => [esc(x.name), esc(x.company), esc(x.role), x.badge ? badge(x.badge, "outline") : muted("—"), btn("Retirer", `A.evt.partDel(${q(e.id)}, ${q(x.id)})`, "ghost sm")]), "Aucun participant inscrit.")}
@@ -275,8 +293,8 @@
     return `<p class="muted">Capacités par configuration, divisibilité et équipements (EF-EVT-001). Tarifs journée d'exemple.</p>
       ${tbl(["Espace", "#m²", ...cfgs.map((c) => "#" + CONF[c]), "Divisible", "Équipements", "#Tarif journée"], V.rooms.map((r) => [`<strong>${esc(r.name)}</strong>`, r.m2, ...cfgs.map((c) => r.caps[c] ?? "—"),
         r.parts ? esc("En " + r.parts.map((x) => RM(x).name).join(" + ")) : r.parent ? esc("Partie de " + RM(r.parent).name) : "Non", esc(r.equip), money(r.day)]))}
-      ${aiBox("Tarification des salles", "Vendredi 5/12 : forte demande sur l'Akwaba (2 demandes en option), taux d'occupation des chambres prévu à 86 %. Recommandation : tarif journée Akwaba entière à 1 050 000 FCFA (+17 %), sauf si le client prend un bloc d'au moins 3 chambres — le revenu global (hébergement + F&B) reste alors supérieur au tarif plein.", RM("AKW").day === 1050000 ? badge("Appliqué", "on") : btn("Appliquer 1 050 000 FCFA à l'Akwaba", "A.evt.applyPrice()", "ghost sm"))}
-      ${V.rule ? `<h2>Règles tarifaires</h2>${tbl(["Règle", "Statut", ""], [[esc(V.rule.label), badge(V.rule.status === "validée" ? "Validée" : "Brouillon", V.rule.status === "validée" ? "on" : "outline"), V.rule.status === "validée" ? "" : btn("Valider", "A.evt.ruleOk()", "sm")]])}` : ""}`
+      ${aiBox("Tarification des salles", "Vendredi 5/12 : forte demande sur l'Akwaba (2 demandes en option), taux d'occupation des chambres prévu à 86 %. Recommandation : tarif journée Akwaba entière à 1 050 000 FCFA (+17 %), sauf si le client prend un bloc d'au moins 3 chambres — le revenu global (hébergement + F&B) reste alors supérieur au tarif plein.", RM("AKW").day === 1050000 ? badge("Appliqué", "ok") : btn("Appliquer 1 050 000 FCFA à l'Akwaba", "A.evt.applyPrice()", "ghost sm"))}
+      ${V.rule ? `<h2>Règles tarifaires</h2>${tbl(["Règle", "Statut", ""], [[esc(V.rule.label), badge(V.rule.status === "validée" ? "Validée" : "Brouillon", V.rule.status === "validée" ? "ok" : "outline"), V.rule.status === "validée" ? "" : btn("Valider", "A.evt.ruleOk()", "sm")]])}` : ""}`
   }
 
   function facturation() {
@@ -297,15 +315,22 @@
     const m2 = base.reduce((s, r) => s + r.m2, 0)
     const rev = V.events.filter((e) => e.status === "definitif").reduce((s, e) => s + amount(e), 0)
     const issued = V.history.issued + V.events.filter((e) => ["envoye", "signe", "refuse"].includes(e.quote)).length, signed = V.history.signed + V.events.filter((e) => e.quote === "signe").length
-    return `<div class="grid">
-        ${kpi("Revenu par m² de salle", money(rev / m2), `événements définitifs · ${m2} m² commercialisables`)}
-        ${kpi("Conversion des devis", pct((signed / issued) * 100), `${signed} signés / ${issued} émis (90 jours, exemple)`)}
-        ${kpi("Occupation des salles", pct((sold / avail) * 100), "heures vendues / disponibles, 14 jours (14 h/jour)")}
-        ${kpi("Pipeline pondéré", money(V.events.filter((e) => e.status === "option").reduce((s, e) => s + amount(e), 0) * 0.6 + V.events.filter((e) => e.status === "prospect").reduce((s, e) => s + amount(e), 0) * 0.2), "options × 60 % + prospects × 20 %")}
+    const weighted = V.events.filter((e) => e.status === "option").reduce((s, e) => s + amount(e), 0) * 0.6 + V.events.filter((e) => e.status === "prospect").reduce((s, e) => s + amount(e), 0) * 0.2
+    const perDay = days.map((d) => conf.flatMap((e) => e.fns).filter((f) => f.date === d).reduce((s, f) => s + (mins(f.end) - mins(f.start)) / 60, 0))
+    return `<div class="grid g4">
+        ${stat({ label: "Revenu par m² de salle", value: money(rev / m2), icon: "building", hint: `événements définitifs · ${m2} m² commercialisables` })}
+        ${stat({ label: "Conversion des devis", value: pct((signed / issued) * 100), icon: "filecheck", hint: `${signed} signés / ${issued} émis (90 jours, exemple)` })}
+        ${stat({ label: "Occupation des salles", value: pct((sold / avail) * 100), icon: "calendar", hint: "heures vendues / disponibles, 14 jours (14 h/jour)", trend: perDay })}
+        ${stat({ label: "Pipeline pondéré", value: money(weighted), icon: "trend", hint: "options × 60 % + prospects × 20 %" })}
       </div>
-      <div class="cols"><section><h2>Heures vendues par espace (14 jours)</h2>${bars(V.rooms.map((r) => ({ label: r.name, value: hoursOf(r) })), (v) => Math.round(v) + " h")}</section>
-      <section><h2>Valeur du pipeline par statut</h2>${bars(Object.keys(STS).map((s) => ({ label: STS[s][0], value: V.events.filter((e) => e.status === s).reduce((t, e) => t + amount(e), 0) })), money)}</section></div>
-      ${aiBox("Tarification des salles", "Les samedis de décembre sont demandés à 3 fois la moyenne : appliquer un minimum de dépense F&B de 4 500 000 FCFA pour l'Akwaba entière ces soirs-là et proposer les jeudis à -15 % aux séminaires.", V.rule ? badge("Règle créée", "on") + " " + muted("Brouillon en attente de validation, visible dans l'onglet Salles") : btn("Créer la règle tarifaire (à valider)", "A.evt.rule()", "ghost sm"))}`
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Heures de salle réservées par jour (14 jours)", lineChart(days.map(fd), [{ name: "Heures réservées", values: perDay }], { fmt: (v) => Math.round(v) + " h" }))}</div>
+        <div class="w4">${section("Taux d'occupation des salles", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((sold / avail) * 100, "Occupation des salles")}<div><div class="stat-val">${pct((sold / avail) * 100)}</div><div class="muted">${Math.round(sold)} h vendues sur ${avail} h</div></div></div>`)}</div>
+        <div class="w6">${section("Heures vendues par espace (14 jours)", bars(V.rooms.map((r) => ({ label: r.name, value: hoursOf(r) })), (v) => Math.round(v) + " h"))}</div>
+        <div class="w6">${section("Valeur du pipeline par statut", donut(Object.keys(STS).map((s) => ({ label: STS[s][0], value: V.events.filter((e) => e.status === s).reduce((t, e) => t + amount(e), 0) })).filter((x) => x.value), { fmt: money, center: shortNum(V.events.reduce((t, e) => t + amount(e), 0)), sub: "FCFA" }))}</div>
+      </div>
+      <div style="height:16px"></div>
+      ${aiBox("Tarification des salles", "Les samedis de décembre sont demandés à 3 fois la moyenne : appliquer un minimum de dépense F&B de 4 500 000 FCFA pour l'Akwaba entière ces soirs-là et proposer les jeudis à -15 % aux séminaires.", V.rule ? badge("Règle créée", "ok") + " " + muted("Brouillon en attente de validation, visible dans l'onglet Salles") : btn("Créer la règle tarifaire (à valider)", "A.evt.rule()", "ghost sm"))}`
   }
 
   // ---------- Actions ----------
@@ -336,7 +361,7 @@
     check() {
       const f = { room: val("av-room"), date: val("av-date"), start: val("av-start"), end: val("av-end") }
       const c = clashes(f)
-      $("#av-out").innerHTML = c.length ? err(c.join(" ")) : `<p>${badge("Disponible", "on")} ${esc(RM(f.room).name)} le ${esc(fdy(f.date))} de ${esc(f.start)} à ${esc(f.end)}.</p>`
+      $("#av-out").innerHTML = c.length ? err(c.join(" ")) : `<p>${badge("Disponible", "ok")} ${esc(RM(f.room).name)} le ${esc(fdy(f.date))} de ${esc(f.start)} à ${esc(f.end)}.</p>`
     },
     option(id) { const e = E(id); Object.assign(e, { status: "option", due: addDays(today, 7) }); toast(`Option posée jusqu'au ${fd(e.due)}`); render() },
     confirm(id) {

@@ -238,7 +238,7 @@
     importReport: null,
   }
   const O = D.org
-  const OPS = { service: ["En service", "on"], hs: ["Hors service", "outline"], hc: ["Hors commande", "dark"] }
+  const OPS = { service: ["En service", "ok"], hs: ["Hors service", "warn"], hc: ["Hors commande", "bad"] }
   const hasHistory = (no) => D.reservations.some((r) => r.room === no)
 
   // ====================================================================
@@ -258,15 +258,32 @@
       const chk = ui.pltChain
       return pageHead("Journal d'audit", "Toutes les actions sensibles, avec valeurs avant/après. Les entrées sont chaînées par empreinte : elles ne peuvent être ni modifiées ni supprimées.",
         btn("Vérifier l'intégrité", "A.plt.verifyChain()", "ghost") + btn("Export signé (CSV)", "A.plt.exportAudit()"))
-        + cards([kpi("Entrées", P.audit.length, "journal du tenant"), kpi("Conservation", "10 ans", "paramétrable (ENF-PLT-03)"), kpi("Dernière empreinte", P.audit[P.audit.length - 1].hash, "chaînage (EF-PLT-010)")])
-        + (chk ? `<p class="${chk.ok ? "" : "err"}" style="margin-top:14px">${chk.ok ? badge("Chaîne intègre", "on") : badge("Altération détectée", "dark")} ${esc(chk.msg)}</p>` : "")
-        + `<h2>Filtres</h2>` + form([
+        + (() => {
+          const byDay = {}; P.audit.forEach((e) => { const d = String(e.ts).slice(0, 10); byDay[d] = (byDay[d] || 0) + 1 })
+          const days = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6)), perDay = days.map((d) => byDay[d] || 0)
+          const acts = [...new Set(P.audit.map((e) => e.action))].map((a) => ({ label: a.charAt(0).toUpperCase() + a.slice(1), value: P.audit.filter((e) => e.action === a).length })).filter((x) => x.value)
+          const actors = Object.entries(P.audit.reduce((m, e) => ((m[e.actor] = (m[e.actor] || 0) + 1), m), {})).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([label, value]) => ({ label, value }))
+          const sensitive = P.audit.filter((e) => e.action === "consultation sensible" || e.action === "droits").length
+          return `<div class="grid g4">
+              ${stat({ label: "Entrées du journal", value: P.audit.length, icon: "list", hint: `dont ${perDay[6]} aujourd'hui`, trend: perDay })}
+              ${stat({ label: "Actions sensibles", value: sensitive, icon: "shield", hint: "consultations sensibles et droits" })}
+              ${stat({ label: "Conservation", value: "10 ans", icon: "clock", hint: "paramétrable (ENF-PLT-03)" })}
+              ${stat({ label: "Dernière empreinte", value: P.audit[P.audit.length - 1].hash, icon: "lock", hint: "chaînage (EF-PLT-010)" })}
+            </div>`
+            + (chk ? `<p class="${chk.ok ? "" : "err"}" style="margin-top:14px">${chk.ok ? badge("Chaîne intègre", "ok") : badge("Altération détectée", "bad")} ${esc(chk.msg)}</p>` : "")
+            + `<div class="dash" style="margin-top:16px">
+                <div class="w4">${section("Entrées par jour (7 jours)", columns(days.map((d) => fd(d)), perDay))}</div>
+                <div class="w4">${section("Répartition par type d'action", donut(acts, { fmt: (v) => v, center: String(P.audit.length), sub: "entrées" }))}</div>
+                <div class="w4">${section("Acteurs les plus actifs", bars(actors))}</div>
+              </div>`
+        })()
+        + section("Filtres", form([
           field("au-ent", "Entité", select("au-ent", opts("entity"), f.entity, `onchange="ui.pltAudit.entity=this.value;render()"`)),
           field("au-act", "Utilisateur", select("au-act", opts("actor"), f.actor, `onchange="ui.pltAudit.actor=this.value;render()"`)),
           field("au-typ", "Type d'action", select("au-typ", opts("action"), f.action, `onchange="ui.pltAudit.action=this.value;render()"`)),
-        ])
+        ]), `<span class="muted">${rows.length} entrée(s)</span>`)
         + `<div style="margin-top:14px">${tbl(["Horodatage", "Acteur", "Action", "Entité", "Avant", "Après", "IP", "Empreinte"], rows.map((e) => [
-          esc(e.ts), esc(e.actor), badge(e.action, e.action === "consultation sensible" || e.action === "droits" ? "outline" : ""), `${esc(e.entity)} <span class="muted">${esc(e.entityId)}</span>`,
+          esc(e.ts), esc(e.actor), badge(e.action, e.action === "suppression" ? "bad" : e.action === "consultation sensible" || e.action === "droits" ? "warn" : e.action === "connexion" ? "info" : "outline"), `${esc(e.entity)} <span class="muted">${esc(e.entityId)}</span>`,
           `<span class="muted">${esc(e.before || "—")}</span>`, esc(e.after || "—"), `<span class="muted">${esc(e.ip)}</span>`, `<span class="muted" title="précédente : ${esc(e.prev)}">${esc(e.hash)}</span>`,
         ]), "Aucune entrée pour ces filtres.")}</div>`
         + `<p class="muted">EF-PLT-009 : créations, modifications, suppressions, consultations de données sensibles, connexions et changements de droits sont tracés avec valeurs avant/après (${["création", "modification", "suppression", "consultation sensible", "connexion", "droits"].map((a) => a + " : " + P.audit.filter((e) => e.action === a).length).join(" · ")}). Exemple US-PLT-02 : filtrez l'entité « Réservation » pour voir qui a modifié le tarif de R-2051. RG-PLT-03 : aucune action de modification ou de suppression n'est proposée, y compris pour l'éditeur.</p>`
@@ -286,15 +303,33 @@
     const mfaRate = actives.filter((x) => x.mfa !== "aucun").length / actives.length * 100
     const rows = P.users.map((x) => {
       const alerts = []
-      if (x.status === "actif" && isPriv(x) && x.mfa === "aucun") alerts.push(badge("MFA requis", "dark"))
+      if (x.status === "actif" && isPriv(x) && x.mfa === "aucun") alerts.push(badge("MFA requis", "bad"))
       if (x.status === "actif" && daysAgo(x.last) > 90) alerts.push(badge(`Inactif ${daysAgo(x.last)} j`, "outline"))
       return [`<button class="link" onclick="go('plt-acces/utilisateurs/${esc(x.id)}')">${esc(x.name)}</button><div class="muted">${esc(x.email)}</div>`, esc(x.job),
         x.roles.map((a) => `${badge(a.role, role(a.role).priv ? "outline" : "")} <span class="muted">${esc(a.scope)}</span>`).join("<br>") || mutedRef("aucun rôle"),
-        x.mfa === "aucun" ? mutedRef("—") : esc(x.mfa), fd(x.last), x.status === "actif" ? badge("Actif", "on") : badge("Désactivé", "dark"), alerts.join(" ")]
+        x.mfa === "aucun" ? mutedRef("—") : esc(x.mfa), fd(x.last), x.status === "actif" ? badge("Actif", "ok") : badge("Désactivé", "bad"), alerts.join(" ")]
     })
-    return cards([kpi("Utilisateurs actifs (30 j)", active30, "Hôtel Exemple, exemple"), kpi("Adoption MFA", pct(mfaRate), "utilisateurs actifs avec MFA"),
-      kpi("Connexions échouées", P.failed["Hôtel Exemple"].slice(-1)[0], "aujourd'hui"), kpi("Changements de droits", P.rightsChanges.slice(-1)[0][1], "novembre")])
-      + (u ? userDetail(u) : `<div class="row between"><h2>Comptes (${P.users.length})</h2>${btn("Nouvel utilisateur", "ui.pltNewUser=!ui.pltNewUser;render()", "sm")}</div>`)
+    const fails = P.failed["Hôtel Exemple"], rc = P.rightsChanges
+    const dlt = (a, b) => (b ? ((a - b) / b) * 100 : null)
+    const mfaMix = ["TOTP", "Passkey", "aucun"].map((m) => ({ label: m === "aucun" ? "Sans MFA" : m, value: actives.filter((x) => x.mfa === m).length }))
+    const days7 = fails.map((_, i) => fd(addDays(today, i - fails.length + 1)))
+    return `<div class="grid g4">
+        ${stat({ label: "Utilisateurs actifs (30 j)", value: active30, icon: "users", hint: `${actives.length} comptes actifs · ${P.users.length - actives.length} désactivé(s)` })}
+        ${stat({ label: "Adoption MFA", value: pct(mfaRate), icon: "lock", hint: "utilisateurs actifs avec MFA", route: "plt-acces/authentification" })}
+        ${stat({ label: "Connexions échouées", value: fails.slice(-1)[0], icon: "alert", delta: dlt(fails.slice(-1)[0], fails.slice(-2)[0]), good: false, hint: "aujourd'hui · vs hier", trend: fails, route: "plt-acces/authentification" })}
+        ${stat({ label: "Changements de droits", value: rc.slice(-1)[0][1], icon: "shield", delta: dlt(rc.slice(-1)[0][1], rc.slice(-2)[0][1]), good: false, hint: "novembre · vs octobre", trend: rc.map((x) => x[1]), route: "plt-audit" })}
+      </div>`
+      + (u ? `<div style="margin-top:16px">${userDetail(u)}</div>` : `<div class="dash" style="margin-top:16px">
+          <div class="w4">${section("Méthodes MFA (comptes actifs)", donut(mfaMix, { fmt: (v) => v, center: pct(mfaRate), sub: "avec MFA" }))}</div>
+          <div class="w4">${section("Connexions échouées (7 jours)", columns(days7, fails), btn("Détail", "go('plt-acces/authentification')", "ghost sm"))}</div>
+          <div class="w4">${section("Points d'attention", (() => { const it = [
+              ...actives.filter((x) => isPriv(x) && x.mfa === "aucun").map((x) => ["lock", `${x.name} : MFA requis (rôle à privilèges)`, "bad"]),
+              ...actives.filter((x) => daysAgo(x.last) > 90).map((x) => ["clock", `${x.name} : inactif depuis ${daysAgo(x.last)} jours`, "warn"]),
+              ...P.services.filter((x) => x.expires <= addDays(today, 10)).map((x) => ["key", `Clé ${x.name} : expire le ${fd(x.expires)}`, "warn"]),
+              ...P.delegations.filter((d) => d.status === "active").map((d) => ["users", `Délégation active : ${permLabel(d.perm)} jusqu'au ${fd(d.au)}`, "info"])]
+            return it.length ? `<div class="feed">${it.slice(0, 6).map(([i, t, k]) => `<div><span class="fi">${ico(i, 15)}</span><span>${esc(t)} ${badge(k === "bad" ? "Bloquant" : k === "warn" ? "À traiter" : "Info", k)}</span></div>`).join("")}</div>` : mutedRef("Rien à signaler.") })())}</div>
+        </div>`
+        + `<div class="row between" style="margin-top:8px"><h2>Comptes (${P.users.length})</h2>${btn("Nouvel utilisateur", "ui.pltNewUser=!ui.pltNewUser;render()", "sm")}</div>`)
       + (!u && ui.pltNewUser ? card("Nouvel utilisateur", form([
         field("nu-name", "Nom", input("nu-name", "", `placeholder="Awa Fofana"`)),
         field("nu-email", "E-mail", input("nu-email", "", `placeholder="awa.fofana@exemple.test"`)),
@@ -320,7 +355,7 @@
     return `<div class="row between"><h2>${esc(u.name)}</h2>${btn("Retour à la liste", "go('plt-acces/utilisateurs')", "ghost sm")}</div>`
       + split(card("Compte", `<p style="margin:0">${esc(u.job)} · ${esc(u.email)}</p>
           <p class="muted">Langue ${esc(u.lang)} · dernière connexion ${fd(u.last)} · MFA : ${esc(u.mfa)}</p>
-          <p>${u.status === "actif" ? badge("Actif", "on") : badge("Désactivé", "dark")} ${isPriv(u) ? badge("Rôle à privilèges", "outline") : ""}</p>
+          <p>${u.status === "actif" ? badge("Actif", "ok") : badge("Désactivé", "bad")} ${isPriv(u) ? badge("Rôle à privilèges", "outline") : ""}</p>
           ${isPriv(u) && u.mfa === "aucun" ? `<p class="err">MFA obligatoire pour ce rôle : la connexion est refusée tant que l'enrôlement n'est pas fait (EF-PLT-004).</p>` : ""}
           <div class="row">${u.status === "actif" ? btn("Désactiver le compte", `A.plt.deactivate(${q(u.id)})`, "ghost") : btn("Réactiver", `A.plt.reactivate(${q(u.id)})`, "ghost")}
             ${u.mfa === "aucun" ? btn("Envoyer l'enrôlement MFA", `A.plt.enrollMfa(${q(u.id)})`, "ghost") : btn("Réinitialiser le MFA", `A.plt.resetMfa(${q(u.id)})`, "ghost")}</div>
@@ -353,7 +388,7 @@
     const actives = P.users.filter((u) => u.status === "actif")
     return `<h2>Délégations temporaires</h2><p class="muted">Délégation d'une permission avec date de fin ; expiration automatique et actions du délégué tracées « au nom de » (EF-PLT-008, US-PLT-03).</p>`
       + tbl(["Réf.", "Délégant", "Délégué", "Permission", "Du", "Au", "Statut", ""], P.delegations.map((d) => [esc(d.id), esc(user(d.from).name), esc(user(d.to).name), esc(permLabel(d.perm)), fd(d.du), fd(d.au),
-        d.status === "active" ? badge("Active", "on") : d.status === "expiree" ? badge("Expirée", "outline") : badge("Révoquée", "dark"),
+        d.status === "active" ? badge("Active", "ok") : d.status === "expiree" ? badge("Expirée", "outline") : badge("Révoquée", "bad"),
         d.status === "active" ? btn("Révoquer", `A.plt.endDeleg(${q(d.id)})`, "ghost sm") : ""]))
       + card("Nouvelle délégation", form([
         field("dg-from", "Délégant", select("dg-from", actives.map((u) => [u.id, u.name]), "U1")),
@@ -367,19 +402,19 @@
   function authTab() {
     const s = P.sso
     const fails = P.failed["Hôtel Exemple"]
-    return `<div class="cols"><section>${card("Fédération d'identité (SSO)", `<p style="margin:0"><strong>${esc(s.provider)}</strong> · SAML 2.0 / OIDC ${badge(s.status === "configure" ? "Configuré" : "À configurer", s.status === "configure" ? "on" : "")}</p>
+    return `<div class="cols"><section>${card("Fédération d'identité (SSO)", `<p style="margin:0"><strong>${esc(s.provider)}</strong> · SAML 2.0 / OIDC ${badge(s.status === "configure" ? "Configuré" : "À configurer", s.status === "configure" ? "ok" : "")}</p>
           <p class="muted">Annuaire : ${esc(s.tenantRef)} · dernière synchronisation SCIM ${esc(s.lastSync)} · un compte désactivé dans l'annuaire perd l'accès à la synchronisation suivante (&lt; 15 min).</p>
           ${s.test ? `<div class="step"><b class="n">✓</b><div>${s.test.map((t) => `<div>${esc(t)}</div>`).join("")}</div></div>` : ""}
           <div class="row">${btn("Tester la connexion", "A.plt.testSso()", "ghost")}${btn("Synchroniser maintenant", "A.plt.syncSso()", "ghost")}</div>
           <h3>Groupes de l'annuaire → rôles HMS</h3>${tbl(["Groupe annuaire", "Rôle HMS", ""], s.mapping.map((m, i) => [esc(m.group), esc(role(m.role).label), btn("Retirer", `A.plt.delMap(${i})`, "ghost sm")]))}
           <div class="row" style="margin-top:8px;flex-wrap:nowrap">${input("mp-group", "", `placeholder="HMS-Housekeeping"`)}${select("mp-role", P.roles.map((r) => [r.code, r.code]), "HKP", `style="max-width:110px"`)}${btn("Ajouter", "A.plt.addMap()", "ghost")}</div>`)}
-        ${card("Comptes de service", tbl(["Compte", "Portée", "Clé", "Rotation", ""], P.services.map((x) => [esc(x.name), `<span class="muted">${esc(x.scope)}</span>`, esc(x.key), `${fd(x.rotated)}${x.expires <= addDays(today, 10) ? " " + badge("expire " + fd(x.expires), "dark") : ""}`, btn("Rotation", `A.plt.rotate(${q(x.id)})`, "ghost sm")]))
+        ${card("Comptes de service", tbl(["Compte", "Portée", "Clé", "Rotation", ""], P.services.map((x) => [esc(x.name), `<span class="muted">${esc(x.scope)}</span>`, esc(x.key), `${fd(x.rotated)}${x.expires <= addDays(today, 10) ? " " + badge("expire " + fd(x.expires), "bad") : ""}`, btn("Rotation", `A.plt.rotate(${q(x.id)})`, "ghost sm")]))
           + `<p class="muted">Clés factices, stockées dans un coffre de secrets (simulé) · EF-PLT-020.</p>`, `style="margin-top:16px"`)}</section>
       <section>${idpCard()}${card("Politique d'authentification", `<p style="margin:0">Mot de passe + MFA (TOTP, passkey). MFA <strong>imposé</strong> aux rôles à privilèges — paramètre verrouillé au niveau plateforme.</p>
           <h3>Connexions échouées — 7 jours</h3>${columns(["J-6", "J-5", "J-4", "J-3", "J-2", "J-1", "Auj."], fails)}`)}
         ${aiBox("Détection d'anomalies de connexion", `Connexion de ${user("U4").name} à 03:12 depuis un pays inhabituel avec un navigateur inconnu : score 91/100, bloquée automatiquement. L'équipe sécurité doit confirmer ou lever le blocage. Repli : règles statiques (pays, horaires).`)}
         <h3>Connexions récentes</h3>${tbl(["Heure", "Utilisateur", "Contexte", "#Risque", "Décision", ""], P.logins.map((l) => [esc(l.ts.slice(5)), esc(user(l.user).name), `<span class="muted">${esc(l.country)} · ${esc(l.device)}</span>`, l.score,
-          { autorise: badge("Autorisée", ""), mfa: badge("MFA renforcé", "outline"), bloque: badge("Bloquée", "dark"), confirme: badge("Blocage confirmé", "dark"), leve: badge("Débloquée", "on") }[l.decision],
+          { autorise: badge("Autorisée", ""), mfa: badge("MFA renforcé", "outline"), bloque: badge("Bloquée", "bad"), confirme: badge("Blocage confirmé", "bad"), leve: badge("Débloquée", "ok") }[l.decision],
           l.decision === "bloque" ? `<span class="row" style="flex-wrap:nowrap">${btn("Confirmer", `A.plt.login(${q(l.id)}, 'confirme')`, "ghost sm")}${btn("Lever", `A.plt.login(${q(l.id)}, 'leve')`, "ghost sm")}</span>` : ""]))}</section></div>`
   }
 
@@ -388,13 +423,13 @@
   function idpCard() {
     const r = ui.pltLoginRes
     return card("Connexion OIDC et fournisseurs d'identité", `<p class="muted" style="margin-top:0">Serveur d'identité OIDC (Keycloak, simulé) : mot de passe, MFA TOTP ou passkey WebAuthn, SSO fédéré. ${mutedRef("EF-PLT-003")}</p>`
-      + tbl(["Fournisseur", "Protocole", "Domaine", "Statut", ""], P.idps.map((x) => [esc(x.name), esc(x.proto), mutedRef(x.domain), x.status === "configure" ? badge("Configuré", "on") : badge("À configurer", "outline"),
+      + tbl(["Fournisseur", "Protocole", "Domaine", "Statut", ""], P.idps.map((x) => [esc(x.name), esc(x.proto), mutedRef(x.domain), x.status === "configure" ? badge("Configuré", "ok") : badge("À configurer", "warn"),
         x.status === "configure" ? btn("Désactiver", `A.plt.setIdp(${q(x.id)}, false)`, "ghost sm") : btn("Configurer", `A.plt.setIdp(${q(x.id)}, true)`, "ghost sm")]))
       + `<h3>Simuler une connexion</h3><div class="form">${field("lg-user", "Utilisateur", select("lg-user", P.users.map((u) => [u.id, u.name]), ui.pltLoginUser || "U2"))}
         ${field("lg-meth", "Méthode", select("lg-meth", METHODS, ui.pltLoginMeth || "totp"))}
         ${field("lg-code", "Code TOTP (6 chiffres)", input("lg-code", "", `inputmode="numeric" placeholder="123456"`))}
         <div style="align-self:end">${btn("Se connecter", "A.plt.simLogin()", "ghost")}</div></div>`
-      + (r ? `<p class="${r.ok ? "" : "err"}">${r.ok ? badge("Connexion acceptée", "on") : badge("Connexion refusée", "dark")} ${esc(r.msg)}</p>` : ""), `style="margin-bottom:16px"`)
+      + (r ? `<p class="${r.ok ? "" : "err"}">${r.ok ? badge("Connexion acceptée", "ok") : badge("Connexion refusée", "bad")} ${esc(r.msg)}</p>` : ""), `style="margin-bottom:16px"`)
   }
 
   // Isolation stricte des données par tenant, à chaque couche — EF-PLT-002
@@ -406,25 +441,37 @@
     const t = P.isoTest
     return `<h2>Isolation des données par tenant</h2><p class="muted">Chaque requête est scopée au tenant du jeton (Groupe Exemple). Toute tentative d'accès à un autre tenant est refusée et journalisée. Tests simulés. ${mutedRef("EF-PLT-002")}</p>`
       + tbl(["Couche", "Mécanisme", "Dernier test"], LAYERS.map(([l, m]) => { const r = t && t.results.find((x) => x.layer === l)
-        return [esc(l), mutedRef(m), r ? (r.leak ? badge("Fuite détectée", "dark") : badge("Accès refusé", "on")) + ` <span class="muted">${esc(r.detail)}</span>` : mutedRef("non testé")] }))
+        return [esc(l), mutedRef(m), r ? (r.leak ? badge("Fuite détectée", "bad") : badge("Accès refusé", "ok")) + ` <span class="muted">${esc(r.detail)}</span>` : mutedRef("non testé")] }))
       + `<div class="form" style="margin-top:12px">${field("iso-t", "Tenant cible", select("iso-t", otherTenants(), "T3"))}${field("iso-l", "Couche", select("iso-l", LAYERS.map((x) => [x[0], x[0]]), "API"))}
         <div style="align-self:end" class="row">${btn("Tenter un accès croisé", "A.plt.crossTenant()", "ghost")}${btn("Lancer le test complet", "A.plt.isoRun()")}</div></div>`
-      + (t ? `<p>${t.results.every((x) => !x.leak) ? badge("0 fuite", "on") : badge("Fuite", "dark")} Test du ${esc(t.ts)} contre ${esc(t.target)} : ${t.results.length} couche(s) vérifiée(s).</p>` : "")
+      + (t ? `<p>${t.results.every((x) => !x.leak) ? badge("0 fuite", "ok") : badge("Fuite", "bad")} Test du ${esc(t.ts)} contre ${esc(t.target)} : ${t.results.length} couche(s) vérifiée(s).</p>` : "")
   }
 
   // ---------- Paramètres ----------
   const LEVELS = [["plateforme", "Plateforme"], ["tenant", "Groupe Exemple"], ["etab", "Hôtel Exemple"]]
   const effective = (s) => { let v, from; LEVELS.forEach(([k]) => { if (s.values[k] != null) (v = s.values[k]), (from = k) }); return [v, from] }
   function settingsTab() {
-    return `<h2>Paramétrage hiérarchique</h2><p class="muted">Plateforme → groupe → établissement, avec héritage et surcharge (EF-PLT-011). Un paramètre verrouillé à un niveau ne peut pas être surchargé en dessous (RG-PLT-04).</p>`
+    const origin = LEVELS.map(([k, l]) => ({ label: l, value: P.settings.filter((s) => effective(s)[1] === k).length })).filter((x) => x.value)
+    const locked = P.settings.filter((s) => s.lock).length, overridden = P.settings.filter((s) => s.values.etab != null).length
+    return `<div class="grid g4">
+        ${stat({ label: "Paramètres suivis", value: P.settings.length, icon: "sliders", hint: "hérités ou surchargés" })}
+        ${stat({ label: "Verrouillés", value: locked, icon: "lock", hint: "non surchargeables en dessous (RG-PLT-04)" })}
+        ${stat({ label: "Surchargés par l'établissement", value: overridden, icon: "building", hint: "valeur propre à l'Hôtel Exemple" })}
+        ${stat({ label: "Taux de change", value: P.rates.length, icon: "coins", hint: "devises vers XOF", route: "plt-params/devises" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w4">${section("Origine des valeurs effectives", donut(origin, { fmt: (v) => v, center: String(P.settings.length), sub: "paramètres" }))}</div>
+        <div class="w8">${section("Date hôtelière et région", `<div class="row" style="gap:28px;align-items:flex-start">
+            <div><div class="stat-val">${fd(today)}/${today.slice(0, 4)}</div><p class="muted" style="max-width:300px">Distincte de la date calendaire (EF-PLT-014). Elle ne change que par l'audit de nuit (RG-PLT-06) : aucun bouton ici.</p></div>
+            <div><p style="margin:0">${badge("Africa/Abidjan (UTC+0)", "info")}</p><p class="muted" style="max-width:300px">Région de résidence des données : Afrique de l'Ouest · devise XOF · langue fr (EF-PLT-001).</p></div></div>`)}</div>
+      </div>`
+      + `<h2>Paramétrage hiérarchique</h2><p class="muted">Plateforme → groupe → établissement, avec héritage et surcharge (EF-PLT-011). Un paramètre verrouillé à un niveau ne peut pas être surchargé en dessous (RG-PLT-04).</p>`
       + `<div class="tablewrap"><table><thead><tr><th>Paramètre</th>${LEVELS.map(([, l]) => `<th>${esc(l)}</th>`).join("")}<th>Valeur effective</th><th>Surcharge établissement</th></tr></thead><tbody>`
       + P.settings.map((s, i) => { const [v, from] = effective(s)
-        return `<tr><td>${esc(s.label)}<div class="muted">${esc(s.key)}</div></td>${LEVELS.map(([k]) => `<td>${s.values[k] != null ? esc(s.values[k]) : `<span class="muted">hérité</span>`}${s.lock === k ? " " + badge("verrouillé", "dark") : ""}</td>`).join("")}
+        return `<tr><td>${esc(s.label)}<div class="muted">${esc(s.key)}</div></td>${LEVELS.map(([k]) => `<td>${s.values[k] != null ? esc(s.values[k]) : `<span class="muted">hérité</span>`}${s.lock === k ? " " + badge("verrouillé", "info") : ""}</td>`).join("")}
           <td><strong>${esc(v)}</strong><div class="muted">${esc(LEVELS.find((x) => x[0] === from)[1])}</div></td>
           <td><span class="row" style="flex-wrap:nowrap">${input("st-" + i, s.values.etab ?? "", `aria-label="Valeur établissement" style="max-width:120px"`)}${btn("OK", `A.plt.setSetting(${i})`, "ghost sm")}</span></td></tr>` }).join("")
       + `</tbody></table></div>`
-      + cards([card("Date hôtelière", `<div class="kpi">${fd(today)}/${today.slice(0, 4)}</div><p class="muted">Distincte de la date calendaire (EF-PLT-014). Elle ne change que par l'audit de nuit (RG-PLT-06) : aucun bouton ici.</p>`),
-        card("Fuseau et région", `<p style="margin:0">Africa/Abidjan (UTC+0)</p><p class="muted">Région de résidence des données : Afrique de l'Ouest · devise XOF · langue fr (EF-PLT-001).</p>`)])
   }
   function fxTab() {
     return `<div class="cols"><section><h2>Taux du jour (vers XOF)</h2>${tbl(["Devise", "#Taux", "Date", "Source"], P.rates.map((r) => [esc(r.from), esc(String(r.rate).replace(".", ",")), fd(r.date), esc(r.source)]))}
@@ -433,10 +480,15 @@
       <section><h2>Taux figés sur les transactions</h2>${tbl(["Transaction", "Date", "#Montant", "#Taux appliqué", "#Contre-valeur"], P.fxTx.map((t) => [esc(t.ref), fd(t.date), `${t.amount} ${esc(t.cur)}`, esc(String(t.rate).replace(".", ",")), money(t.amount * t.rate)]))}
         <p class="muted">RG-PLT-05 : un nouveau taux ne recalcule jamais une transaction passée.</p></section></div>`
   }
-  const TR = { valide: ["Validé", "on"], brouillon: ["Brouillon IA", "outline"], manquant: ["Manquant", ""] }
+  const TR = { valide: ["Validé", "ok"], brouillon: ["Brouillon IA", "info"], manquant: ["Manquant", "warn"] }
   function langTab() {
     const total = P.contents.length * P.langs.length, done = P.contents.reduce((s, c) => s + Object.values(c.tr).filter((x) => x === "valide").length, 0)
-    return cards([kpi("Langues actives", P.langs.length, "dont 1 droite-à-gauche"), kpi("Traductions validées", pct(done / total * 100), `${done} sur ${total}`)])
+    const perLang = P.langs.map(([k, l]) => ({ label: l, value: P.contents.filter((c) => c.tr[k] === "valide").length }))
+    return `<div class="dash">
+        <div class="w4">${stat({ label: "Langues actives", value: P.langs.length, icon: "globe", hint: "dont 1 droite-à-gauche" })}</div>
+        <div class="w4">${section("Traductions validées", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge(done / total * 100, "Traductions validées")}<div><div class="stat-val">${done}/${total}</div><div class="muted">contenus × langues</div></div></div>`)}</div>
+        <div class="w4">${section("Contenus validés par langue", bars(perLang, (v) => `${v}/${P.contents.length}`))}</div>
+      </div>`
       + `<h2>Contenus à traduire</h2>` + tbl(["Contenu", ...P.langs.map((l) => l[1]), ""], P.contents.map((c) => [esc(c.label),
         ...P.langs.map(([k]) => `${st(TR, c.tr[k])}${c.tr[k] === "brouillon" ? " " + btn("Valider", `A.plt.validateTr(${q(c.id)}, ${q(k)})`, "ghost sm") : ""}`),
         Object.values(c.tr).includes("manquant") ? btn("Proposer (IA)", `A.plt.aiTranslate(${q(c.id)})`, "ghost sm") : ""]))
@@ -452,7 +504,7 @@
         ${field("nt-to", "Destinataire", select("nt-to", D.guests.map((g) => [g.id, g.name]), "G3"))}
         ${field("nt-lang", "Langue", select("nt-lang", P.langs.map(([k, l]) => [k, l]), "fr"))}
         <div style="align-self:end">${btn("Envoyer", "A.plt.sendNotif()")}</div></div>`
-        + (P.sent.length ? tbl(["Heure", "Modèle", "Canal", "Langue", "Destinataire", "Résultat"], P.sent.slice(-6).reverse().map((x) => [esc(x.ts.slice(11)), `${esc(x.code)} v${x.version}`, esc(x.channel), esc(x.lang), esc((G(x.to) || { name: x.to }).name), x.ok ? badge("Délivré", "on") + (x.note ? ` <span class="muted">${esc(x.note)}</span>` : "") : badge("Bloqué", "dark") + ` <span class="muted">${esc(x.note)}</span>`]))
+        + (P.sent.length ? tbl(["Heure", "Modèle", "Canal", "Langue", "Destinataire", "Résultat"], P.sent.slice(-6).reverse().map((x) => [esc(x.ts.slice(11)), `${esc(x.code)} v${x.version}`, esc(x.channel), esc(x.lang), esc((G(x.to) || { name: x.to }).name), x.ok ? badge("Délivré", "ok") + (x.note ? ` <span class="muted">${esc(x.note)}</span>` : "") : badge("Bloqué", "bad") + ` <span class="muted">${esc(x.note)}</span>`]))
           : `<p class="muted">Aucun envoi depuis cet écran.</p>`), `style="margin-top:16px"`)
       + `<h2>Désinscriptions</h2>` + tbl(["Destinataire", "Canal", "Depuis"], P.optouts.map((o) => [esc((G(o.who) || { name: o.who }).name), esc(o.channel), fd(o.since)]))
       + `<p class="muted">Respectées automatiquement pour tous les envois non transactionnels (EF-PLT-016).</p>`
@@ -460,7 +512,7 @@
   function docsTab() {
     const expired = P.documents.filter((d) => d.until < today)
     return `<h2>Documents chiffrés</h2><p class="muted">Chiffrement par clé du tenant (simulé), durée de conservation et purge automatique (EF-PLT-017).</p>`
-      + tbl(["Réf.", "Type", "Propriétaire", "Conservation jusqu'au", "Chiffré", ""], P.documents.map((d) => [esc(d.id), esc(d.type), esc((G(d.owner) || { name: d.owner }).name), `${d.until.split("-").reverse().join("/")}${d.until < today ? " " + badge("échu", "dark") : ""}`, badge("AES-256", "outline"), btn("Consulter", `A.plt.viewDoc(${q(d.id)})`, "ghost sm")]))
+      + tbl(["Réf.", "Type", "Propriétaire", "Conservation jusqu'au", "Chiffré", ""], P.documents.map((d) => [esc(d.id), esc(d.type), esc((G(d.owner) || { name: d.owner }).name), `${d.until.split("-").reverse().join("/")}${d.until < today ? " " + badge("échu", "bad") : ""}`, badge("AES-256", "outline"), btn("Consulter", `A.plt.viewDoc(${q(d.id)})`, "ghost sm")]))
       + `<p class="muted">Toute consultation d'une pièce d'identité est inscrite au journal d'audit (« consultation sensible », EF-PLT-009).</p>`
       + (expired.length ? `<div class="row" style="margin-top:10px">${btn(`Purger ${expired.length} document(s) échu(s)`, "A.plt.purgeDocs()")}</div>` : `<p class="muted">Aucun document échu.</p>`)
   }
@@ -479,7 +531,7 @@
         <div class="full"><label for="rf-data">Contenu du fichier (en-tête : ${esc(r.head)})</label><textarea id="rf-data" rows="6" style="width:100%;font:inherit">${esc(rep ? rep.raw : r.sample)}</textarea></div>
         <div class="full row">${btn("Valider le fichier", "A.plt.refValidate()")}${btn("Exporter " + r.label.toLowerCase(), "A.plt.refExport()", "ghost")}</div></div>`
       + (rep ? `<h3>Rapport de validation</h3>` + tbl(["Ligne", "Valeur 1", "Valeur 2", "Résultat"], rep.rows.map((x) => [x.line, esc(x.a || "—"), esc(x.b || "—"),
-        x.err ? `<span class="err">${esc(x.err)}</span>` : x.done ? badge("Importée", "on") : badge(x.update ? "Mise à jour" : "Création", "outline")]))
+        x.err ? `<span class="err">${esc(x.err)}</span>` : x.done ? badge("Importée", "ok") : badge(x.update ? "Mise à jour" : "Création", "outline")]))
         + `<p class="muted">${rep.rows.filter((x) => !x.err).length} ligne(s) valide(s), ${rep.rows.filter((x) => x.err).length} en erreur.</p>`
         + (rep.rows.some((x) => !x.err && !x.done) ? btn(`Importer les ${rep.rows.filter((x) => !x.err && !x.done).length} lignes valides`, "A.plt.refImport()") : "") : "")
       + (ui.pltExport && ui.pltExport.kind === k ? `<h3>Export (${esc(ui.pltExport.fmt)})</h3><pre style="white-space:pre-wrap;font-size:12px">${esc(ui.pltExport.text)}</pre>` : "")
@@ -519,7 +571,17 @@
       const hc = D.rooms.filter((r) => O.roomOps[r.no] === "hc").length
       const complete = D.roomTypes.filter((t) => { const i = O.typeInfo[t.code]; return i.photos > 0 && ["fr", "en", "ar"].every((l) => i.desc[l]) }).length
       return pageHead("Chambres et types", "Inventaire physique de l'Hôtel Exemple, types vendables, équipements et import en masse. Relié au statut des chambres de la réception.")
-        + cards([kpi("Chambres", D.rooms.length, `${sellable} vendables`), kpi("Hors commande", hc, `taux ${pct(hc / D.rooms.length * 100)} des nuitées du jour`), kpi("Complétude des contenus", pct(complete / D.roomTypes.length * 100), "types avec photos et 3 langues")])
+        + `<div class="grid g4">
+            ${stat({ label: "Chambres", value: D.rooms.length, icon: "bed", hint: `${sellable} vendables` })}
+            ${stat({ label: "Hors commande", value: hc, icon: "wrench", hint: `taux ${pct(hc / D.rooms.length * 100)} des nuitées du jour` })}
+            ${stat({ label: "Types de chambres", value: D.roomTypes.length, icon: "layers", hint: `${complete} avec contenus complets`, route: "org-chambres/types" })}
+            ${stat({ label: "Complétude des contenus", value: pct(complete / D.roomTypes.length * 100), icon: "filecheck", hint: "types avec photos et 3 langues", route: "org-chambres/types" })}
+          </div>`
+        + (tab === "chambres" ? `<div class="dash" style="margin-top:16px">
+            <div class="w4">${section("Statut d'exploitation", donut(Object.entries(OPS).map(([k, [l]], i) => ({ label: l, value: D.rooms.filter((r) => O.roomOps[r.no] === k).length, color: ["var(--s3)", "var(--s4)", "var(--s2)"][i] })), { fmt: (v) => v, center: String(D.rooms.length), sub: "chambres" }))}</div>
+            <div class="w4">${section("Chambres par type", bars(D.roomTypes.map((t) => ({ label: t.label, value: D.rooms.filter((r) => r.type === t.code).length }))))}</div>
+            <div class="w4">${section("Chambres par étage", columns([...new Set(D.rooms.map((r) => r.floor))].sort().map((f) => (f === 0 ? "RDC" : "Ét. " + f)), [...new Set(D.rooms.map((r) => r.floor))].sort().map((f) => D.rooms.filter((r) => r.floor === f).length)))}</div>
+          </div>` : "")
         + subtabs("org-chambres", [["chambres", "Chambres"], ["types", "Types de chambres"], ["equipements", "Équipements"], ["import", "Import"]], tab)
         + ({ chambres: roomsTab, types: typesTab, equipements: equipTab, import: importTab }[tab] || roomsTab)()
     },
@@ -538,7 +600,19 @@
   function groupTab() {
     const CK = [["type", "Au moins un type de chambre"], ["chambre", "Au moins une chambre"], ["tarif", "Un plan tarifaire"], ["taxe", "Un compte de taxe"], ["paiement", "Un mode de paiement"]]
     const ed = O.properties.find((x) => x.id === ui.orgEditProp)
-    return `<div class="cols"><section><div class="row between"><h2>Marques</h2>${btn("Nouvelle marque", "ui.orgNewBrand=!ui.orgNewBrand;render()", "ghost sm")}</div>
+    const pre = O.properties.find((x) => x.checklist), ckDone = pre ? CK.filter(([k]) => pre.checklist[k]).length : CK.length
+    const head = `<div class="grid g4">
+        ${stat({ label: "Établissements", value: O.properties.length, icon: "building", hint: `${O.properties.filter((x) => x.status === "exploitation").length} en exploitation · ${O.properties.filter((x) => x.status !== "exploitation").length} en préouverture` })}
+        ${stat({ label: "Marques", value: O.brands.length, icon: "star", hint: `${O.brands.reduce((n, b) => n + b.standards.filter((x) => x.mandatory).length, 0)} standards obligatoires` })}
+        ${stat({ label: "Sociétés juridiques", value: O.entities.length, icon: "briefcase", hint: "identifiants fiscaux distincts" })}
+        ${stat({ label: "Chambres (Hôtel Exemple)", value: D.rooms.length, icon: "bed", hint: `${O.spaces.length} espaces communs`, route: "org-chambres" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w4">${section("Statut des établissements", donut([{ label: "En exploitation", value: O.properties.filter((x) => x.status === "exploitation").length, color: "var(--s3)" }, { label: "Préouverture", value: O.properties.filter((x) => x.status !== "exploitation").length, color: "var(--s4)" }], { fmt: (v) => v, center: String(O.properties.length), sub: "établissements" }))}</div>
+        <div class="w4">${section("Activation " + (pre ? "— " + pre.name : ""), `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((ckDone / CK.length) * 100, "Liste de contrôle d'activation")}<div><div class="stat-val">${ckDone}/${CK.length}</div><div class="muted">éléments de la liste de contrôle</div></div></div>`)}</div>
+        <div class="w4">${section("Standards par marque", bars(O.brands.map((b) => ({ label: b.name, value: b.standards.length }))))}</div>
+      </div>`
+    return head + `<div class="cols"><section><div class="row between"><h2>Marques</h2>${btn("Nouvelle marque", "ui.orgNewBrand=!ui.orgNewBrand;render()", "ghost sm")}</div>
       <p class="muted">Charte graphique, standards de service et gamme par marque ${mutedRef("· EF-ORG-001")}</p>`
       + (ui.orgNewBrand ? card("", form([field("br-code", "Code (3 lettres)", input("br-code", "", `placeholder="EXL"`)), field("br-name", "Nom", input("br-name", "", `placeholder="Exemple Lodge"`)),
         field("br-range", "Gamme", select("br-range", ["Économique (2 étoiles)", "Milieu de gamme (3-4 étoiles)", "Haut de gamme (5 étoiles)", "Luxe (Palace)"], "Milieu de gamme (3-4 étoiles)")),
@@ -546,7 +620,7 @@
         `<div class="full" id="br-err"></div>`, `<div class="full">${btn("Créer la marque", "A.org.addBrand()")}</div>`]), `style="margin-bottom:12px"`) : "")
       + O.brands.map((b) => card(b.name, `<p class="muted" style="margin:0">${esc(b.code)} · ${esc(b.range)}</p>
         <p style="margin:8px 0" class="row"><span style="display:inline-block;width:18px;height:18px;border-radius:4px;background:${esc(b.charter.color)}" title="Couleur de charte"></span> <span class="muted">Charte : ${esc(b.charter.color)} · police ${esc(b.charter.font)} · logo ${esc(b.charter.logo)}</span></p>
-        ${tbl(["Standard de service", "Application", ""], b.standards.map((s, i) => [esc(s.label), s.mandatory ? badge("Obligatoire", "on") : badge("Recommandé", "outline"), btn(s.mandatory ? "Rendre recommandé" : "Rendre obligatoire", `A.org.toggleStd(${q(b.code)}, ${i})`, "ghost sm")]))}
+        ${tbl(["Standard de service", "Application", ""], b.standards.map((s, i) => [esc(s.label), s.mandatory ? badge("Obligatoire", "ok") : badge("Recommandé", "outline"), btn(s.mandatory ? "Rendre recommandé" : "Rendre obligatoire", `A.org.toggleStd(${q(b.code)}, ${i})`, "ghost sm")]))}
         <div class="row" style="margin-top:8px;flex-wrap:nowrap">${input("bs-" + b.code, "", `placeholder="Nouveau standard" aria-label="Nouveau standard ${esc(b.name)}"`)}${btn("Ajouter (obligatoire)", `A.org.addStandard(${q(b.code)})`, "ghost sm")}</div>
         <p class="muted">RG-ORG-06 : ${b.standards.filter((s) => s.mandatory).length} standard(s) obligatoire(s) appliqué(s) à ${O.properties.filter((x) => x.brand === b.code).length} établissement(s).</p>`, `style="margin-bottom:12px"`)).join("")
       + `</section><section><div class="row between"><h2>Sociétés juridiques</h2>${btn("Nouvelle société", "ui.orgNewEnt=!ui.orgNewEnt;render()", "ghost sm")}</div>
@@ -582,12 +656,12 @@
       + `<div class="grid">${O.properties.map((x) => {
         const ck = x.checklist, e = entity(x.entity)
         return card(x.name, `<p class="muted" style="margin:0">${esc(x.code)} · ${esc(x.city)} · ${"★".repeat(x.stars)} · marque ${esc(O.brands.find((b) => b.code === x.brand).name)}</p>
-          <p style="margin:8px 0">${x.status === "exploitation" ? badge("En exploitation", "on") : badge("Préouverture", "outline")} ${x.palace ? badge("Palace", "dark") : ""}</p>
+          <p style="margin:8px 0">${x.status === "exploitation" ? badge("En exploitation", "ok") : badge("Préouverture", "info")} ${x.palace ? badge("Palace", "info") : ""}</p>
           <p class="muted">${esc(x.address)} · géo ${esc(x.geo.join(", "))}<br>${esc(x.tz)} · ${esc(x.currency)} · langues ${esc(x.langs)} · check-in ${esc(x.checkin)} / check-out ${esc(x.checkout)}<br>${esc(polText(x.policies))}<br>Société : ${esc(e ? e.name : "—")}</p>
           <p style="margin:6px 0">Classement : ${esc(classText(x))}</p><div class="tags">${x.labels.map((l) => badge(l, "outline")).join("") || mutedRef("aucun label")}</div>
           <p class="muted">EF-ORG-003 · EF-ORG-011</p>
           <div class="row">${btn("Modifier la fiche", `ui.orgEditProp=${q(x.id)};render()`, "ghost sm")}</div>
-          ${ck ? `<h3>Liste de contrôle d'activation</h3>${CK.map(([k, l]) => `<div>${ck[k] ? badge("OK", "on") : badge("À faire", "")} ${esc(l)} ${ck[k] ? "" : btn("Marquer fait", `A.org.check(${q(x.id)}, ${q(k)})`, "ghost sm")}</div>`).join("")}
+          ${ck ? `<h3>Liste de contrôle d'activation</h3>${CK.map(([k, l]) => `<div>${ck[k] ? badge("OK", "ok") : badge("À faire", "warn")} ${esc(l)} ${ck[k] ? "" : btn("Marquer fait", `A.org.check(${q(x.id)}, ${q(k)})`, "ghost sm")}</div>`).join("")}
             <div class="row" style="margin-top:10px">${btn("Activer l'établissement", `A.org.activate(${q(x.id)})`)}</div><p class="muted">RG-ORG-05 : activation refusée tant qu'un élément manque.</p>` : ""}`)
       }).join("")}</div>`
   }
@@ -599,11 +673,11 @@
         O.spaces.filter((s) => s.floor === f).map((s) => esc(s.name)).join(", ") || mutedRef("—")]))
       + `<p class="muted">* chambre hors commande.</p>`
       + `<h2>Espaces communs et portes contrôlées</h2>` + tbl(["Espace", "Type", "Horaires", "Portes (serrure)", ""], O.spaces.map((s) => [esc(s.name), esc(s.type), esc(s.hours),
-        s.doors.map((d) => `${esc(d.ref)} <span class="muted">${esc(d.maker)} · ${esc(d.mode)}</span>`).join("<br>") || badge("Aucune porte", "dark"),
+        s.doors.map((d) => `${esc(d.ref)} <span class="muted">${esc(d.maker)} · ${esc(d.mode)}</span>`).join("<br>") || badge("Aucune porte", "bad"),
         btn("Ajouter une porte", `A.org.addDoor(${q(s.id)})`, "ghost sm")]))
       + `<div class="row" style="margin-top:10px;flex-wrap:nowrap">${select("dr-maker", ["Fabricant Exemple", "Fabricant Exemple B"], "Fabricant Exemple", `aria-label="Fabricant" style="max-width:190px"`)}${select("dr-mode", ["en ligne", "hors ligne"], "en ligne", `aria-label="Type de serrure" style="max-width:130px"`)}<span class="muted">fabricant et type appliqués aux portes ajoutées</span></div>`
       + `<h2>Portes des chambres</h2>` + tbl(["Chambre", "Étage", "Portes (référence · fabricant · modèle)", "Type", ""], D.rooms.map((r) => { const ds = O.roomDoors[r.no] || []
-        return [`<strong>${esc(r.no)}</strong>`, r.floor, ds.map((d) => `${esc(d.ref)} <span class="muted">${esc(d.maker)} · ${esc(d.model)}</span>`).join("<br>") || badge("Aucune porte", "dark"),
+        return [`<strong>${esc(r.no)}</strong>`, r.floor, ds.map((d) => `${esc(d.ref)} <span class="muted">${esc(d.maker)} · ${esc(d.model)}</span>`).join("<br>") || badge("Aucune porte", "bad"),
           ds.map((d, i) => select(`dm-${r.no}-${i}`, ["en ligne", "hors ligne"], d.mode, `aria-label="Mode de la porte ${esc(d.ref)}" style="max-width:120px" onchange="A.org.setDoorMode(${q(r.no)}, ${i}, this.value)"`)).join("<br>"),
           btn("Ajouter une porte", `A.org.addRoomDoor(${q(r.no)})`, "ghost sm")] }))
       + `<p class="muted">Chaque chambre et chaque espace est associé à une ou plusieurs portes contrôlées, lues par le module Contrôle d'accès (serrures simulées). Une serrure hors ligne est encodée par carte, sans liaison temps réel. EF-ORG-007 · EF-ORG-008.</p>`
@@ -649,7 +723,7 @@
     return card("Suites composées", `<p class="muted" style="margin-top:0">Une suite regroupe des chambres communicantes, vendue comme un tout ou chambre par chambre · EF-ORG-009.</p>`
       + tbl(["Suite", "Chambres", "Vente", "#Tarif suite", "Ce soir", ""], O.suites.map((su) => [`<strong>${esc(su.name)}</strong><div class="muted">${esc(su.id)}</div>`, su.rooms.map(esc).join(" + "),
         select("sv-" + su.id, Object.entries(SALE), su.sale, `aria-label="Mode de vente" style="max-width:200px" onchange="A.org.setSale(${q(su.id)}, this.value)"`), money(su.rate),
-        su.sale === "separe" ? mutedRef("vendue par chambre") : suiteFree(su) ? badge("Vendable en suite", "on") : badge("Indisponible (chambre occupée ou hors commande)", "dark"),
+        su.sale === "separe" ? mutedRef("vendue par chambre") : suiteFree(su) ? badge("Vendable en suite", "ok") : badge("Indisponible (chambre occupée ou hors commande)", "bad"),
         btn("Dissocier", `A.org.delSuite(${q(su.id)})`, "ghost sm")]), "Aucune suite.")
       + (cand.length ? `<div class="row" style="margin-top:10px;flex-wrap:nowrap">${select("su-pair", cand.map((r) => [r.no, `${r.no} + ${O.roomAttr[r.no].link}`]), cand[0].no, `aria-label="Chambres communicantes" style="max-width:140px"`)}${input("su-name", "", `placeholder="Nom de la suite" aria-label="Nom de la suite"`)}${input("su-rate", "", `type="number" placeholder="Tarif" aria-label="Tarif" style="max-width:120px"`)}${btn("Créer la suite", "A.org.addSuite()", "ghost")}</div>`
         : `<p class="muted">Aucune paire de chambres communicantes libre : déclarez-en une dans « Caractéristiques d'une chambre ».</p>`), `style="margin-top:16px"`)
@@ -659,8 +733,8 @@
     return `<h2>Types de chambres</h2>` + tbl(["Type", "Capacité", "#Surface", "Lits", "Vue", "Équipements", "#Photos", "Descriptions", ""], D.roomTypes.map((t) => {
       const i = O.typeInfo[t.code]
       return [`<strong>${esc(t.label)}</strong><div class="muted">${esc(t.code)} · ${money(t.rate)}</div>`, `${i.adults} ad. + ${i.children} enf.<div class="muted">${i.extra} lit d'appoint</div>`, i.area + " m²", esc(i.beds), esc(i.view),
-        `<span class="muted">${esc(i.equip.join(", "))}</span>`, i.photos || badge("0", "dark"),
-        ["fr", "en", "ar"].map((l) => badge(l, i.desc[l] ? "on" : "")).join(" "), `<span class="row" style="flex-wrap:nowrap">${btn("Modifier", `ui.orgTypeEdit=${q(t.code)};render()`, "ghost sm")}${btn("Générer (IA)", `A.org.genDesc(${q(t.code)})`, "ghost sm")}</span>`]
+        `<span class="muted">${esc(i.equip.join(", "))}</span>`, i.photos || badge("0", "bad"),
+        ["fr", "en", "ar"].map((l) => badge(l, i.desc[l] ? "ok" : "")).join(" "), `<span class="row" style="flex-wrap:nowrap">${btn("Modifier", `ui.orgTypeEdit=${q(t.code)};render()`, "ghost sm")}${btn("Générer (IA)", `A.org.genDesc(${q(t.code)})`, "ghost sm")}</span>`]
     }))
       + typeEditCard()
       + (dr ? aiBox(`Description proposée — ${T(dr.code).label} (${dr.lang})`, dr.text, btn("Valider et publier", "A.org.acceptDesc()", "sm") + btn("Rejeter", "D.org.draft=null;render()", "ghost sm"))
@@ -695,7 +769,7 @@
     const rep = O.importReport
     return `<h2>Import des chambres et portes (US-ORG-02)</h2><p class="muted">Fichier simulé « chambres_aile_est.xlsx » (6 lignes). Modèle téléchargeable, validation des doublons et des types inconnus, rapport ligne par ligne.</p>
       <div class="row">${btn("Télécharger le modèle", "toast('Modèle chambres.xlsx téléchargé (simulé)')", "ghost")}${btn("Analyser le fichier", "A.org.analyse()")}</div>`
-      + (rep ? `<h3>Rapport de validation</h3>` + tbl(["Ligne", "N°", "Type", "Étage", "Résultat"], rep.map((x, i) => [i + 2, esc(x.row[0] || "—"), esc(x.row[1]), esc(x.row[2]), x.err ? `<span class="err">${esc(x.err)}</span>` : badge(x.done ? "Importée" : "Valide", "on")]))
+      + (rep ? `<h3>Rapport de validation</h3>` + tbl(["Ligne", "N°", "Type", "Étage", "Résultat"], rep.map((x, i) => [i + 2, esc(x.row[0] || "—"), esc(x.row[1]), esc(x.row[2]), x.err ? `<span class="err">${esc(x.err)}</span>` : badge(x.done ? "Importée" : "Valide", "ok")]))
         + (rep.some((x) => !x.err && !x.done) ? `<div class="row" style="margin-top:10px">${btn(`Importer les ${rep.filter((x) => !x.err && !x.done).length} lignes valides`, "A.org.doImport()")}</div>` : "") : "")
   }
   // Utilisations calculées sur les réservations et folios de data.js (segments/origines : attribution déterministe des réservations d'exemple)
@@ -716,7 +790,24 @@
   function codeTab(kind) {
     const list = O.codes[kind] || O.codes.segments
     const k = O.codes[kind] ? kind : "segments"
-    return `<h2>${{ segments: "Segments de marché", origines: "Origines de réservation", transactions: "Codes de transaction" }[k]}</h2>`
+    const title = { segments: "Segments de marché", origines: "Origines de réservation", transactions: "Codes de transaction" }[k]
+    const use = list.map((c) => ({ label: c[1], value: Number(codeUse(k, c[0])) || 0 }))
+    const used = use.filter((x) => x.value)
+    return `<div class="grid g4">
+        ${stat({ label: "Codes", value: list.length, icon: "tag", hint: title.toLowerCase() })}
+        ${stat({ label: "Actifs", value: list.filter((c) => c[2]).length, icon: "check", hint: `${list.filter((c) => !c[2]).length} désactivé(s)` })}
+        ${stat({ label: "Codes utilisés", value: used.length, icon: "chart", hint: k === "transactions" ? "nuitées, lignes ou paiements" : "sur les réservations" })}
+        ${stat({ label: "Taxes actives", value: O.taxes.filter((t) => t.on).length, icon: "calc", hint: `${O.taxes.length} taxes paramétrées`, route: "org-codes/taxes" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w6">${section(k === "transactions" ? "Utilisation par code" : "Répartition des réservations", used.length ? (k === "transactions" ? bars(used.sort((a, b) => b.value - a.value).slice(0, 8)) : donut(used.slice(0, 6), { fmt: (v) => v, center: String(used.reduce((n, x) => n + x.value, 0)), sub: "réservations" })) : mutedRef("Aucun code utilisé."))}</div>
+        <div class="w6">${section("Règles de gestion", `<div class="feed">
+            <div><span class="fi">${ico("lock", 15)}</span><span>Un code utilisé ne se supprime pas : il se désactive.</span></div>
+            <div><span class="fi">${ico("layers", 15)}</span><span>Codes partagés par tous les modules (réservations, folios, comptabilité).</span></div>
+            <div><span class="fi">${ico("upload", 15)}</span><span>Cible du mapping lors d'une migration de données.</span></div>
+            <div><span class="fi">${ico("calc", 15)}</span><span>Taxes : une modification s'applique aux transactions futures uniquement.</span></div></div>`)}</div>
+      </div>`
+      + `<h2>${title}</h2>`
       + tbl(["Code", "Libellé", "Actif", "#Réservations / lignes"], list.map((c, i) => [esc(c[0]), esc(c[1]), `<input type="checkbox" aria-label="Actif" ${c[2] ? "checked" : ""} onchange="A.org.toggleCode(${q(k)}, ${i}, this.checked)">`, codeUse(k, c[0])]))
       + `<div class="row" style="margin-top:10px;flex-wrap:nowrap">${input("cd-code", "", `placeholder="Code" style="max-width:110px" aria-label="Code"`)}${input("cd-label", "", `placeholder="Libellé" aria-label="Libellé"`)}${btn("Ajouter", `A.org.addCode(${q(k)})`, "ghost")}</div>`
       + `<p class="muted">Un code utilisé ne se supprime pas : il se désactive. Les codes sont aussi la cible du mapping lors d'une migration.</p>`

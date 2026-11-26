@@ -145,11 +145,11 @@
   const typeOpts = () => D.roomTypes.map((t) => [t.code, t.label])
   const restrTags = (type, d) => {
     const x = rs(type, d), tags = []
-    if (x.stop) tags.push(badge("Fermé", "dark"))
+    if (x.stop) tags.push(badge("Fermé", "bad"))
     if (x.cta) tags.push(badge("CTA", "outline"))
     if (x.ctd) tags.push(badge("CTD", "outline"))
-    if (x.minLOS) tags.push(badge(`Min ${x.minLOS}`, ""))
-    if (x.maxLOS) tags.push(badge(`Max ${x.maxLOS}`, ""))
+    if (x.minLOS) tags.push(badge(`Min ${x.minLOS}`, "info"))
+    if (x.maxLOS) tags.push(badge(`Max ${x.maxLOS}`, "info"))
     return tags.join(" ")
   }
   const head = (days) => `<th>Type</th>${days.map((d) => `<th class="num">${esc(wd(d))}<br>${fd(d)}${inEvent(d) ? "<br>★" : ""}</th>`).join("")}`
@@ -181,31 +181,41 @@
     const pc = ui.ratPlan || "BB"
     const derived = S.plans.filter((x) => x.parent && x.active)
     const floored = D.roomTypes.some((t) => days.some((d) => price(pc, t.code, d).floored))
-    return `<p class="muted">BAR modifiable case par case (prix de la nuit, 1 ou 2 adultes). ★ = ${esc(EVENT.label)}. Les plans dérivés sont recalculés automatiquement (EF-RAT-002, EF-RAT-013).</p>
+    const occ = days.map((d) => Math.round(occOn(d) * 100))
+    const open = S.recos.filter((r) => r.status === "proposee").length
+    const toSell = D.roomTypes.map((t) => ({ label: t.label, value: sellable(t.code, today) }))
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "BAR Standard ce soir", value: money(bar("STD", today)), icon: "tag", delta: ((bar("STD", addDays(today, 1)) - bar("STD", today)) / bar("STD", today)) * 100, hint: "demain vs ce soir · 14 jours en courbe", trend: days.map((d) => bar("STD", d)) })}
+        ${stat({ label: "Occupation ce soir", value: pct(occ[0]), icon: "bed", hint: "réservations fermes · 14 jours en courbe", trend: occ, route: "rat-tarifs/kpi" })}
+        ${stat({ label: "Chambres à vendre ce soir", value: String(toSell.reduce((s, x) => s + x.value, 0)), icon: "key", hint: "après allotements et fermetures", route: "rat-tarifs/inventaire" })}
+        ${stat({ label: "Recommandations IA", value: String(open), icon: "brain", hint: "prix à valider (simulé)", route: "rat-tarifs/revenue" })}
+      </div>
+      ${section("Grille BAR · 14 prochaines nuits", `<p class="muted" style="margin-top:0">BAR modifiable case par case (prix de la nuit, 1 ou 2 adultes). ★ = ${esc(EVENT.label)}. Les plans dérivés sont recalculés automatiquement (EF-RAT-002, EF-RAT-013).</p>
       <div class="tablewrap"><table><thead><tr>${head(days)}</tr></thead><tbody>
       ${D.roomTypes.map((t) => `<tr><td><strong>${esc(t.label)}</strong><div class="muted">BAR</div></td>${days.map((d) => `<td class="num">
         <input aria-label="BAR ${esc(t.label)} ${fd(d)}" type="number" step="500" value="${bar(t.code, d)}" style="width:86px;padding:4px 6px;text-align:right" onchange="A.rat.setPrice(${q(t.code)}, ${q(d)}, this.value)">
         <div>${restrTags(t.code, d)}</div></td>`).join("")}</tr>`).join("")}
-      </tbody></table></div>
-      <h2>Plan dérivé affiché</h2>
-      <div class="chips">${derived.map((x) => `<button aria-pressed="${pc === x.code}" onclick="ui.ratPlan=${q(x.code)};render()">${esc(x.code)}</button>`).join("")}</div>
+      </tbody></table></div>`)}
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Évolution du BAR par type", lineChart(days.map(fd), D.roomTypes.map((t) => ({ name: t.label, values: days.map((d) => bar(t.code, d)) })), { fmt: shortNum }))}</div>
+        <div class="w4">${section("À vendre ce soir", donut(toSell, { fmt: (v) => v + " ch.", center: String(toSell.reduce((s, x) => s + x.value, 0)), sub: "chambres" }))}</div>
+        <div class="w12">${section(`Plan dérivé affiché : ${pc}`, `<div class="chips">${derived.map((x) => `<button aria-pressed="${pc === x.code}" onclick="ui.ratPlan=${q(x.code)};render()">${esc(x.code)}</button>`).join("")}</div>
       <div class="tablewrap"><table><thead><tr>${head(days)}</tr></thead><tbody>
       ${D.roomTypes.map((t) => `<tr><td>${esc(t.label)}</td>${days.map((d) => { const x = price(pc, t.code, d); return `<td class="num ${x.floored ? "cell0" : ""}" title="${x.floored ? `Calculé ${money(x.raw)}, relevé au plancher` : ""}">${esc(Math.round(x.v / 1000))} k</td>` }).join("")}</tr>`).join("")}
       </tbody></table></div>
-      ${floored ? `<p class="muted">Cases grisées : le prix calculé passait sous le plancher du plan parent, il est relevé au plancher (RG-RAT-01).</p>` : ""}
-      <div class="cols">
-        <section><h2>Modification en masse</h2>${card("", form([
+      ${floored ? `<p class="muted">Cases grisées : le prix calculé passait sous le plancher du plan parent, il est relevé au plancher (RG-RAT-01).</p>` : ""}`)}</div>
+        <div class="w6">${section("Modification en masse", form([
           field("rat-b-type", "Type de chambre", select("rat-b-type", [["ALL", "Tous les types"], ...typeOpts()], "STD")),
           field("rat-b-from", "Du", input("rat-b-from", addDays(today, 7), 'type="date"')),
           field("rat-b-to", "Au (inclus)", input("rat-b-to", addDays(today, 10), 'type="date"')),
           field("rat-b-mode", "Mode", select("rat-b-mode", [["pct", "Variation en %"], ["amount", "Variation en FCFA"], ["set", "Prix fixe"]], "pct")),
           field("rat-b-val", "Valeur", input("rat-b-val", "5", 'type="number"')),
           `<div class="full row">${btn("Appliquer sur la plage", "A.rat.bulk()")}<span class="muted">Hors bornes : refusé (plancher/plafond du revenue manager).</span></div>`,
-        ]))}</section>
-        <section><h2>Prix par occupation</h2>${tbl(["Occupation", "#Supplément / nuit"], [
+        ]))}</div>
+        <div class="w6">${section("Prix par occupation", tbl(["Occupation", "#Supplément / nuit"], [
           ["1 adulte", "BAR"], ["2 adultes", money(S.occupancy.adult2)], ["3 adultes", money(S.occupancy.adult3)],
           ["Enfant 0-5 ans", S.occupancy.child0_5 ? money(S.occupancy.child0_5) : "Gratuit"], ["Enfant 6-11 ans", money(S.occupancy.child6_11)],
-        ])}<p class="muted">Suppléments appliqués à tous les plans (EF-RAT-003). Prix affichés TTC, taxe de séjour incluse pour le marché ivoirien (RG-RAT-07).</p></section>
+        ]) + `<p class="muted">Suppléments appliqués à tous les plans (EF-RAT-003). Prix affichés TTC, taxe de séjour incluse pour le marché ivoirien (RG-RAT-07).</p>`)}</div>
       </div>`
   }
 
@@ -215,7 +225,7 @@
     const left = listItems(S.plans.map((x) => ({ id: x.code, title: `${x.code} — ${x.name}`, sub: `${x.type}${x.parent ? ` · dérivé de ${x.parent}` : ""} · ${money(price(x.code, t, d).v)} (STD ${fd(d)})`, badge: x.active ? "" : " " + badge("Inactif", "outline") })), cur.code, "rat-tarifs/plans")
     const deriv = cur.parent ? `${cur.deriv.value > 0 ? "+" : ""}${cur.deriv.kind === "pct" ? cur.deriv.value + " %" : money(cur.deriv.value)} sur ${cur.parent}` : "Tarif de référence (saisi dans la grille)"
     const fl = D.roomTypes.filter((x) => price(cur.code, x.code, d).floored)
-    return split(left, card("", `<div class="row between"><span class="big">${esc(cur.code)} — ${esc(cur.name)}</span>${cur.active ? badge("Actif", "on") : badge("Inactif", "outline")}</div>
+    return split(left, card("", `<div class="row between"><span class="big">${esc(cur.code)} — ${esc(cur.name)}</span>${cur.active ? badge("Actif", "ok") : badge("Inactif", "outline")}</div>
       <p class="muted">EF-RAT-001 · devise ${esc(D.currency)} · segment ${esc(cur.segment)}</p>
       ${tbl(["Paramètre", "Valeur"], [
         ["Type", esc(cur.type)], ["Dérivation", esc(deriv)], ["Annulation", esc(cur.cancel)], ["Garantie", esc(cur.guarantee)],
@@ -244,7 +254,7 @@
       }).join("")}</div>
       <h2>Promotions</h2>
       ${tbl(["Code", "Type", "Règle", "Cumulable", "#Utilisations", "Statut", ""], S.promos.map((x) => [
-        `<strong>${esc(x.code)}</strong>`, esc(x.kind), esc(x.rule), x.cumul ? "Oui" : "Non", x.uses, x.active ? badge("Active", "on") : badge("Inactive", "outline"),
+        `<strong>${esc(x.code)}</strong>`, esc(x.kind), esc(x.rule), x.cumul ? "Oui" : "Non", x.uses, x.active ? badge("Active", "ok") : badge("Inactive", "outline"),
         btn(x.active ? "Suspendre" : "Activer", `A.rat.togglePromo(${q(x.code)})`, "ghost sm"),
       ]))}
       <p class="muted">Règle de cumul (EF-RAT-007) : une seule promotion non cumulable par séjour ; les promotions cumulables s'ajoutent, dans la limite du plancher du type de chambre.</p>
@@ -290,12 +300,12 @@
       ${tbl(["Réf.", "Bénéficiaire", "Type", "Période", "#Chambres", "#Prises", "Libération", "Statut", ""], S.allotments.map((a) => {
         const rel = releaseDate(a), due = !a.released && rel <= today
         return [esc(a.id), esc(a.holder), esc(T(a.type).label), `${fd(a.from)} → ${fd(a.to)}`, a.rooms, a.picked, `J-${a.release} (${fd(rel)})`,
-          a.released ? badge("Libéré", "outline") : due ? badge("À libérer aujourd'hui", "on") : badge("Bloqué", ""),
+          a.released ? badge("Libéré", "outline") : due ? badge("À libérer aujourd'hui", "warn") : badge("Bloqué", "info"),
           a.released ? "" : btn("Libérer", `A.rat.release(${q(a.id)})`, "ghost sm")]
       }))}
       <h2>Plafond de surbooking (EF-RAT-012)</h2>
       ${aiBox("Optimisation du surbooking", `Probabilité de no-show estimée à 9 % sur les nuits du ${fd(o.from)} au ${fd(o.to)} (événement, réservations OTA récentes). Recommandation : +${o.rooms} ${T(o.type).label} par nuit, soit ${pct((o.rooms / sellableRooms()) * 100)} de l'inventaire vendable. Au-delà de 5 %, une validation humaine est obligatoire.`,
-        o.status === "proposee" ? btn("Valider (revenue manager)", "A.rat.validateOb()", "accent") + btn("Refuser", "A.rat.rejectOb()", "ghost") : badge(o.status === "validee" ? "Validée" : "Refusée", o.status === "validee" ? "on" : "outline"))}
+        o.status === "proposee" ? btn("Valider (revenue manager)", "A.rat.validateOb()", "accent") + btn("Refuser", "A.rat.rejectOb()", "ghost") : badge(o.status === "validee" ? "Validée" : "Refusée", o.status === "validee" ? "ok" : "bad"))}
       ${card("Saisie manuelle", form([
         field("rat-o-type", "Type", select("rat-o-type", typeOpts(), "STD")),
         field("rat-o-from", "Du", input("rat-o-from", addDays(today, 3), 'type="date"')),
@@ -316,7 +326,7 @@
         const b = bounded(r), diff = ((r.rec - r.cur) / r.cur) * 100
         return [fd(r.date) + (inEvent(r.date) ? " ★" : ""), esc(T(r.type).label), money(r.cur), money(r.rec) + (b.clipped ? `<div class="muted">borné à ${money(b.v)}</div>` : ""),
           (diff > 0 ? "+" : "") + pct(diff), r.conf + " %", `<span class="muted">${esc(r.factors.join(" · "))}</span>`,
-          { proposee: badge("Proposée", ""), acceptee: badge("Acceptée", "on"), modifiee: badge("Modifiée", "on"), rejetee: badge("Rejetée", "outline") }[r.status],
+          { proposee: badge("Proposée", "warn"), acceptee: badge("Acceptée", "ok"), modifiee: badge("Modifiée", "ok"), rejetee: badge("Rejetée", "bad") }[r.status],
           r.status === "proposee" ? `<span class="row" style="flex-wrap:nowrap">${btn("Accepter", `A.rat.accept(${q(r.id)})`, "sm")}${btn("Modifier", `A.rat.modify(${q(r.id)})`, "ghost sm")}${btn("Rejeter", `A.rat.reject(${q(r.id)})`, "ghost sm")}</span>` : ""]
       }), "Aucune recommandation.")}
       <h2>Bornes du mode automatique</h2>
@@ -325,7 +335,7 @@
           `<input id="rat-b-lo-${esc(t.code)}" type="number" step="500" value="${S.bounds[t.code][0]}" aria-label="Plancher ${esc(t.label)}" style="max-width:130px">`,
           `<input id="rat-b-hi-${esc(t.code)}" type="number" step="500" value="${S.bounds[t.code][1]}" aria-label="Plafond ${esc(t.label)}" style="max-width:130px">`]))}
         <div class="row" style="margin-top:10px"><label for="rat-b-move">Variation max. par jour (± %)</label><input id="rat-b-move" type="number" min="1" max="50" value="${S.maxDailyMove}" style="max-width:90px">${btn("Enregistrer les bornes", "A.rat.saveBounds()")}</div>
-        <p class="muted">Mode actuel : ${ui.ratAuto ? badge("Automatique borné", "on") : badge("Conseil (validation humaine)", "outline")} · ${S.recos.filter((r) => r.status === "proposee" && bounded(r).clipped).length} recommandation(s) hors bornes en attente de décision humaine.</p>`)}
+        <p class="muted">Mode actuel : ${ui.ratAuto ? badge("Automatique borné", "ok") : badge("Conseil (validation humaine)", "outline")} · ${S.recos.filter((r) => r.status === "proposee" && bounded(r).clipped).length} recommandation(s) hors bornes en attente de décision humaine.</p>`)}
       <div class="cols">
         <section><h2>Prévision de la demande — taux d'occupation</h2>${columns(days.map(fd), forecast, (v) => v + " %")}<p class="muted">Modèle de séries temporelles simulé (pick-up, saisonnalité, événements, concurrence). Repli : moyenne historique.</p></section>
         <section><h2>Rate shopping — Standard (fournisseur simulé)</h2>${tbl(["Établissement", ...daysFrom(today, 7).map((d) => "#" + fd(d))], [
@@ -339,34 +349,51 @@
     const st = staysOn(today), rev = st.reduce((s, r) => s + r.rate, 0), sold = st.length, avail = sellableRooms()
     const totalRev = S.channels.reduce((s, c) => s + c.revenue, 0), direct = ch("direct").revenue
     const gen = S.recos.length, acc = S.recos.filter((r) => ["acceptee", "modifiee"].includes(r.status)).length
-    const days = daysFrom(today, HORIZON)
-    return cards([
-      kpi("ADR", money(sold ? rev / sold : 0), "revenu hébergement / chambres vendues (nuit du jour)"),
-      kpi("RevPAR", money(rev / avail), `revenu hébergement / ${avail} chambres disponibles`),
-      kpi("Taux d'occupation", pct((sold / avail) * 100), `${sold} chambres vendues ce soir`),
-      kpi("Pick-up 7 jours", S.pickup.reduce((s, x) => s + x, 0), `réservations nettes, dont ${S.pickup[6]} aujourd'hui`),
-      kpi("Part de la vente directe", pct((direct / totalRev) * 100), "revenu direct / revenu total du mois"),
-      kpi("Acceptation des recos IA", gen ? pct((acc / gen) * 100) : "—", `${acc} acceptée(s) sur ${gen} générée(s)`),
-    ]) + `<div class="cols">
-      <section><h2>Coût de distribution par canal (mois en cours, exemple)</h2>${tbl(["Canal", "#Revenu", "#Commission", "#Coût"], S.channels.map((c) => [esc(c.name), money(c.revenue), c.commission + " %", money((c.revenue * c.commission) / 100)]),
-        "", `<tfoot><tr><td>Total</td><td class="num">${money(totalRev)}</td><td class="num">${pct((S.channels.reduce((s, c) => s + (c.revenue * c.commission) / 100, 0) / totalRev) * 100)}</td><td class="num">${money(S.channels.reduce((s, c) => s + (c.revenue * c.commission) / 100, 0))}</td></tr></tfoot>`)}</section>
-      <section><h2>Revenu par canal</h2>${bars(S.channels.map((c) => ({ label: c.name.replace(" (simulé)", ""), value: c.revenue })), money)}</section>
+    const days = daysFrom(today, HORIZON), occ = days.map((d) => Math.round(occOn(d) * 100))
+    const cost = (c) => (c.revenue * c.commission) / 100, totalCost = S.channels.reduce((s, c) => s + cost(c), 0)
+    const short = (c) => c.name.replace(" (simulé)", "")
+    return `<div class="grid g4" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))">
+      ${stat({ label: "ADR", value: money(sold ? rev / sold : 0), icon: "tag", hint: "revenu hébergement / chambres vendues (nuit du jour)" })}
+      ${stat({ label: "RevPAR", value: money(rev / avail), icon: "trend", hint: `revenu hébergement / ${avail} chambres disponibles` })}
+      ${stat({ label: "Taux d'occupation", value: pct((sold / avail) * 100), icon: "bed", hint: `${sold} chambres vendues ce soir · 14 jours en courbe`, trend: occ })}
+      ${stat({ label: "Pick-up 7 jours", value: String(S.pickup.reduce((s, x) => s + x, 0)), icon: "zap", hint: `réservations nettes, dont ${S.pickup[6]} aujourd'hui`, trend: S.pickup })}
+      ${stat({ label: "Part de la vente directe", value: pct((direct / totalRev) * 100), icon: "globe", hint: "revenu direct / revenu total du mois", route: "rat-distribution/moteur" })}
+      ${stat({ label: "Acceptation des recos IA", value: gen ? pct((acc / gen) * 100) : "—", icon: "brain", hint: `${acc} acceptée(s) sur ${gen} générée(s)`, route: "rat-tarifs/revenue" })}
     </div>
-    <h2>Taux d'occupation à venir (réservations fermes)</h2>${columns(days.map(fd), days.map((d) => Math.round(occOn(d) * 100)), (v) => v + " %")}`
+    <div class="dash" style="margin-top:16px">
+      <div class="w8">${section("Taux d'occupation à venir (réservations fermes)", lineChart(days.map(fd), [{ name: "Occupation (%)", values: occ }], { fmt: (v) => Math.round(v) + " %", max: 100 }))}</div>
+      <div class="w4">${section("Revenu par canal", donut(S.channels.map((c) => ({ label: short(c), value: c.revenue })), { fmt: money, center: shortNum(totalRev), sub: "FCFA · mois" }))}</div>
+      <div class="w8">${section("Coût de distribution par canal (mois en cours, exemple)", tbl(["Canal", "#Revenu", "#Commission", "#Coût"], S.channels.map((c) => [esc(c.name), money(c.revenue), c.commission + " %", money(cost(c))]),
+        "", `<tfoot><tr><td>Total</td><td class="num">${money(totalRev)}</td><td class="num">${pct((totalCost / totalRev) * 100)}</td><td class="num">${money(totalCost)}</td></tr></tfoot>`))}</div>
+      <div class="w4">${section("Commissions payées", bars(S.channels.map((c) => ({ label: short(c), value: cost(c) })).sort((a, b) => b.value - a.value), shortNum))}</div>
+    </div>`
   }
 
   function journalTab() {
     return `<p class="muted">Tous les changements de tarifs, restrictions et inventaire : qui, quand, source (EF-RAT-016).</p>
-      ${tbl(["Date", "Auteur", "Source", "Changement"], S.log.map((l) => [esc(l.at), esc(l.who), badge(l.source, l.source === "IA" ? "outline" : l.source === "Canal" ? "dark" : ""), esc(l.what)]))}`
+      ${tbl(["Date", "Auteur", "Source", "Changement"], S.log.map((l) => [esc(l.at), esc(l.who), badge(l.source, l.source === "IA" ? "info" : l.source === "Canal" ? "outline" : "ok"), esc(l.what)]))}`
   }
 
   function canauxTab() {
-    return tbl(["Canal", "Type", "#Commission", "Synchro ARI", "Dernière synchro", "#Messages en file", ""], S.channels.map((c) => [
+    const okN = S.channels.filter((c) => c.status === "ok").length, queue = S.channels.reduce((s, c) => s + c.queue, 0)
+    const totalRev = S.channels.reduce((s, c) => s + c.revenue, 0), cost = S.channels.reduce((s, c) => s + (c.revenue * c.commission) / 100, 0)
+    const short = (c) => c.name.replace(" (simulé)", "")
+    return `<div class="grid g4">
+        ${stat({ label: "Canaux à jour", value: `${okN}/${S.channels.length}`, icon: "plug", hint: okN === S.channels.length ? "toutes les connexions répondent" : `${S.channels.length - okN} en échec` })}
+        ${stat({ label: "Messages ARI en file", value: String(queue), icon: "refresh", hint: "prix, restrictions, disponibilités" })}
+        ${stat({ label: "Revenu des canaux", value: money(totalRev), icon: "coins", hint: "mois en cours (exemple)", route: "rat-tarifs/kpi" })}
+        ${stat({ label: "Coût de distribution", value: pct((cost / totalRev) * 100), icon: "wallet", hint: `${money(cost)} de commissions`, good: false })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w12">${section("Canaux et synchronisation", tbl(["Canal", "Type", "#Commission", "Synchro ARI", "Dernière synchro", "#Messages en file", ""], S.channels.map((c) => [
       `<strong>${esc(c.name)}</strong>`, esc(c.kind), c.commission + " %",
-      c.status === "ok" ? badge("À jour", "on") : badge(`Échec depuis ${c.failedFor} min`, "dark"), esc(c.lastSync), c.queue,
+      c.status === "ok" ? badge("À jour", "ok") : badge(`Échec depuis ${c.failedFor} min`, "bad"), esc(c.lastSync), c.queue ? badge(String(c.queue), "warn") : "0",
       `<span class="row" style="flex-wrap:nowrap">${c.status === "echec" ? btn("Rejouer", `A.rat.replay(${q(c.id)})`, "sm") : ""}${btn("Resynchro complète", `A.rat.fullSync(${q(c.id)})`, "ghost sm")}</span>`,
-    ])) + `<p class="muted">Modifier un prix ou une restriction ajoute des messages ARI dans la file de chaque canal. En cas d'échec, la file est rejouée ; au-delà de 5 minutes, le distribution manager est alerté. Connexions simulées.</p>
-      ${card("Simuler une panne", `<p class="muted" style="margin-top:0">Pour la démonstration : coupe la connexion de l'OTA Exemple A.</p>${btn("Couper OTA Exemple A", "A.rat.breakChannel('otaA')", "ghost")}`)}`
+    ])) + `<p class="muted">Modifier un prix ou une restriction ajoute des messages ARI dans la file de chaque canal. En cas d'échec, la file est rejouée ; au-delà de 5 minutes, le distribution manager est alerté. Connexions simulées.</p>`)}</div>
+        <div class="w4">${section("Revenu par canal", donut(S.channels.map((c) => ({ label: short(c), value: c.revenue })), { fmt: money, center: shortNum(totalRev), sub: "FCFA · mois" }))}</div>
+        <div class="w4">${section("Commission par canal", bars(S.channels.map((c) => ({ label: short(c), value: c.commission })).sort((a, b) => b.value - a.value), (v) => v + " %"))}</div>
+        <div class="w4">${section("Simuler une panne", `<p class="muted" style="margin-top:0">Pour la démonstration : coupe la connexion de l'OTA Exemple A.</p>${btn("Couper OTA Exemple A", "A.rat.breakChannel('otaA')", "ghost")}`)}</div>
+      </div>`
   }
 
   function pariteTab() {
@@ -374,7 +401,7 @@
     return `<p class="muted">Contrôle de la parité tarifaire contractuelle : prix BAR Standard du ${fd(d)} observé sur chaque canal (RG-RAT-06, observation simulée).</p>
       ${tbl(["Canal", "#Prix de référence", "#Prix observé", "#Écart", "Parité", ""], S.channels.filter((c) => c.observed != null).map((c) => {
         const gap = c.observed - ref
-        return [esc(c.name), money(ref), money(c.observed), (gap > 0 ? "+" : "") + money(gap), gap === 0 ? badge("Respectée", "on") : badge("Écart : alerte", "dark"),
+        return [esc(c.name), money(ref), money(c.observed), (gap > 0 ? "+" : "") + money(gap), gap === 0 ? badge("Respectée", "ok") : badge("Écart : alerte", "bad"),
           gap === 0 ? "" : btn("Corriger (resynchro)", `A.rat.fixParity(${q(c.id)})`, "ghost sm")]
       }))}
       <h2>Mapping des types de chambre par canal (EF-RAT-010)</h2>
@@ -387,7 +414,7 @@
     return `<p class="muted">Réservations, modifications et annulations envoyées par les canaux, transmises au module Réservations (EF-RAT-009). Contrôle d'inventaire avant intégration (ENF-RAT-03).</p>
       ${tbl(["Réf. canal", "Canal", "Nature", "Client", "Type", "Séjour", "#Tarif", "Statut", ""], S.inbox.map((x) => [
         esc(x.id), esc(ch(x.channel).name), esc(x.kind), esc(x.guest || (R(x.ref) ? G(R(x.ref).guest).name : "—")), esc(T(x.type).label), `${fd(x.from)} → ${fd(x.to)}`, money(x.rate),
-        x.status === "recue" ? badge("À intégrer", "") : x.status === "rejetee" ? badge("Rejetée", "dark") : badge(x.resId ? `Intégrée · ${x.resId}` : "Intégrée", "on"),
+        x.status === "recue" ? badge("À intégrer", "warn") : x.status === "rejetee" ? badge("Rejetée", "bad") : badge(x.resId ? `Intégrée · ${x.resId}` : "Intégrée", "ok"),
         x.status === "recue" ? btn("Transmettre aux réservations", `A.rat.ingest(${q(x.id)})`, "sm") : x.resId ? `<button class="link" onclick="go('reservations')">Voir</button>` : "",
       ]))}`
   }
@@ -480,7 +507,7 @@
       if (a === b) out.innerHTML = `<p class="muted">Choisissez deux promotions différentes.</p>`
       else if (!a.active || !b.active) out.innerHTML = `<div class="err">${esc((!a.active ? a : b).code)} est inactive.</div>`
       else if (!a.cumul && !b.cumul) out.innerHTML = `<div class="err">${esc(a.code)} et ${esc(b.code)} ne sont pas cumulables : seule la plus avantageuse (−${Math.max(a.pct, b.pct)} %) s'applique.</div>`
-      else out.innerHTML = `<p>${badge("Cumul autorisé", "on")} Remise totale −${a.pct + b.pct} %, dans la limite du plancher.</p>`
+      else out.innerHTML = `<p>${badge("Cumul autorisé", "ok")} Remise totale −${a.pct + b.pct} %, dans la limite du plancher.</p>`
     },
     toggleStop(type, d) {
       const k = `${type}|${d}`, x = (S.restr[k] = S.restr[k] || {})

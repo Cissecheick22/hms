@@ -166,7 +166,7 @@
   Object.keys(S.prefs).forEach(syncPrefs)
   const prefTags = (id) => {
     const p = prefsOf(id), e = Object.entries(p).filter(([, v]) => v)
-    return e.length ? e.map(([k, v]) => badge(`${prefLabel(k)} : ${v}`, k === "allergies" ? "dark" : "")).join(" ") : `<span class="muted">Aucune préférence structurée</span>`
+    return e.length ? e.map(([k, v]) => badge(`${prefLabel(k)} : ${v}`, k === "allergies" ? "bad" : "info")).join(" ") : `<span class="muted">Aucune préférence structurée</span>`
   }
   const prop = (pid) => S.props.find((x) => x.id === pid)
   const tenantId = (id) => "CLI-" + String(1000 + Number(String(id).replace(/\D/g, "") || 0)).padStart(5, "0")
@@ -219,25 +219,33 @@
       if (nights(r.from, r.to) >= 3) return "Forfait Détente : massage 60 min à −20 %"
       return "Petit-déjeuner pour 9 000 FCFA au lieu de 12 000"
     }
-    return cards([
-      kpi("Clients récurrents", pct((recurring / gs.length) * 100), `${recurring} clients avec au moins 2 séjours`),
-      kpi("Valeur vie client (CLV)", money(clvAvg), "moyenne prévisionnelle (exemple)"),
-      kpi("Membres fidélité actifs", active, `séjour sur 12 mois, ${Object.keys(S.accounts).length} membres`),
-      kpi("Opt-in marketing", pct((optin / gs.length) * 100), "au moins un canal consenti"),
-      kpi("NPS post-séjour", (nps > 0 ? "+" : "") + nps, `${scores.length} réponses`),
-    ]) + `<h2>Personnalisation et next-best-offer</h2>
-      ${aiBox("Offres recommandées pour les séjours en cours et à venir", "Recommandations calculées à partir du profil, du séjour et du niveau de fidélité. Les clients sans consentement au profilage IA reçoivent les règles marketing standard (repli).")}
-      ${tbl(["Client", "Séjour", "Profilage IA", "Offre proposée", ""], targets.map((r) => {
+    const tiers = S.tiers.map((t) => ({ label: t.code, value: Object.values(S.accounts).filter((a) => a.tier === t.code).length })).filter((x) => x.value)
+    const scored = preds.filter((x) => cons(x.g.id).ia)
+    const bucket = (x) => (x.churn >= 50 ? "Réactivation" : x.clv > 1000000 ? "Fidéliser" : "Développer")
+    const buckets = ["Fidéliser", "Développer", "Réactivation"].map((label) => ({ label, value: scored.filter((x) => bucket(x) === label).length })).filter((x) => x.value)
+    const npsSeries = [...S.reviews].sort((a, b) => (a.date < b.date ? -1 : 1)).map((r) => r.nps)
+    return `<div class="grid g4" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))">
+      ${stat({ label: "Clients récurrents", value: pct((recurring / gs.length) * 100), icon: "refresh", hint: `${recurring} clients avec au moins 2 séjours`, route: "crm/segments" })}
+      ${stat({ label: "Valeur vie client (CLV)", value: money(clvAvg), icon: "coins", hint: "moyenne prévisionnelle (exemple)" })}
+      ${stat({ label: "Membres fidélité actifs", value: String(active), icon: "heart", hint: `séjour sur 12 mois, ${Object.keys(S.accounts).length} membres`, route: "crm/fidelite" })}
+      ${stat({ label: "Opt-in marketing", value: pct((optin / gs.length) * 100), icon: "mail", hint: "au moins un canal consenti", route: "crm-relation/rgpd" })}
+      ${stat({ label: "NPS post-séjour", value: (nps > 0 ? "+" : "") + nps, icon: "star", hint: `${scores.length} réponses · notes en courbe`, trend: npsSeries, route: "crm/avis" })}
+    </div>
+    <div class="dash" style="margin-top:16px">
+      <div class="w8">${section("Personnalisation et next-best-offer", aiBox("Offres recommandées pour les séjours en cours et à venir", "Recommandations calculées à partir du profil, du séjour et du niveau de fidélité. Les clients sans consentement au profilage IA reçoivent les règles marketing standard (repli).")
+      + tbl(["Client", "Séjour", "Profilage IA", "Offre proposée", ""], targets.map((r) => {
         const g = G(r.guest), ok = cons(g.id).ia, sent = (ui.crmOffers || []).includes(r.id)
-        return [guestLink(g.id) + vip(g), `${esc(r.id)} · ${fd(r.from)} → ${fd(r.to)}`, ok ? badge("Consenti", "on") : badge("Refusé", "outline"),
+        return [guestLink(g.id) + vip(g), `${esc(r.id)} · ${fd(r.from)} → ${fd(r.to)}`, ok ? badge("Consenti", "ok") : badge("Refusé", "outline"),
           ok ? esc(offer(r)) : `<span class="muted">Règle standard : boisson de bienvenue</span>`,
-          sent ? badge("Proposée", "on") : btn("Proposer", `A.crm.offer(${q(r.id)})`, "ghost sm")]
-      }), "Aucun séjour.")}
-      <h2>Valeur client et risque d'attrition</h2>
-      ${aiBox("Prédiction (modèle simulé)", "Valeur vie prévisionnelle et probabilité de non-retour sous 12 mois, utilisées pour cibler les campagnes de réactivation. Calcul limité aux profils ayant consenti au profilage.")}
-      ${tbl(["Client", "Niveau", "#CA cumulé", "#CLV prévisionnelle", "#Risque d'attrition", "Segment suggéré"], preds.filter((x) => cons(x.g.id).ia).sort((a, b) => b.clv - a.clv).map((x) => [
+          sent ? badge("Proposée", "ok") : btn("Proposer", `A.crm.offer(${q(r.id)})`, "ghost sm")]
+      }), "Aucun séjour."))}</div>
+      <div class="w4">${section("Membres par niveau", donut(tiers, { fmt: (v) => v + " membre(s)", center: String(Object.keys(S.accounts).length), sub: "membres" }), btn("Programme", "go('crm/fidelite')", "ghost sm"))}</div>
+      <div class="w8">${section("Valeur client et risque d'attrition", aiBox("Prédiction (modèle simulé)", "Valeur vie prévisionnelle et probabilité de non-retour sous 12 mois, utilisées pour cibler les campagnes de réactivation. Calcul limité aux profils ayant consenti au profilage.")
+      + tbl(["Client", "Niveau", "#CA cumulé", "#CLV prévisionnelle", "#Risque d'attrition", "Segment suggéré"], scored.sort((a, b) => b.clv - a.clv).map((x) => [
         guestLink(x.g.id) + vip(x.g), esc(acct(x.g.id)?.tier || "Non membre"), money(revenueOf(x.g.id)), money(x.clv), x.churn + " %",
-        x.churn >= 50 ? badge("Réactivation", "dark") : x.clv > 1000000 ? badge("Fidéliser", "on") : badge("Développer", "outline")]))}`
+        x.churn >= 50 ? badge("Réactivation", "warn") : x.clv > 1000000 ? badge("Fidéliser", "ok") : badge("Développer", "info")])))}</div>
+      <div class="w4">${section("Segments suggérés par l'IA", donut(buckets, { fmt: (v) => v + " client(s)", center: String(scored.length), sub: "profils" }) + `<p class="muted" style="margin:8px 0 0">Profils ayant consenti au profilage (simulé).</p>`)}</div>
+    </div>`
   }
 
   function profilTab(p) {
@@ -252,16 +260,16 @@
     const right = card("", `<div class="row between"><span class="big">${esc(g.name)}</span><span class="row">${vip(g)}${btn("Fiche réception", `go('clients/${esc(id)}')`, "ghost sm")}</span></div>
       <div class="muted">Profil unique ${esc(tenantId(id))} au niveau du tenant « ${esc(S.tenant)} », partagé entre ${S.props.length} établissements selon les consentements · EF-CRM-001</div>
       <div class="row" style="margin-top:10px"><label for="crm-viewer">Consulter depuis</label>${select("crm-viewer", S.props.map((x) => [x.id, `${x.name} (${x.city})`]), viewer, `onchange="ui.crmViewer=this.value;render()"`)}
-        ${c.groupe ? badge("Partage groupe consenti", "on") : badge("Partage groupe refusé", "outline")}
+        ${c.groupe ? badge("Partage groupe consenti", "ok") : badge("Partage groupe refusé", "outline")}
         ${btn(c.groupe ? "Retirer le partage groupe" : "Enregistrer le consentement « partage groupe »", `A.crm.consent(${q(id)}, 'groupe', ${!c.groupe})`, "ghost sm")}</div>
       ${hidden ? `<div class="err" style="margin-top:10px">${hidden} séjour(s) dans d'autres établissements masqué(s) : consentement « partage groupe » absent (RG-CRM-01).</div>` : ""}
 
       <h3>Historique et valeur client</h3>
-      <div class="grid">${kpi("CA cumulé", money(ca), "séjours visibles, extras inclus")}${kpi("Dépenses annexes", money(spend), "restaurant, bar, services")}${kpi("Séjours", vis.filter((r) => !["annulee", "noshow", "deloge"].includes(r.status)).length, "valides, tous établissements visibles")}${kpi("Fidélité", a ? `${a.tier} · ${a.points.toLocaleString("fr-FR")} pts` : "Non membre", a ? a.no : "")}</div>
+      <div class="grid g4">${stat({ label: "CA cumulé", value: money(ca), icon: "coins", hint: "séjours visibles, extras inclus", trend: vis.length > 1 ? [...vis].reverse().map((r) => r.amount) : null })}${stat({ label: "Dépenses annexes", value: money(spend), icon: "utensils", hint: "restaurant, bar, services" })}${stat({ label: "Séjours", value: String(vis.filter((r) => !["annulee", "noshow", "deloge"].includes(r.status)).length), icon: "bed", hint: "valides, tous établissements visibles" })}${stat({ label: "Fidélité", value: a ? `${a.tier} · ${a.points.toLocaleString("fr-FR")} pts` : "Non membre", icon: "heart", hint: a ? a.no : "" })}</div>
       ${tbl(["Séjour", "Établissement", "Dates", "Chambre", "Statut", "#Dépenses annexes", "#Total"], vis.map((r) => [esc(r.id), esc(prop(r.prop).name), `${fd(r.from)}/${r.from.slice(2, 4)} → ${fd(r.to)}`, esc(r.room), pill(STATUS, r.status), money(Math.max(0, r.extras)), money(r.amount)]), "Aucun séjour visible.")}
       <h3>Avis et réclamations</h3>
       ${tbl(["Date", "Nature", "Détail", "Suite"], [
-        ...revs.map((r) => [fd(r.date) + "/" + r.date.slice(2, 4), badge("Avis NPS " + r.nps, r.nps >= 9 ? "on" : r.nps <= 6 ? "dark" : ""), esc(r.text), r.reply ? "Réponse publiée" : `<button class="link" onclick="go('crm/avis')">Répondre</button>`]),
+        ...revs.map((r) => [fd(r.date) + "/" + r.date.slice(2, 4), badge("Avis NPS " + r.nps, r.nps >= 9 ? "ok" : r.nps <= 6 ? "bad" : "warn"), esc(r.text), r.reply ? "Réponse publiée" : `<button class="link" onclick="go('crm/avis')">Répondre</button>`]),
         ...comps.map((x) => [fd(x.opened) + "/" + x.opened.slice(2, 4), badge("Réclamation " + x.cat, "outline"), esc(x.desc), x.status === "resolue" ? `Résolue${x.comp ? " · " + money(x.comp) : ""}` : `<button class="link" onclick="go('crm-relation/reclamations')">${esc(x.status)}</button>`]),
       ], "Aucun avis ni réclamation.")}
       <p class="muted">EF-CRM-004</p>
@@ -270,7 +278,7 @@
       <div class="tags">${prefTags(id)}</div>
       ${form([...PREF_CATS.map(([k, l, opts]) => field("crm-p-" + k, l, opts ? select("crm-p-" + k, opts.map((o) => [o, o || "—"]), prefsOf(id)[k] || "") : input("crm-p-" + k, prefsOf(id)[k] || "", k === "allergies" ? 'placeholder="Ex. arachides, gluten"' : ""))),
         `<div class="full row">${btn("Enregistrer les préférences", `A.crm.savePrefs(${q(id)})`)}<span class="muted">Signalées sur chaque réservation, au check-in et au housekeeping · EF-CRM-003</span></div>`])}
-      ${up.length ? tbl(["Réservation à venir", "Dates", "Signalement"], up.map((r) => [esc(r.id), `${fd(r.from)} → ${fd(r.to)}`, prefTags(id) + (S.prefSent[r.id] ? " " + badge("Transmis HK et cuisine", "on") : "")])) : ""}
+      ${up.length ? tbl(["Réservation à venir", "Dates", "Signalement"], up.map((r) => [esc(r.id), `${fd(r.from)} → ${fd(r.to)}`, prefTags(id) + (S.prefSent[r.id] ? " " + badge("Transmis HK et cuisine", "ok") : "")])) : ""}
 
       <h3>Statut VIP et consignes</h3>
       ${form([
@@ -287,7 +295,7 @@
     const vips = list.filter((r) => G(r.guest).vip)
     const late = vips.filter((r) => r.from === today && (!vipTask(r.id).gift || !vipTask(r.id).welcome))
     const allergies = list.filter((r) => prefsOf(r.guest).allergies)
-    return cards([kpi("Arrivées J à J+3", list.length, "réservations confirmées"), kpi("Arrivées VIP", vips.length, "alertes accueil et cadeau"), kpi("Allergies déclarées", allergies.length, "à signaler à la cuisine")])
+    return `<div class="grid g4">${stat({ label: "Arrivées J à J+3", value: String(list.length), icon: "key", hint: "réservations confirmées" })}${stat({ label: "Arrivées VIP", value: String(vips.length), icon: "star", hint: "alertes accueil et cadeau" })}${stat({ label: "Allergies déclarées", value: String(allergies.length), icon: "alert", hint: "à signaler à la cuisine" })}</div>`
       + late.map((r) => `<div class="err" style="margin-top:10px">Alerte VIP : ${esc(G(r.guest).name)} (${esc(S.vip[r.guest]?.level || "VIP")}) arrive aujourd'hui, ${[!vipTask(r.id).gift && "cadeau non préparé", !vipTask(r.id).welcome && "accueil non confirmé"].filter(Boolean).join(" et ")}.</div>`).join("")
       + `<h2>Alertes VIP</h2>`
       + tbl(["Arrivée", "Client", "Niveau", "Consigne d'accueil", "Cadeau", "Cadeau prêt", "Accueil fait"], vips.map((r) => {
@@ -299,7 +307,7 @@
       + `<p class="muted">Le bandeau VIP apparaît aussi sur l'arrivée et le check-in (US-CRM-01). EF-CRM-006</p>`
       + `<h2>Préférences à signaler</h2>`
       + tbl(["Arrivée", "Client", "Type", "Préférences", ""], list.map((r) => [`${fd(r.from)} · ${esc(r.id)}`, guestLink(r.guest) + vip(G(r.guest)), esc(T(r.type).label), prefTags(r.guest) + (G(r.guest).prefs.filter((x) => !PREF_RE.test(x)).length ? `<div class="muted">Notes : ${esc(G(r.guest).prefs.filter((x) => !PREF_RE.test(x)).join(", "))}</div>` : ""),
-        S.prefSent[r.id] ? badge("Transmis", "on") : btn("Transmettre au HK et à la cuisine", `A.crm.sendPrefs(${q(r.id)})`, "ghost sm")]), "Aucune arrivée.")
+        S.prefSent[r.id] ? badge("Transmis", "ok") : btn("Transmettre au HK et à la cuisine", `A.crm.sendPrefs(${q(r.id)})`, "ghost sm")]), "Aucune arrivée.")
       + `<p class="muted">Préférences transmises au housekeeping avant l'arrivée ; une allergie déclarée est signalée à la cuisine (simulé). EF-CRM-003</p>`
   }
 
@@ -316,10 +324,10 @@
         `<div class="full">${btn("Créer le segment", "A.crm.addSegment()")}</div>`,
       ]), 'style="margin-top:14px"')
     return `<p class="muted">Segmentation dynamique : les membres sont recalculés à chaque affichage (EF-CRM-011).</p>` + split(left, card("", `
-      <div class="row between"><span class="big">${esc(cur.name)}</span>${badge(ms.length + " membre(s)", "on")}</div>
+      <div class="row between"><span class="big">${esc(cur.name)}</span>${badge(ms.length + " membre(s)", "info")}</div>
       <p class="muted">Critères : ${esc(critText(cur.crit))}</p>
       ${tbl(["Client", "Nationalité", "Niveau", "#Séjours", "Consentements marketing"], ms.map((g) => [guestLink(g.id) + vip(g), esc(g.nationality || "—"), esc(acct(g.id)?.tier || "—"), staysOf(g.id).length,
-        CHANNELS.map(([c, l]) => (cons(g.id)[c] ? badge(l, "on") : badge(l, "outline"))).join(" ")]), "Aucun profil ne correspond.")}
+        CHANNELS.map(([c, l]) => (cons(g.id)[c] ? badge(l, "ok") : badge(l, "outline"))).join(" ")]), "Aucun profil ne correspond.")}
       <div class="row" style="margin-top:12px">${btn("Créer une campagne sur ce segment", `ui.crmCmpSeg=${q(cur.id)};go('crm/campagnes')`)}${btn("Exporter (CSV simulé)", `toast('Export : ${ms.filter((g) => CHANNELS.some(([c]) => cons(g.id)[c])).length} profil(s) consentant(s) sur ${ms.length}, les autres sont exclus (simulé)')`, "ghost")}</div>`))
   }
 
@@ -328,19 +336,19 @@
     const id = S.accounts[p[1]] ? p[1] : ids[0]
     const a = acct(id), g = G(id), t = tierOf(a.tier), next = S.tiers[tierRank(a.tier) + 1]
     const toCredit = D.reservations.filter((r) => r.guest === id && ["arrivee", "partie"].includes(r.status) && !S.credited.includes(r.id))
-    const left = `<h3>Membres</h3>` + listItems(ids.map((x) => ({ id: x, title: G(x).name, sub: `${acct(x).no} · ${acct(x).points.toLocaleString("fr-FR")} pts`, badge: " " + badge(acct(x).tier, tierRank(acct(x).tier) >= 2 ? "on" : "") })), id, "crm/fidelite")
+    const left = `<h3>Membres</h3>` + listItems(ids.map((x) => ({ id: x, title: G(x).name, sub: `${acct(x).no} · ${acct(x).points.toLocaleString("fr-FR")} pts`, badge: " " + badge(acct(x).tier, tierRank(acct(x).tier) >= 2 ? "info" : "outline") })), id, "crm/fidelite")
       + `<p class="muted">Règle d'accumulation : ${S.earn} point par tranche de 100 FCFA d'hébergement, crédité après check-out et folio soldé (RG-CRM-03) ; expiration après ${S.expiryMonths} mois d'inactivité. EF-CRM-009</p>`
       + `<h3>Niveaux</h3>` + tbl(["Niveau", "#Seuil 12 mois", "Avantages"], S.tiers.map((x) => [`<strong>${esc(x.code)}</strong>`, x.min.toLocaleString("fr-FR") + " pts", `<span class="muted">${esc(x.perks.join(" · "))}</span>`]))
-    const right = card("", `<div class="row between"><span class="big">${guestLink(id)}</span>${badge(a.tier, tierRank(a.tier) >= 2 ? "on" : "")}</div>
+    const right = card("", `<div class="row between"><span class="big">${guestLink(id)}</span>${badge(a.tier, tierRank(a.tier) >= 2 ? "info" : "outline")}</div>
       <div class="muted">Carte ${esc(a.no)} · dernière activité ${fd(a.last)}/${a.last.slice(2, 4)}</div>
-      <div class="grid" style="margin:14px 0">${kpi("Solde", a.points.toLocaleString("fr-FR") + " pts", "points échangeables")}${kpi("Cumul 12 mois", a.ytd.toLocaleString("fr-FR") + " pts", next ? `${(next.min - a.ytd).toLocaleString("fr-FR")} pts avant ${next.code}` : "niveau maximal")}</div>
+      <div class="grid" style="margin:14px 0">${stat({ label: "Solde", value: a.points.toLocaleString("fr-FR") + " pts", icon: "coins", hint: "points échangeables" })}${stat({ label: "Cumul 12 mois", value: a.ytd.toLocaleString("fr-FR") + " pts", icon: "trend", hint: next ? `${(next.min - a.ytd).toLocaleString("fr-FR")} pts avant ${next.code}` : "niveau maximal" })}</div>
       ${expiring(a) ? `<div class="err">Aucune activité depuis le ${fd(a.last)}/${a.last.slice(0, 4)} : ${a.points.toLocaleString("fr-FR")} points expirent après ${S.expiryMonths} mois d'inactivité (RG-CRM-04).</div>` : ""}
-      <h3>Avantages du niveau</h3><div class="tags">${t.perks.map((x) => badge(x)).join(" ")}</div>
+      <h3>Avantages du niveau</h3><div class="tags">${t.perks.map((x) => badge(x, "outline")).join(" ")}</div>
       ${tierRank(a.tier) >= 2 ? `<p class="muted">Droit d'accès « salon exécutif » transmis au contrôle d'accès pour les séjours en cours (EF-CRM-010).</p>` : ""}
       <h3>Séjours à créditer</h3>
       ${tbl(["Séjour", "Dates", "#Points", "État du folio", ""], toCredit.map((r) => {
         const settled = r.status === "partie" && folio(r).balance <= 0
-        return [esc(r.id), `${fd(r.from)} → ${fd(r.to)}`, pointsFor(r).toLocaleString("fr-FR"), r.status === "arrivee" ? badge("En séjour", "") : settled ? badge("Soldé", "on") : badge("Solde dû", "dark"),
+        return [esc(r.id), `${fd(r.from)} → ${fd(r.to)}`, pointsFor(r).toLocaleString("fr-FR"), r.status === "arrivee" ? badge("En séjour", "info") : settled ? badge("Soldé", "ok") : badge("Solde dû", "warn"),
           settled ? btn("Créditer", `A.crm.credit(${q(r.id)})`, "sm") : `<span class="muted">Crédit après check-out et folio soldé (RG-CRM-03)</span>`]
       }), "Aucun séjour en attente de crédit.")}
       <h3>Échanger des points</h3>
@@ -356,7 +364,7 @@
     const segOpt = S.segments.map((s) => [s.id, `${s.name} (${members(s).length})`])
     return tbl(["Réf.", "Campagne", "Segment", "Canal", "Statut", "#Envoyés", "#Exclus (consentement)", "#Ouvertures", "#Réservations", ""], S.campaigns.map((c) => [
       esc(c.id), `<strong>${esc(c.name)}</strong>`, esc(seg(c.segment)?.name || "—"), esc(Object.fromEntries(CHANNELS)[c.channel]),
-      c.status === "envoyee" ? badge(`Envoyée ${fd(c.date)}`, "on") : badge("Brouillon", "outline"), c.sent, c.excluded, c.opens, c.bookings,
+      c.status === "envoyee" ? badge(`Envoyée ${fd(c.date)}`, "ok") : badge("Brouillon", "outline"), c.sent, c.excluded, c.opens, c.bookings,
       c.status === "brouillon" ? btn("Envoyer (simulé)", `A.crm.send(${q(c.id)})`, "sm") : "",
     ])) + `<p class="muted">Envoi par plateformes e-mail, SMS et WhatsApp simulées. Seuls les profils ayant consenti au canal choisi reçoivent le message ; les autres sont exclus et comptés (EF-CRM-007, EF-CRM-011).</p>
       <h2>Nouvelle campagne</h2>
@@ -371,10 +379,12 @@
 
   function avisTab() {
     const byNps = (min, max) => S.reviews.filter((r) => r.nps >= min && r.nps <= max).length
-    return cards([kpi("Promoteurs (9-10)", byNps(9, 10), "avis post-séjour"), kpi("Passifs (7-8)", byNps(7, 8), ""), kpi("Détracteurs (0-6)", byNps(0, 6), "à traiter en priorité")])
+    const tot = S.reviews.length || 1, npsVal = Math.round(((byNps(9, 10) - byNps(0, 6)) / tot) * 100)
+    return `<div class="dash"><div class="w8"><div class="grid g4">${stat({ label: "Promoteurs (9-10)", value: String(byNps(9, 10)), icon: "star", hint: "avis post-séjour" })}${stat({ label: "Passifs (7-8)", value: String(byNps(7, 8)), icon: "message", hint: pct((byNps(7, 8) / tot) * 100) + " des avis" })}${stat({ label: "Détracteurs (0-6)", value: String(byNps(0, 6)), icon: "alert", hint: "à traiter en priorité" })}</div></div>
+      <div class="w4">${section("NPS post-séjour", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge(Math.max(0, npsVal), "NPS")}<div><div class="stat-val">${npsVal > 0 ? "+" : ""}${npsVal}</div><div class="muted">${S.reviews.length} avis (exemple)</div></div></div>`)}</div></div>`
       + `<p class="muted">Avis collectés après le séjour et reliés au profil (EF-CRM-014). Sentiment analysé par l'IA (simulé). Plateformes d'avis simulées.</p>`
       + S.reviews.map((r) => card("", `<div class="row between"><span>${guestLink(r.guest)} <span class="muted">· ${esc(r.source)} · ${fd(r.date)}/${r.date.slice(2, 4)}</span></span>
-          <span class="row">${badge("NPS " + r.nps, r.nps >= 9 ? "on" : r.nps <= 6 ? "dark" : "")}${badge("Sentiment : " + r.sentiment + " · IA", "outline")}</span></div>
+          <span class="row">${badge("NPS " + r.nps, r.nps >= 9 ? "ok" : r.nps <= 6 ? "bad" : "warn")}${badge("Sentiment : " + r.sentiment + " · IA", "outline")}</span></div>
         <p>${esc(r.text)}</p>
         ${r.reply ? `<p class="muted"><strong>Réponse de l'hôtel :</strong> ${esc(r.reply)}</p>` : `
           ${aiBox("Réponse proposée", draftReply(r))}
@@ -386,21 +396,32 @@
     : `Merci pour votre avis chaleureux. Toute l'équipe de ${D.hotel} se réjouit de vous accueillir à nouveau.`
 
   function reclamTab() {
-    const STAT = { ouverte: ["Ouverte", "dark"], "en cours": ["En cours", ""], resolue: ["Résolue", "on"] }
+    const STAT = { ouverte: ["Ouverte", "warn"], "en cours": ["En cours", "info"], resolue: ["Résolue", "ok"] }
     const open = S.complaints.filter((c) => c.status !== "resolue")
-    return cards([kpi("Réclamations ouvertes", open.length, "à traiter"), kpi("Compensations accordées", money(S.complaints.reduce((s, c) => s + c.comp, 0)), "gestes commerciaux (exemple)")])
-      + `<h2>Suivi</h2>` + tbl(["Réf.", "Client", "Séjour", "Catégorie", "Description", "Statut", "#Compensation", ""], S.complaints.map((c) => {
+    const byCat = Object.entries(S.complaints.reduce((m, c) => ((m[c.cat] = (m[c.cat] || 0) + 1), m), {})).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+    const byStatus = Object.entries(STAT).map(([k, [label]]) => ({ label, value: S.complaints.filter((c) => c.status === k).length }))
+    return `<div class="grid g4">
+        ${stat({ label: "Réclamations ouvertes", value: String(open.length), icon: "alert", hint: `${S.complaints.filter((c) => c.status === "ouverte").length} non prises en charge` })}
+        ${stat({ label: "Résolues", value: String(S.complaints.filter((c) => c.status === "resolue").length), icon: "check", hint: `sur ${S.complaints.length} réclamations` })}
+        ${stat({ label: "Compensations accordées", value: money(S.complaints.reduce((s, c) => s + c.comp, 0)), icon: "wallet", hint: "gestes commerciaux (exemple)" })}
+        ${stat({ label: "Avis négatifs", value: String(S.reviews.filter((r) => r.nps <= 6).length), icon: "message", hint: "NPS 0 à 6", route: "crm/avis" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+      <div class="w12">${section("Suivi", tbl(["Réf.", "Client", "Séjour", "Catégorie", "Description", "Statut", "#Compensation", ""], S.complaints.map((c) => {
         const r = c.res && R(c.res)
         return [esc(c.id), guestLink(c.guest) + vip(G(c.guest)), r ? `${esc(r.id)}${r.status === "arrivee" ? ` · ch. ${esc(r.room)}` : ""}` : "—", esc(c.cat), esc(c.desc), badge(...STAT[c.status]), c.comp ? money(c.comp) : "—",
           c.status === "resolue" ? "" : `<span class="row" style="flex-wrap:nowrap">${c.status === "ouverte" ? btn("Prendre en charge", `A.crm.cStatus(${q(c.id)}, 'en cours')`, "ghost sm") : ""}
             ${btn("Résoudre + geste", `A.crm.resolve(${q(c.id)})`, "sm")}</span>`]
-      })) + `<p class="muted">Une compensation sur un séjour en cours est imputée au folio du client (ligne négative) ; sinon un avoir est émis (EF-CRM-012).</p>
-      ${card("Nouvelle réclamation", form([
+      })) + `<p class="muted">Une compensation sur un séjour en cours est imputée au folio du client (ligne négative) ; sinon un avoir est émis (EF-CRM-012).</p>`)}</div>
+      <div class="w4">${section("Par statut", donut(byStatus, { fmt: (v) => v, center: String(S.complaints.length), sub: "réclamations" }))}</div>
+      <div class="w4">${section("Par catégorie", bars(byCat, (v) => v))}</div>
+      <div class="w4">${section("Nouvelle réclamation", form([
         field("crm-r-guest", "Client", select("crm-r-guest", D.guests.filter((g) => !g.erased).map((g) => [g.id, g.name]), "G5")),
         field("crm-r-cat", "Catégorie", select("crm-r-cat", ["Bruit", "Propreté", "Équipement", "Restauration", "Facturation", "Accueil"], "Propreté")),
         field("crm-r-desc", "Description", input("crm-r-desc", "", 'placeholder="Ce que le client signale"'), "full"),
         `<div class="full">${btn("Enregistrer", "A.crm.addComplaint()")}</div>`,
-      ]))}`
+      ]))}</div>
+      </div>`
   }
 
   function doublonsTab() {
@@ -411,7 +432,7 @@
         guestLink(d.match) + `<div class="muted">${esc(acct(d.match)?.tier || "non membre")}${acct(d.match) ? ` · ${acct(d.match).points.toLocaleString("fr-FR")} pts` : ""}</div>`,
         d.score + " %", `<span class="muted">${esc(d.reasons.join(", "))}</span>`,
         d.status === "a-traiter" ? `<span class="row" style="flex-wrap:nowrap">${btn("Fusionner", `A.crm.merge(${q(d.id)})`, d.score >= 80 ? "sm" : "ghost sm")}${btn("Distincts", `A.crm.distinct(${q(d.id)})`, "ghost sm")}</span>`
-          : d.status === "fusionne" ? badge("Fusionné", "on") : badge("Profils distincts", "outline"),
+          : d.status === "fusionne" ? badge("Fusionné", "ok") : badge("Profils distincts", "outline"),
       ]))
       + `<p class="muted">Une fusion conserve le niveau de fidélité le plus élevé et cumule les points (RG-CRM-05).</p>
       <h2>Historique des fusions (réversible)</h2>
@@ -419,13 +440,13 @@
   }
 
   function rgpdTab() {
-    const STAT = { "a-traiter": ["À traiter", ""], traitee: ["Traitée", "on"], bloquee: ["Bloquée", "dark"] }
+    const STAT = { "a-traiter": ["À traiter", "warn"], traitee: ["Traitée", "ok"], bloquee: ["Bloquée", "bad"] }
     const gs = D.guests.filter((g) => !g.erased)
     return `<h2>Demandes RGPD</h2>
       ${tbl(["Réf.", "Client", "Type", "Reçue", "Échéance légale", "Identité vérifiée", "Statut", ""], S.gdpr.map((x) => {
         const g = G(x.guest), left = nights(today, due(x))
         return [esc(x.id), g.erased ? esc(g.name) : guestLink(g.id), esc(x.type), fd(x.received), `${fd(due(x))}${x.status === "a-traiter" ? ` <span class="muted">(J-${left})</span>` : ""}`,
-          x.idOk ? badge("Oui", "on") : x.status === "a-traiter" ? `<label class="row" style="color:var(--ink)"><input type="checkbox" onchange="A.crm.idCheck(${q(x.id)}, this.checked)"> Vérifiée</label>` : "—",
+          x.idOk ? badge("Oui", "ok") : x.status === "a-traiter" ? `<label class="row" style="color:var(--ink)"><input type="checkbox" onchange="A.crm.idCheck(${q(x.id)}, this.checked)"> Vérifiée</label>` : "—",
           badge(...STAT[x.status]) + (x.note ? `<div class="muted">${esc(x.note)}</div>` : ""),
           x.status === "traitee" ? (x.closed ? `<span class="muted">Clôturée le ${fd(x.closed)}</span>` : "") : btn("Traiter", `A.crm.gdpr(${q(x.id)})`, "sm")]
       }))}

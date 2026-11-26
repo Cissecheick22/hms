@@ -9,6 +9,7 @@
   const TVA = 0.18, TAXE_SEJOUR = 1000 // taux d'exemple du moteur fiscal
   const NOV = "2026-11"
   const sum = (a) => a.reduce((s, x) => s + x, 0)
+  const st = (label, value, hint, icon = "chart", extra = {}) => stat({ label, value: String(value), hint, icon, ...extra })
   const mm = (n) => (Math.round(n / 1e5) / 10).toLocaleString("fr-FR") + " M FCFA"
   const num = (n) => (n ? Math.round(n).toLocaleString("fr-FR") : "")
   const ref9 = (s) => `<span class="muted">${esc(s)}</span>`
@@ -241,8 +242,8 @@
   const postEntry = (e) => { e.status = "validee"; e.no = nextNo(e.j); return e }
   const addEntry = (o) => { const e = { id: uid("E"), by: ui.finUser, status: "validee", ...o }; F.entries.push(e); if (e.status === "validee") postEntry(e); return e }
   const periodOf = (date) => F.periods[(date || "").slice(0, 7)]
-  const ST = { validee: ["Validée", "on"], a_valider: ["À valider", "outline"], brouillard: ["Brouillard", ""] }
-  const stBadge = (e) => badge(ST[e.status][0], ST[e.status][1]) + (e.revBy ? " " + badge("Extournée", "dark") : "") + (e.revOf ? " " + badge("Extourne", "outline") : "")
+  const ST = { validee: ["Validée", "ok"], a_valider: ["À valider", "warn"], brouillard: ["Brouillard", "outline"] }
+  const stBadge = (e) => badge(ST[e.status][0], ST[e.status][1]) + (e.revBy ? " " + badge("Extournée", "bad") : "") + (e.revOf ? " " + badge("Extourne", "info") : "")
   const accLink = (n) => `<button class="link" onclick="go('fin-compta/grandlivre/${esc(n)}')">${esc(n)}</button>`
   const entryLink = (e) => `<button class="link" onclick="go('fin-compta/journaux/${esc(e.id)}')">${esc(ref(e))}</button>`
   const treasury = () => bal("52") + bal("55") + bal("57")
@@ -450,24 +451,30 @@
       return pageHead("Tableau de bord financier", "Pilotage comptable et financier de l'entité, au 26/11/2026. Montants d'exemple.", btn("Saisir une écriture", "go('fin-compta/saisie')"))
         + `<div class="row" style="margin-bottom:14px">${chips("finEntity", Object.fromEntries(F.entities.map((e) => [e.code, e.name])))}</div>`
         + `<p class="muted" style="margin-top:-6px">${esc(ent.name)} · devise fonctionnelle ${esc(ent.cur)} · ${esc(ent.ref)} · ${esc(ent.fy)} ${ref9("EF-FIN-002")}${ent.code !== "HEX" ? " · maquette : seules les données de Hôtel Exemple SARL sont détaillées." : ""}</p>`
-        + cards([
-          kpi("GOP de novembre", mm(gop), `GOPPAR ${money(gop / avail)} · format USALI`),
-          kpi("Délai de clôture", "4 j ouvrés", "Octobre 2026 · objectif ≤ 5 j"),
-          kpi("Rapprochement automatique", pct(autoRate()), "Lignes de relevé · objectif > 90 %"),
-          kpi("DSO / DPO", `${Math.round(dso)} j / ${Math.round(dpo)} j`, "Délais clients / fournisseurs"),
-          kpi("Trésorerie disponible", mm(treasury()), `Prévue à 13 semaines : ${mm(fc[12].solde)}`),
-          kpi("Écart réel / budget (GOP)", pct(((gop - bgop) / bgop) * 100), `Budget ${mm(bgop)}`),
-        ])
-        + `<div class="cols"><section><h2>Contrôles permanents</h2>${tbl(["Contrôle", "État"], [
-          ["Balance générale équilibrée (RG-FIN-01)", ctl.balOk ? badge("OK", "on") : badge("Écart", "dark")],
-          ["Total actif = total passif (RG-FIN-06)", ctl.bilOk ? badge("OK", "on") : badge("Écart", "dark")],
+        + `<div class="grid g4">
+          ${st("GOP de novembre", mm(gop), `GOPPAR ${money(gop / avail)} · format USALI`, "trend", { delta: ((gop - bgop) / bgop) * 100, hint: `vs budget ${mm(bgop)} · GOPPAR ${money(gop / avail)}`, route: "fin-gestion/usali" })}
+          ${st("Trésorerie disponible", mm(treasury()), `Prévue à 13 semaines : ${mm(fc[12].solde)}`, "bank", { trend: fc.map((w) => w.solde), route: "fin-treso/prevision" })}
+          ${st("Rapprochement automatique", pct(autoRate()), "Lignes de relevé · objectif > 90 %", "refresh", { route: "fin-treso/rappro" })}
+          ${st("DSO / DPO", `${Math.round(dso)} j / ${Math.round(dpo)} j`, "Délais clients / fournisseurs", "clock", { route: "fin-tiers/clients" })}
+          ${st("Délai de clôture", "4 j ouvrés", "Octobre 2026 · objectif ≤ 5 j", "calendar", { trend: [6, 5, 5, 4], route: "fin-cloture/mensuelle" })}
+          ${st("Écart réel / budget (GOP)", pct(((gop - bgop) / bgop) * 100), `Budget ${mm(bgop)}`, "calc")}
+          ${st("Écritures à valider", F.entries.filter((e) => e.status === "a_valider").length, "saisies manuelles en attente", "filecheck", { route: "fin-compta/journaux" })}
+          ${st("Anomalies ouvertes", anomalies.length, "détection IA (simulé)", "alert")}
+        </div>
+        <div class="dash" style="margin-top:16px">
+          <div class="w8">${section("Prévision de trésorerie — 13 semaines", lineChart(fc.map((w) => fd(w.from)), [{ name: "Solde de fin de semaine", values: fc.map((w) => Math.max(0, w.solde)) }], { fmt: shortNum }), btn("Détail", "go('fin-treso/prevision')", "ghost sm"))}</div>
+          <div class="w4">${section("Recettes de novembre par département", donut(F.usali.map((x) => ({ label: x.d, value: x.rev })), { fmt: money, center: shortNum(sum(F.usali.map((x) => x.rev))), sub: "FCFA" }))}</div>
+          <div class="w6">${section("Résultat par département : réel et budget", bars(F.usali.flatMap((x) => [{ label: `${x.d} · réel`, value: Math.max(0, x.rev - x.cost) }, { label: `${x.d} · budget`, value: Math.max(0, x.brev - x.bcost) }]), money))}</div>
+          <div class="w6">${section("Contrôles permanents", tbl(["Contrôle", "État"], [
+          ["Balance générale équilibrée (RG-FIN-01)", ctl.balOk ? badge("OK", "ok") : badge("Écart", "bad")],
+          ["Total actif = total passif (RG-FIN-06)", ctl.bilOk ? badge("OK", "ok") : badge("Écart", "bad")],
           ["Écritures manuelles en attente de validation", String(F.entries.filter((e) => e.status === "a_valider").length)],
           ["Évènements non comptabilisés", String(F.events.filter((e) => e.status !== "generee").length)],
-          ["Période de novembre", F.periods[NOV] === "ouverte" ? badge("Ouverte", "outline") : badge("Clôturée", "dark")],
-        ])}</section>
-        <section><h2>Détection d'anomalies</h2>${anomalies.map((a) => aiBox("Anomalie détectée", a.text, btn("Examiner", `go('${a.route}')`, "ghost sm") + btn("Classer sans suite", `A.fin.dismiss(${q(a.id)})`, "ghost sm"))).join("<div style='height:10px'></div>") || `<p class="muted">Aucune anomalie ouverte.</p>`}</section></div>
-        <h2>Dernières écritures validées</h2>
-        ${tbl(["N°", "Date", "Journal", "Libellé", "Source", "#Montant"], posted().slice(-6).reverse().map((e) => [entryLink(e), fd(e.date), esc(e.j), esc(e.label), esc(e.src), money(total(e))]))}`
+          ["Période de novembre", F.periods[NOV] === "ouverte" ? badge("Ouverte", "info") : badge("Clôturée", "ok")],
+        ]))}</div>
+          <div class="w6">${section("Détection d'anomalies", anomalies.map((a) => aiBox("Anomalie détectée", a.text, btn("Examiner", `go('${a.route}')`, "ghost sm") + btn("Classer sans suite", `A.fin.dismiss(${q(a.id)})`, "ghost sm"))).join("<div style='height:10px'></div>") || `<p class="muted">Aucune anomalie ouverte.</p>`)}</div>
+          <div class="w6">${section("Dernières écritures validées", tbl(["N°", "Date", "Jnl", "Libellé", "#Montant"], posted().slice(-6).reverse().map((e) => [entryLink(e), fd(e.date), esc(e.j), esc(e.label), money(total(e))])), btn("Journaux", "go('fin-compta/journaux')", "ghost sm"))}</div>
+        </div>`
     },
 
     ndf: ndfView,
@@ -500,13 +507,17 @@
       const cum = (x) => cumulAt(x, "2026-11-01") + (deprDone() && x.status === "En service" && cumulAt(x, "2026-11-01") < x.base ? monthly(x) : 0)
       const ev = F.events.find((e) => e.kind === "depr")
       return pageHead("Immobilisations", "Registre, approche par composants, plans d'amortissement et dotations automatiques. Valeurs d'exemple.", btn(deprDone() ? "Dotations de novembre passées" : "Calculer les dotations de novembre", deprDone() ? "" : "A.fin.genEvent('EV-7')", deprDone() ? "ghost" : ""))
-        + cards([
-          kpi("Valeur brute", mm(sum(nb.map((x) => x.base))), `${nb.length} immobilisations en service`),
-          kpi("Amortissements cumulés", mm(sum(nb.map(cum))), "Au 30/11 si dotation passée"),
-          kpi("VNC", mm(sum(nb.map((x) => x.base - cum(x)))), "Valeur nette comptable"),
-          kpi("Dotation mensuelle", mm(sum(build.depr().filter((l) => l.d).map((l) => l.d))), ev.status === "generee" ? `Écriture ${ref(F.entries.find((e) => e.id === ev.entry))}` : "Non encore passée"),
-        ])
-        + split(`<h3>Registre</h3>${listItems(F.assets.map((x) => ({ id: x.id, title: x.label, sub: `${x.id} · ${x.acc} · ${money(x.base)}`, badge: x.status !== "En service" ? " " + badge(x.status, "dark") : "" })), a.id, "fin-immo")}`,
+        + `<div class="grid g4">
+          ${st("Valeur brute", mm(sum(nb.map((x) => x.base))), `${nb.length} immobilisations en service`, "building")}
+          ${st("Amortissements cumulés", mm(sum(nb.map(cum))), "Au 30/11 si dotation passée", "layers")}
+          ${st("VNC", mm(sum(nb.map((x) => x.base - cum(x)))), "Valeur nette comptable", "coins")}
+          ${st("Dotation mensuelle", mm(sum(build.depr().filter((l) => l.d).map((l) => l.d))), ev.status === "generee" ? `Écriture ${ref(F.entries.find((e) => e.id === ev.entry))}` : "Non encore passée", "calendar")}
+        </div>
+        <div class="dash" style="margin:16px 0">
+          <div class="w4">${section("Degré d'amortissement", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((sum(nb.map(cum)) / (sum(nb.map((x) => x.base)) || 1)) * 100, "Amorti")}<div><div class="stat-val">${mm(sum(nb.map(cum)))}</div><div class="muted">amortis sur ${mm(sum(nb.map((x) => x.base)))}</div></div></div>`)}</div>
+          <div class="w8">${section("Valeur nette comptable par immobilisation", bars(nb.map((x) => ({ label: x.label, value: x.base - cum(x) })).sort((x, y) => y.value - x.value).slice(0, 7), shortNum))}</div>
+        </div>`
+        + split(`<h3>Registre</h3>${listItems(F.assets.map((x) => ({ id: x.id, title: x.label, sub: `${x.id} · ${x.acc} · ${money(x.base)}`, badge: x.status !== "En service" ? " " + badge(x.status, "outline") : "" })), a.id, "fin-immo")}`,
           card(a.label, `<p class="muted">${esc(a.id)} · compte ${accLink(a.acc)} · amortissement ${accLink(a.amo)}${a.parent ? ` · composant de « ${esc(a.parent)} »` : ""}</p>
             ${tbl(["Élément", "#Valeur"], [["Valeur d'acquisition", money(a.base)], ["Mise en service", fd(a.start) + "/" + a.start.slice(0, 4)], ["Méthode (plan comptable)", `Linéaire sur ${a.years} ans`], ["Plan fiscal", esc(a.fiscal || "Identique au plan comptable")], ["Dotation mensuelle", money(monthly(a))], ["Cumul des amortissements", money(cum(a))], ["Valeur nette comptable", `<strong>${money(a.base - cum(a))}</strong>`], ["Statut", esc(a.status)]])}
             <h3>Plan d'amortissement (extrait)</h3>
@@ -541,7 +552,7 @@
       const ctl = controls()
       return pageHead("États financiers", "États SYSCOHADA révisé (système normal) générés depuis la balance, DSF et consolidation simulées. Situation provisoire au 26/11/2026.", btn("Exporter (PDF/Excel simulé)", "toast('Export simulé : états_financiers_2026_provisoire.pdf')", "ghost"))
         + subtabs("fin-etats", [["bilan", "Bilan"], ["resultat", "Compte de résultat"], ["flux", "Flux de trésorerie"], ["dsf", "DSF"], ["conso", "Consolidation"], ["export", "Contrôle fiscal et archivage"], ["erp", "Export ERP groupe"]], tab)
-        + (ctl.balOk && ctl.bilOk ? `<p class="muted">${badge("Contrôles OK", "on")} Balance équilibrée et actif = passif : publication autorisée ${ref9("RG-FIN-06")}</p>` : `<p class="err">Balance déséquilibrée ou actif ≠ passif : publication bloquée (RG-FIN-06).</p>`)
+        + (ctl.balOk && ctl.bilOk ? `<p class="muted">${badge("Contrôles OK", "ok")} Balance équilibrée et actif = passif : publication autorisée ${ref9("RG-FIN-06")}</p>` : `<p class="err">Balance déséquilibrée ou actif ≠ passif : publication bloquée (RG-FIN-06).</p>`)
         + ({ bilan: bilanView, resultat: resultatView, flux: fluxView, dsf: dsfView, conso: consoView, export: exportView, erp: erpView }[tab] || bilanView)()
     },
   }
@@ -551,7 +562,7 @@
     const list = F.accounts.filter((a) => ui.finCls === "tous" || a.cls === ui.finCls)
     return `<div class="cols"><section>
       ${chips("finCls", { tous: "Toutes", ...Object.fromEntries(Object.keys(CLASSES).map((k) => [k, "Classe " + k])) })}
-      ${tbl(["Compte", "Libellé", "Classe", "Contraintes"], list.map((a) => [accLink(a.num), esc(a.label) + (a.custom ? " " + badge("Ajouté", "outline") : ""), esc(a.cls + " · " + CLASSES[a.cls]),
+      ${tbl(["Compte", "Libellé", "Classe", "Contraintes"], list.map((a) => [accLink(a.num), esc(a.label) + (a.custom ? " " + badge("Ajouté", "info") : ""), esc(a.cls + " · " + CLASSES[a.cls]),
         [a.lett && "Lettrable", a.tiers && "Tiers obligatoire", a.ana && "Analytique obligatoire"].filter(Boolean).map((x) => badge(x, "outline")).join(" ")]))}
       </section><section>
       ${card("Ajouter un compte", `<p class="muted">Plan extensible par l'utilisateur ${ref9("EF-FIN-001")}. Le PCG et un plan IFRS sont disponibles pour les entités hors OHADA.</p>
@@ -567,8 +578,21 @@
     const e = p[0] && F.entries.find((x) => x.id === p[0])
     if (e) return entryDetail(e)
     const list = F.entries.filter((x) => ui.finJ === "tous" || x.j === ui.finJ || (ui.finJ === "attente" && x.status !== "validee")).slice().sort((a, b) => b.date.localeCompare(a.date))
-    const pend = F.entries.filter((x) => x.status !== "validee").length
-    return `${tbl(["Journal", "Libellé", "Type", "#Dernier n°", "Contrôle"], F.journals.map((j) => [esc(j.code), esc(j.label), esc(j.type), String(Math.max(0, ...F.entries.filter((x) => x.j === j.code && x.no).map((x) => x.no))), esc(j.must ? `Ligne ${j.must} obligatoire` : j.auto ? "Généré par la clôture" : "—")]))}
+    const pend = F.entries.filter((x) => x.status !== "validee").length, ctl = controls(), val = F.entries.filter((x) => x.status === "validee")
+    const byJ = F.journals.map((j) => ({ label: `${j.code} · ${j.label}`, value: val.filter((x) => x.j === j.code).length })).filter((x) => x.value)
+    const bySrc = Object.entries(val.reduce((m, x) => ((m[x.src] = (m[x.src] || 0) + 1), m), {})).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+    const src6 = bySrc.length <= 6 ? bySrc : [...bySrc.slice(0, 5), { label: "Autres", value: sum(bySrc.slice(5).map((x) => x.value)) }]
+    return `<div class="grid g4">
+        ${st("Écritures validées", val.length, `${F.journals.length} journaux`, "filecheck")}
+        ${st("En attente", pend, "à valider ou au brouillard", "clock")}
+        ${st("Évènements non comptabilisés", F.events.filter((e) => e.status !== "generee").length, "écritures automatiques", "zap", { route: "fin-compta/auto" })}
+        ${st("Balance générale", ctl.balOk ? "Équilibrée" : "Déséquilibrée", `débit ${mm(ctl.d)}`, "calc", { route: "fin-compta/balance" })}
+      </div>
+      <div class="dash" style="margin:16px 0">
+        <div class="w8">${section("Écritures validées par journal", bars(byJ, (v) => v + " écr."))}</div>
+        <div class="w4">${section("Origine des écritures", donut(src6, { fmt: (v) => v, center: String(val.length), sub: "écritures" }))}</div>
+      </div>
+      ${tbl(["Journal", "Libellé", "Type", "#Dernier n°", "Contrôle"], F.journals.map((j) => [esc(j.code), esc(j.label), esc(j.type), String(Math.max(0, ...F.entries.filter((x) => x.j === j.code && x.no).map((x) => x.no))), esc(j.must ? `Ligne ${j.must} obligatoire` : j.auto ? "Généré par la clôture" : "—")]))}
       <p class="muted">Numérotation chronologique continue par journal et par exercice, attribuée à la validation ${ref9("EF-FIN-003 · RG-FIN-03")}.</p>
       ${schedBlock()}
       <h2>Écritures</h2>
@@ -633,7 +657,7 @@
   }
   const draftSums = () => { const ls = ui.finDraft.lines; return [sum(ls.map((l) => +l.d || 0)), sum(ls.map((l) => +l.c || 0))] }
   const draftOk = () => { const [d, c] = draftSums(); return d > 0 && d === c }
-  const draftTotals = () => { const [d, c] = draftSums(); return `Débit <strong>${money(d)}</strong> · Crédit <strong>${money(c)}</strong> · ${d === c && d > 0 ? badge("Équilibrée", "on") : d + c === 0 ? badge("Montants à saisir", "outline") : badge(`Écart ${money(Math.abs(d - c))} — enregistrement bloqué`, "dark")}` }
+  const draftTotals = () => { const [d, c] = draftSums(); return `Débit <strong>${money(d)}</strong> · Crédit <strong>${money(c)}</strong> · ${d === c && d > 0 ? badge("Équilibrée", "ok") : d + c === 0 ? badge("Montants à saisir", "warn") : badge(`Écart ${money(Math.abs(d - c))} — enregistrement bloqué`, "dark")}` }
 
   function autoView() {
     const pend = F.events.filter((e) => e.status !== "generee")
@@ -641,7 +665,7 @@
       ${tbl(["Source", "Évènement", "Libellé", "Jnl", "Date", "#Montant", "État", ""], F.events.map((e) => {
         const ls = linesOf(e), m = sum(ls.map((l) => l.d))
         return [badge(e.src, "outline"), `<span class="muted">${esc(e.ev)}</span>`, esc(e.label) + (e.err ? `<div class="err" style="margin-top:6px">${esc(e.err)}</div>` : "") + (e.wait && e.status !== "generee" ? `<div class="muted" style="margin-top:6px">${esc(e.wait)}</div>` : ""), esc(e.j), fd(e.date), money(m),
-          e.status === "generee" ? entryLink(F.entries.find((x) => x.id === e.entry)) : e.err ? badge("En erreur", "dark") : e.wait ? badge("En attente du module source", "") : badge("Prête", "outline"),
+          e.status === "generee" ? entryLink(F.entries.find((x) => x.id === e.entry)) : e.err ? badge("En erreur", "bad") : e.wait ? badge("En attente du module source", "warn") : badge("Prête", "info"),
           e.status === "generee" ? "" : e.err ? btn("Affecter « Clients de passage » et générer", `A.fin.fixEvent(${q(e.id)})`, "ghost sm") : e.wait ? (e.kind === "paie" ? btn("Ouvrir la paie", "go('hr-paie')", "ghost sm") : "") : btn("Générer", `A.fin.genEvent(${q(e.id)})`, "sm")]
       }))}
       <p class="muted">Passerelles actives : clôture de paie (RH), réceptions et factures approuvées (Achats), encaissements et remboursements des folios (Facturation) apparaissent ici dès qu'ils ont lieu. ${btn("Relire les modules", "A.fin.sync()", "ghost sm")}</p>
@@ -678,7 +702,7 @@
     return `${chips("finBalCls", { tous: "Toutes classes", ...Object.fromEntries(Object.keys(CLASSES).map((k) => [k, "Classe " + k])) })}
       ${tbl(["Compte", "Libellé", "#Ouv. débit", "#Ouv. crédit", "#Mvt débit", "#Mvt crédit", "#Solde débiteur", "#Solde créditeur"], rows.map(([n, r]) => { const s = r[0] + r[2] - r[1] - r[3]; return [accLink(n), esc(accLabel(n)), num(r[0]), num(r[1]), num(r[2]), num(r[3]), num(s > 0 ? s : 0), num(s < 0 ? -s : 0)] }), "Aucun compte.",
         `<tfoot><tr><td colspan="2">Totaux</td>${T.map((v) => `<td class="num">${num(v)}</td>`).join("")}<td class="num">${num(sd)}</td><td class="num">${num(sc)}</td></tr></tfoot>`)}
-      <p class="muted">Balance à 8 colonnes, écritures validées uniquement. ${ui.finBalCls === "tous" ? (sd === sc ? badge("Balance équilibrée", "on") : badge("Balance déséquilibrée", "dark")) : ""}</p>
+      <p class="muted">Balance à 8 colonnes, écritures validées uniquement. ${ui.finBalCls === "tous" ? (sd === sc ? badge("Balance équilibrée", "ok") : badge("Balance déséquilibrée", "bad")) : ""}</p>
       <h2>Balances auxiliaires</h2>${tbl(["Type", "Tiers", "#Débit", "#Crédit", "#Solde"], aux)}`
   }
 
@@ -698,15 +722,25 @@
     const cl = F.tiers.filter((t) => t.type === "Client")
     const rows = cl.map((t) => [t, aged(t.id)]).filter(([, b]) => sum(b) !== 0)
     const tot = [0, 1, 2, 3, 4].map((k) => sum(rows.map(([, b]) => b[k])))
-    const ong = aged("CL-03")[4]
-    return `<h2>Balance âgée clients</h2>
+    const ong = aged("CL-03")[4], buckets = ["Non échu", "1–30 j", "31–60 j", "61–90 j", "> 90 j"]
+    return `<div class="grid g4">
+        ${st("Créances clients", mm(sum(tot)), `${rows.length} client(s) débiteur(s)`, "users")}
+        ${st("Non échu", mm(tot[0]), pct((tot[0] / (sum(tot) || 1)) * 100) + " du total", "check")}
+        ${st("Échu à plus de 60 jours", mm(tot[3] + tot[4]), "risque de recouvrement", "alert")}
+        ${st("Lignes à lettrer", allLines((l) => l.a === "411" && !l.let).length, "compte 411", "layers")}
+      </div>
+      <div class="dash" style="margin:16px 0">
+        <div class="w6">${section("Balance âgée par ancienneté", columns(buckets, tot.map((v) => Math.max(0, v)), shortNum))}</div>
+        <div class="w6">${section("Encours par client", bars(rows.map(([t, b]) => ({ label: t.name, value: sum(b) })).sort((a, b) => b.value - a.value).slice(0, 6), money))}</div>
+      </div>
+      <h2>Balance âgée clients</h2>
       ${tbl(["Client", "Conditions", "#Non échu", "#1–30 j", "#31–60 j", "#61–90 j", "#> 90 j", "#Total"], rows.map(([t, b]) => [esc(t.name), esc(t.terms), ...b.map(num), money(sum(b))]), "Aucune créance ouverte.",
         `<tfoot><tr><td colspan="2">Total</td>${tot.map((v) => `<td class="num">${num(v)}</td>`).join("")}<td class="num">${money(sum(tot))}</td></tr></tfoot>`)}
       ${ong > 0 ? `<div style="margin-top:12px">${aiBox("Créance douteuse", `ONG Lagune Solidarité Exemple : ${money(ong)} échus depuis plus de 360 jours. Dépréciation proposée sur la base HT, à valider à la clôture.`, btn("Voir la proposition", "go('fin-cloture/mensuelle')", "ghost sm"))}</div>` : ""}
       ${lettrageBlock("Client")}`
   }
   function fournisseursView() {
-    const sts = { a_payer: ["À payer", "outline"], proposee: ["Proposée au paiement", ""], payee: ["Payée", "on"], bloquee: ["Bloquée", "dark"] }
+    const sts = { a_payer: ["À payer", "warn"], proposee: ["Proposée au paiement", "info"], payee: ["Payée", "ok"], bloquee: ["Bloquée", "bad"] }
     const due = F.supInv.filter((s) => s.status === "a_payer" && s.ok && s.ech <= addDays(today, 30))
     const prop = F.supInv.filter((s) => s.status === "proposee")
     return `<h2>Factures fournisseurs ${ref9("EF-FIN-009")}</h2>
@@ -719,7 +753,7 @@
   }
   function ocrView() {
     const o = F.ocr, [ht, tv] = htTva(+o.ttc || 0)
-    return `<div class="cols"><section>${card("Document reçu", `<p><strong>${esc(o.file)}</strong></p><p class="muted">Lecture OCR + LLM (simulée) · confiance ${o.conf} % · statut ${badge(o.status, o.status === "comptabilisée" ? "on" : "outline")}</p>
+    return `<div class="cols"><section>${card("Document reçu", `<p><strong>${esc(o.file)}</strong></p><p class="muted">Lecture OCR + LLM (simulée) · confiance ${o.conf} % · statut ${badge(o.status, o.status === "comptabilisée" ? "ok" : "warn")}</p>
       ${o.status === "à valider" ? form([
         field("fin-o-t", "Fournisseur", select("fin-o-t", F.tiers.filter((t) => t.type === "Fournisseur").map((t) => [t.id, t.name]), o.t)),
         field("fin-o-no", "N° de facture", input("fin-o-no", o.no)), field("fin-o-date", "Date", input("fin-o-date", o.date, 'type="date"')), field("fin-o-ech", "Échéance", input("fin-o-ech", o.ech, 'type="date"')),
@@ -742,7 +776,17 @@
       ["5523", "Wave", "Relevé opérateur du 25/11 (simulé)", bal("5523")],
       ["571", "Caisse principale", "Comptage du 25/11 au soir", bal("571")],
     ]
-    return `${cards([kpi("Trésorerie disponible", mm(treasury()), "Banques, mobile money, caisse"), kpi("Encaissements carte en attente", mm(bal("4711")), "Compte d'attente PSP 4711"), kpi("Rapprochement automatique", pct(autoRate()), "Banque Exemple Plateau, novembre")])}
+    const fc = forecast()
+    return `<div class="grid g4">
+        ${st("Trésorerie disponible", mm(treasury()), "Banques, mobile money, caisse", "bank", { trend: fc.map((w) => w.solde) })}
+        ${st("Encaissements carte en attente", mm(bal("4711")), "Compte d'attente PSP 4711", "clock")}
+        ${st("Rapprochement automatique", pct(autoRate()), "Banque Exemple Plateau, novembre", "refresh", { route: "fin-treso/rappro" })}
+        ${st("Point bas à 13 semaines", mm(Math.min(...fc.map((w) => w.solde))), "semaine du " + fd(fc.reduce((a, b) => (b.solde < a.solde ? b : a)).from), "trend", { route: "fin-treso/prevision" })}
+      </div>
+      <div class="dash" style="margin:16px 0">
+        <div class="w4">${section("Répartition des disponibilités", donut(rows.map(([n, l]) => ({ label: l, value: Math.max(0, bal(n)) })).filter((x) => x.value).sort((a, b) => b.value - a.value).slice(0, 6), { fmt: money, center: shortNum(treasury()), sub: "FCFA" }))}</div>
+        <div class="w8">${section("Encaissements et décaissements prévus", lineChart(fc.map((w) => fd(w.from)), [{ name: "Encaissements", values: fc.map((w) => w.inflow) }, { name: "Décaissements", values: fc.map((w) => w.out) }], { fmt: shortNum }), btn("Prévision", "go('fin-treso/prevision')", "ghost sm"))}</div>
+      </div>
       <h2>Comptes ${ref9("EF-FIN-010 · EF-FIN-011")}</h2>
       ${tbl(["Compte", "Établissement", "Dernier relevé", "#Solde comptable", "#Solde relevé", "#Écart"], rows.map(([n, l, s, r]) => { const b = bal(n), e = r - b; return [accLink(n), esc(l), esc(s), money(b), money(r), e ? `<strong>${money(e)}</strong>` : "—"] }))}
       <p class="muted">Écarts attendus : opérations du relevé pas encore comptabilisées (frais bancaires, frais d'opérateur mobile money de 5 000 FCFA). À traiter dans le rapprochement.</p>
@@ -752,10 +796,10 @@
   }
   function rapproView() {
     const mk = matchedKeys(), book = bankLines().filter((l) => !mk.has(lineKey(l)))
-    const hows = { auto: ["Auto", "on"], manuel: ["Manuel", "outline"], suggestion: ["Suggestion acceptée", "outline"], cree: ["Écriture créée", "outline"] }
+    const hows = { auto: ["Auto", "ok"], manuel: ["Manuel", "ok"], suggestion: ["Suggestion acceptée", "ok"], cree: ["Écriture créée", "info"] }
     return `<div class="row between"><p class="muted" style="margin:0">Banque Exemple Plateau · relevé du 01 au 25/11 importé (CAMT.053, simulé) · ${F.stmt.length} lignes.</p>
       <span class="row">${btn("Importer le relevé du 26/11 (simulé)", "A.fin.importStmt()", "ghost")}${btn("Rapprochement automatique", "A.fin.autoMatch()")}</span></div>
-      ${cards([kpi("Lignes rapprochées", `${F.stmt.filter((s) => s.m).length} / ${F.stmt.length}`, "Relevé importé"), kpi("Taux automatique", pct(autoRate()), "Objectif > 90 % (US-FIN-03)"), kpi("Écritures non pointées", String(book.length), "Côté comptabilité")])}
+      <div class="grid g4" style="margin-top:12px">${st("Lignes rapprochées", `${F.stmt.filter((s) => s.m).length} / ${F.stmt.length}`, "Relevé importé", "check")}${st("Taux automatique", pct(autoRate()), "Objectif > 90 % (US-FIN-03)", "refresh")}${st("Écritures non pointées", String(book.length), "Côté comptabilité", "alert")}</div>
       <h2>Lignes du relevé</h2>
       ${tbl(["Date", "Libellé banque", "#Montant", "Rapprochement", ""], F.stmt.map((s) => {
         let action = ""
@@ -766,13 +810,13 @@
             : btn(s.amt < 0 ? "Comptabiliser (631 Frais bancaires)" : "Comptabiliser (4711 attente PSP)", `A.fin.bookStmt(${q(s.id)})`, "ghost sm")
         }
         const m = s.m && bankLines().find((l) => lineKey(l) === s.m)
-        return [fd(s.date), esc(s.label), money(s.amt), s.m ? `${badge(hows[s.how][0], hows[s.how][1])} ${m ? entryLink(m.e) : ""}` : s.sug ? `<span class="muted">Suggestion : ${esc(s.sug)}</span>` : badge("Non rapprochée", ""), action]
+        return [fd(s.date), esc(s.label), money(s.amt), s.m ? `${badge(hows[s.how][0], hows[s.how][1])} ${m ? entryLink(m.e) : ""}` : s.sug ? `<span class="muted">Suggestion : ${esc(s.sug)}</span>` : badge("Non rapprochée", "warn"), action]
       }))}
       <div style="margin-top:14px">${aiBox("Rapprochement intelligent", "Appariement par montant, date (± 2 jours), libellé et tiers. Les cas incertains (date éloignée, libellé ambigu) sont proposés en suggestion et attendent une validation humaine ; les lignes sans contrepartie peuvent être comptabilisées directement.")}</div>`
   }
   function previsionView() {
     const fc = forecast()
-    return `${columns(fc.map((w) => fd(w.from)), fc.map((w) => Math.max(0, w.solde / 1e6)), (v) => Math.round(v) + " M")}
+    return `${section("Solde de fin de semaine projeté", lineChart(fc.map((w) => fd(w.from)), [{ name: "Solde", values: fc.map((w) => Math.max(0, w.solde)) }], { fmt: shortNum }))}
       <p class="muted">Solde de fin de semaine projeté, en millions de FCFA. Encaissements : tendance saisonnière + réservations confirmées ; décaissements : échéancier fournisseurs, salaires, CNPS, TVA, emprunt.</p>
       ${tbl(["Semaine du", "#Encaissements", "#Décaissements", "Échéances notables", "#Solde fin"], fc.map((w) => [fd(w.from), money(w.inflow), money(w.out), esc(w.notes.join(", ")), money(w.solde)]))}
       <div style="margin-top:14px">${aiBox("Prévision de trésorerie", `Projection à 13 semaines : point bas la semaine du ${fd(fc.reduce((a, b) => (b.solde < a.solde ? b : a)).from)} (${mm(Math.min(...fc.map((w) => w.solde)))}), porté par les fêtes de fin d'année puis le creux de janvier. Aucun besoin de financement court terme identifié.`)}</div>`
@@ -786,7 +830,11 @@
   }
   function tvaView() {
     const t = tvaNov()
-    return `${cards([kpi("TVA collectée", money(t.col), "Novembre, au 26/11"), kpi("TVA déductible", money(t.ded), "Novembre, au 26/11"), kpi("TVA nette à payer", money(t.net), "Échéance le 15/12 (exemple)"), kpi("Taxe de séjour collectée", money(t.ts), `${money(TAXE_SEJOUR)} par nuitée (taux d'exemple)`)])}
+    return `<div class="grid g4">${st("TVA collectée", money(t.col), "Novembre, au 26/11", "receipt")}${st("TVA déductible", money(t.ded), "Novembre, au 26/11", "cart")}${st("TVA nette à payer", money(t.net), "Échéance le 15/12 (exemple)", "bank", { route: "fin-fiscal/declarations" })}${st("Taxe de séjour collectée", money(t.ts), `${money(TAXE_SEJOUR)} par nuitée (taux d'exemple)`, "bed")}</div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w6">${section("Composition des taxes collectées", donut([{ label: "TVA nette due", value: Math.max(0, t.net) }, { label: "TVA déductible imputée", value: Math.max(0, t.ded) }, { label: "Taxe de séjour", value: Math.max(0, t.ts) }], { fmt: money, center: shortNum(t.col + t.ts), sub: "FCFA collectés" }))}</div>
+        <div class="w6">${section("Montants de novembre", bars([{ label: "TVA collectée", value: t.col }, { label: "TVA déductible", value: t.ded }, { label: "TVA nette", value: Math.max(0, t.net) }, { label: "Taxe de séjour", value: t.ts }], money))}</div>
+      </div>
       <h2>Détail de la TVA ${ref9("EF-FIN-013")}</h2>
       ${tbl(["Compte", "Libellé", "#Base estimée", "#Montant"], [
         [accLink("4431"), "TVA facturée sur nuitées, restauration, spa, pressing", money(t.col / TVA), money(t.col)],
@@ -798,7 +846,7 @@
   }
   function declView() {
     const t = tvaNov(), closed = F.periods[NOV] === "cloturee"
-    const sts = { "Brouillon": "", "Validée": "outline", "Déposée": "on" }
+    const sts = { "Brouillon": "outline", "Validée": "info", "Déposée": "ok" }
     return `<div class="row between"><p class="muted" style="margin:0">Déclarations aux formats de télédéclaration (portail simulé).</p>${F.taxReturns.some((x) => x.period === "Novembre 2026") ? "" : btn("Préparer les déclarations de novembre", "A.fin.prepTax()")}</div>
       ${tbl(["Déclaration", "Période", "#Montant", "Échéance", "Statut", "Accusé", ""], F.taxReturns.map((x) => [esc(x.type), esc(x.period), money(x.amount), fd(x.due), badge(x.status, sts[x.status]), esc(x.ack || "—"),
         x.status === "Brouillon" ? btn("Valider", `A.fin.valTax(${q(x.id)})`, "sm") : x.status === "Validée" ? btn("Télédéclarer (simulé)", `A.fin.fileTax(${q(x.id)})`, closed ? "accent sm" : "ghost sm") : ""]))}
@@ -823,7 +871,12 @@
     const und = sum(F.undistributed.map((x) => x.cost)), bund = sum(F.undistributed.map((x) => x.bcost))
     const gop = sum(dp.map((x) => x.p)) - und, bgop = sum(dp.map((x) => x.bp)) - bund
     const ec = (r, b) => `${r - b >= 0 ? "+" : ""}${pct(((r - b) / b) * 100)}`
-    return `${cards([kpi("Recettes totales", mm(sum(dp.map((x) => x.rev))), "Novembre au 26/11"), kpi("GOP", mm(gop), `Budget ${mm(bgop)} · ${ec(gop, bgop)}`), kpi("GOPPAR", money(gop / avail), `${avail} chambres disponibles sur la période`), kpi("Taux de GOP", pct((gop / sum(dp.map((x) => x.rev))) * 100), "GOP / recettes")])}
+    const rv = sum(dp.map((x) => x.rev)), brv = sum(dp.map((x) => x.brev))
+    return `<div class="grid g4">${st("Recettes totales", mm(rv), "Novembre au 26/11 · vs budget", "coins", { delta: ((rv - brv) / brv) * 100 })}${st("GOP", mm(gop), `Budget ${mm(bgop)}`, "trend", { delta: ((gop - bgop) / bgop) * 100 })}${st("GOPPAR", money(gop / avail), `${avail} chambres disponibles sur la période`, "bed")}${st("Taux de GOP", pct((gop / rv) * 100), "GOP / recettes", "pie")}</div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Recettes par département : réel et budget", bars(dp.flatMap((x) => [{ label: `${x.d} · réel`, value: x.rev }, { label: `${x.d} · budget`, value: x.brev }]), money))}</div>
+        <div class="w4">${section("Résultat départemental", donut(dp.filter((x) => x.p > 0).map((x) => ({ label: x.d, value: x.p })), { fmt: money, center: shortNum(sum(dp.map((x) => x.p))), sub: "FCFA" }))}</div>
+      </div>
       <h2>Compte d'exploitation USALI ${ref9("EF-FIN-020")}</h2>
       ${tbl(["Département", "#Recettes", "#Coûts", "#Résultat", "#Budget", "#Écart"], [
         ...dp.map((x) => [esc(x.d), money(x.rev), money(x.cost), money(x.p), money(x.bp), ec(x.p, x.bp)]),
@@ -831,7 +884,7 @@
       ], "", `<tfoot><tr><td>GOP</td><td class="num">${money(sum(dp.map((x) => x.rev)))}</td><td class="num">${money(sum(dp.map((x) => x.cost)) + und)}</td><td class="num">${money(gop)}</td><td class="num">${money(bgop)}</td><td class="num">${ec(gop, bgop)}</td></tr></tfoot>`)}
       <p class="muted">Ventilation automatique par section analytique ; l'énergie et la maintenance sont réparties par clés (surface, compteurs) pour le reporting interne ${ref9("EF-FIN-015")}.</p>
       <h2>Commentaires de gestion</h2>
-      ${F.comments.map((c, i) => aiBox(`Écart ${c.d}`, c.text, c.status === "proposé" ? btn("Valider le commentaire", `A.fin.comment(${i},'validé')`, "ghost sm") + btn("Rejeter", `A.fin.comment(${i},'rejeté')`, "ghost sm") : badge(`Commentaire ${c.status}`, c.status === "validé" ? "on" : "dark"))).join("<div style='height:10px'></div>")}`
+      ${F.comments.map((c, i) => aiBox(`Écart ${c.d}`, c.text, c.status === "proposé" ? btn("Valider le commentaire", `A.fin.comment(${i},'validé')`, "ghost sm") + btn("Rejeter", `A.fin.comment(${i},'rejeté')`, "ghost sm") : badge(`Commentaire ${c.status}`, c.status === "validé" ? "ok" : "bad"))).join("<div style='height:10px'></div>")}`
   }
   function budgetView() {
     F.budgetV = ui.finBudgetV
@@ -851,20 +904,25 @@
   // ----- Clôtures -----
   function mensuelleView() {
     const steps = closeSteps(), done = steps.filter((s) => s.done).length, closed = F.periods[NOV] === "cloturee"
-    return `${tbl(["Période", "Statut"], Object.entries(F.periods).slice(8).map(([k, v]) => [esc(k), v === "cloturee" ? badge("Clôturée", "dark") : badge("Ouverte", "outline")]))}
+    return `<div class="dash">
+        <div class="w4">${section("Avancement de la clôture", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((done / steps.length) * 100, "Clôture de novembre")}<div><div class="stat-val">${done} / ${steps.length}</div><div class="muted">étapes faites · ${closed ? "période verrouillée" : "novembre ouvert"}</div></div></div>`)}</div>
+        <div class="w4">${st("Délai de clôture (octobre)", "4 j ouvrés", "objectif ≤ 5 j", "clock", { trend: [6, 5, 5, 4] })}</div>
+        <div class="w4">${st("Écritures proposées", `${F.proposals.filter((x) => x.done).length} / ${F.proposals.length}`, "provisions et régularisations (IA)", "sparkle")}</div>
+        <div>${section("Périodes", tbl(["Période", "Statut"], Object.entries(F.periods).slice(8).map(([k, v]) => [esc(k), v === "cloturee" ? badge("Clôturée", "ok") : badge("Ouverte", "info")])))}</div>
+      </div>
       <h2>Clôture de novembre 2026 — ${done} / ${steps.length} étapes</h2>
-      ${tbl(["Étape", "Responsable", "Détail", "Statut", ""], steps.map((s) => [esc(s.label), esc(s.who), esc(s.note || ""), s.done ? badge("Fait", "on") : badge("À faire", "outline"),
+      ${tbl(["Étape", "Responsable", "Détail", "Statut", ""], steps.map((s) => [esc(s.label), esc(s.who), esc(s.note || ""), s.done ? badge("Fait", "ok") : badge("À faire", "warn"),
         closed ? "" : s.auto ? (s.route && !s.done ? btn("Ouvrir", `go('${s.route}')`, "ghost sm") : "") : btn(s.done ? "Rouvrir" : "Marquer fait", `A.fin.toggleStep(${q(s.k)})`, "ghost sm")]))}
       <h2>Assistant de clôture</h2>
       ${aiBox("Étapes en retard", steps.filter((s) => !s.done).length ? `Restent : ${steps.filter((s) => !s.done).map((s) => s.label.toLowerCase()).join(" ; ")}.` : "Toutes les étapes sont faites : la période peut être verrouillée.")}
       <div style="height:10px"></div>
-      ${F.proposals.map((p) => aiBox(p.label, `${p.why}. Écriture proposée : ${p.lines.map((l) => `${l.d ? "D" : "C"} ${l.a} ${num(l.d || l.c)}`).join(" · ")}.`, p.done ? badge("Écriture passée", "on") : closed ? "" : btn("Valider et passer l'écriture", `A.fin.applyProp(${q(p.id)})`, "ghost sm"))).join("<div style='height:10px'></div>")}
-      <div class="row" style="margin-top:16px">${closed ? `<p>${badge("Novembre clôturé", "dark")} le ${esc(F.closedNov)} : aucune écriture ne peut plus y être passée (RG-FIN-04).</p>` : `<button class="btn accent" onclick="A.fin.lockNov()" ${done === steps.length ? "" : "disabled"}>Verrouiller novembre et figer la balance</button><span class="muted">Réservé au chef comptable. Démonstration : en réel, après le 30/11.</span>`}</div>`
+      ${F.proposals.map((p) => aiBox(p.label, `${p.why}. Écriture proposée : ${p.lines.map((l) => `${l.d ? "D" : "C"} ${l.a} ${num(l.d || l.c)}`).join(" · ")}.`, p.done ? badge("Écriture passée", "ok") : closed ? "" : btn("Valider et passer l'écriture", `A.fin.applyProp(${q(p.id)})`, "ghost sm"))).join("<div style='height:10px'></div>")}
+      <div class="row" style="margin-top:16px">${closed ? `<p>${badge("Novembre clôturé", "ok")} le ${esc(F.closedNov)} : aucune écriture ne peut plus y être passée (RG-FIN-04).</p>` : `<button class="btn accent" onclick="A.fin.lockNov()" ${done === steps.length ? "" : "disabled"}>Verrouiller novembre et figer la balance</button><span class="muted">Réservé au chef comptable. Démonstration : en réel, après le 30/11.</span>`}</div>`
   }
   function annuelleView() {
     return `${tbl(["Exercice", "Statut", "#Résultat", "Commentaire"], [
-      ["2025", badge("Clôturé", "dark"), money(26400000), "Comptes approuvés le 18/06/2026 : clôture irréversible"],
-      ["2026", badge("Ouvert", "outline"), money(resultat()), "Résultat provisoire au 26/11"],
+      ["2025", badge("Clôturé", "ok"), money(26400000), "Comptes approuvés le 18/06/2026 : clôture irréversible"],
+      ["2026", badge("Ouvert", "info"), money(resultat()), "Résultat provisoire au 26/11"],
     ])}
       <h2>Affectation du résultat 2025</h2>
       ${tbl(["Affectation", "#Montant"], [["Réserve légale (10 %)", money(2640000)], ["Dividendes", money(15000000)], ["Report à nouveau", money(8760000)]], "", `<tfoot><tr><td>Total</td><td class="num">${money(26400000)}</td></tr></tfoot>`)}
@@ -885,7 +943,10 @@
     const n = bilan(), n1 = bilan((l) => l.e.j === "AN")
     const side = (k) => { const keys = [...new Set([...Object.keys(n[k]), ...Object.keys(n1[k])])]; return keys.map((x) => [esc(x), money(n[k][x] || 0), money(n1[k][x] || 0)]) }
     const foot = (k, t, t1) => `<tfoot><tr><td>Total ${k}</td><td class="num">${money(t)}</td><td class="num">${money(t1)}</td></tr></tfoot>`
-    return `<div class="cols"><section><h2>Actif</h2>${tbl(["Poste", "#N (26/11/2026)", "#N-1 (31/12/2025)"], side("A"), "", foot("actif", n.tA, n1.tA))}</section>
+    const six = (o) => { const a = Object.entries(o).map(([label, value]) => ({ label, value: Math.max(0, value) })).filter((x) => x.value).sort((x, y) => y.value - x.value); return a.length <= 6 ? a : [...a.slice(0, 5), { label: "Autres", value: sum(a.slice(5).map((x) => x.value)) }] }
+    return `<div class="grid g4" style="margin-top:12px">${st("Total du bilan", mm(n.tA), "N-1 " + mm(n1.tA), "layers", { delta: n1.tA ? ((n.tA - n1.tA) / n1.tA) * 100 : null })}${st("Trésorerie — actif", mm(n.A["Trésorerie — actif"] || 0), "banques, caisse, mobile money", "bank")}${st("Créances clients", mm(n.A["Créances clients"] || 0), "nettes de dépréciations", "users")}${st("Résultat de l'exercice", mm(n.P["Résultat net de l'exercice"] || 0), "provisoire au 26/11", "trend")}</div>
+      <div class="dash" style="margin-top:16px"><div class="w6">${section("Structure de l'actif", donut(six(n.A), { fmt: money, center: shortNum(n.tA), sub: "FCFA" }))}</div><div class="w6">${section("Structure du passif", donut(six(n.P), { fmt: money, center: shortNum(n.tP), sub: "FCFA" }))}</div></div>
+      <div class="cols"><section><h2>Actif</h2>${tbl(["Poste", "#N (26/11/2026)", "#N-1 (31/12/2025)"], side("A"), "", foot("actif", n.tA, n1.tA))}</section>
       <section><h2>Passif</h2>${tbl(["Poste", "#N (26/11/2026)", "#N-1 (31/12/2025)"], side("P"), "", foot("passif", n.tP, n1.tP))}</section></div>
       <p class="muted">Postes nets d'amortissements et de dépréciations, issus de la table de correspondance comptes → postes ${ref9("EF-FIN-018")}. Chaque poste est traçable jusqu'à l'écriture via la ${`<button class="link" onclick="go('fin-compta/balance')">balance</button>`}.</p>`
   }
@@ -916,14 +977,14 @@
   function dsfView() {
     const ctl = controls(), p = F.dsfPreview
     return `${tbl(["Exercice", "Document", "Statut", ""], [
-      ["2025", "DSF — système normal", badge("Déposée (simulé)", "on"), btn("Exporter le fichier", "toast('Export simulé : DSF_2025_HEX.xml')", "ghost sm")],
-      ["2026", "DSF — aperçu provisoire", p ? badge(`Aperçu généré le ${p}`, "outline") : badge("Non générée", ""), btn("Générer l'aperçu", "A.fin.dsf()", "sm")],
+      ["2025", "DSF — système normal", badge("Déposée (simulé)", "ok"), btn("Exporter le fichier", "toast('Export simulé : DSF_2025_HEX.xml')", "ghost sm")],
+      ["2026", "DSF — aperçu provisoire", p ? badge(`Aperçu généré le ${p}`, "info") : badge("Non générée", "warn"), btn("Générer l'aperçu", "A.fin.dsf()", "sm")],
     ])}
       <h2>Contrôles de cohérence ${ref9("EF-FIN-019 · US-FIN-02")}</h2>
       ${tbl(["Contrôle", "Résultat"], [
-        ["Balance équilibrée", ctl.balOk ? badge("OK", "on") : badge("Écart", "dark")], ["Actif = passif", ctl.bilOk ? badge("OK", "on") : badge("Écart", "dark")],
-        ["Résultat du bilan = résultat du compte de résultat", badge("OK", "on")], ["Tableaux des immobilisations = registre", badge("OK", "on")],
-        ["Exercice clôturé (requis pour le dépôt)", badge("Non", "dark")],
+        ["Balance équilibrée", ctl.balOk ? badge("OK", "ok") : badge("Écart", "bad")], ["Actif = passif", ctl.bilOk ? badge("OK", "ok") : badge("Écart", "bad")],
+        ["Résultat du bilan = résultat du compte de résultat", badge("OK", "ok")], ["Tableaux des immobilisations = registre", badge("OK", "ok")],
+        ["Exercice clôturé (requis pour le dépôt)", badge("Non", "bad")],
       ])}
       <p class="muted">Le fichier officiel ne peut être déposé qu'après la clôture annuelle. Format de télédéclaration simulé.</p>`
   }
@@ -941,7 +1002,7 @@
       <p class="muted">Conversion EUR → XOF à la parité fixe de 655,957 ${ref9("EF-FIN-023")}.</p>
       <h2>Opérations intercompagnies à éliminer ${ref9("EF-FIN-022")}</h2>${tbl(["Opération", "#Montant"], elim.map(([l, v]) => [esc(l), money(v)]))}
       <div class="row" style="margin-top:12px">${btn(r ? "Relancer la consolidation (simulé)" : "Lancer la consolidation (simulé)", "A.fin.consolidate()")}</div>
-      ${r ? `<h2>Résultat de la consolidation</h2>${cards([kpi("Chiffre d'affaires consolidé", mm(r.ca), "Après éliminations"), kpi("Résultat part du groupe", mm(r.pg), "Simulé"), kpi("Intérêts minoritaires", mm(r.mino), "30 % de Restauration Lagune Exemple")])}` : ""}`
+      ${r ? `<h2>Résultat de la consolidation</h2>${cards([st("Chiffre d'affaires consolidé", mm(r.ca), "Après éliminations", "coins"), st("Résultat part du groupe", mm(r.pg), "Simulé", "trend"), st("Intérêts minoritaires", mm(r.mino), "30 % de Restauration Lagune Exemple")])}` : ""}`
   }
 
   // ----- Écritures programmées : extournes automatiques et récurrentes (EF-FIN-005) -----
@@ -951,8 +1012,8 @@
   function schedBlock() {
     const r = toReverse(), c = toRepeat()
     return card("Écritures programmées au 01/12/2026", `${tbl(["Type", "Écriture d'origine", "Libellé", "#Montant"], [
-      ...r.map((e) => [badge("Extourne automatique", "outline"), entryLink(e), esc(e.label), money(total(e))]),
-      ...c.map((e) => [badge("Récurrente mensuelle", ""), entryLink(e), esc(e.label), money(total(e))])], "Aucune écriture programmée.")}
+      ...r.map((e) => [badge("Extourne automatique", "info"), entryLink(e), esc(e.label), money(total(e))]),
+      ...c.map((e) => [badge("Récurrente mensuelle", "info"), entryLink(e), esc(e.label), money(total(e))])], "Aucune écriture programmée.")}
       <div class="row" style="margin-top:10px">${btn(`Générer ${r.length + c.length} écriture(s) au 01/12`, "A.fin.runRecurring()", r.length + c.length ? "" : "ghost")}${F.recurRun ? `<span class="muted">Dernière génération le ${esc(F.recurRun)}</span>` : ""}</div>
       <p class="muted">Les écritures cochées « extourne automatique » sont contrepassées le 1er jour de la période suivante ; les récurrentes sont recopiées chaque mois ${ref9("EF-FIN-005")}.</p>`)
   }
@@ -971,7 +1032,7 @@
     const rate = F.fx.done ? F.fx.done.rate : F.fx.close, pos = fxPositions(rate)
     return `<p class="muted">Les opérations en devises sont comptabilisées au taux du jour de l'opération ; à la clôture, les comptes sont réévalués au taux de clôture (RG-FIN-07) ${ref9("EF-FIN-021")}. Taux d'exemple, non contractuels.</p>
       ${card("", form([field("fin-fx-rate", "Taux de clôture au 30/11 (FCFA pour 1 USD)", input("fin-fx-rate", rate, `type="number" min="1" step="0.5" ${F.fx.done ? "disabled" : ""}`)),
-        `<div style="align-self:end">${F.fx.done ? badge(`Réévaluation passée le ${F.fx.done.at}`, "on") : btn("Recalculer les écarts", "A.fin.fxRate()", "ghost")}</div>`]))}
+        `<div style="align-self:end">${F.fx.done ? badge(`Réévaluation passée le ${F.fx.done.at}`, "ok") : btn("Recalculer les écarts", "A.fin.fxRate()", "ghost")}</div>`]))}
       ${tbl(["Position", "Nature", "#Montant USD", "#Taux historique", "#Valeur comptable", "#Valeur au taux de clôture", "#Écart", "Traitement"], pos.map((x) => [esc(x.label), esc(x.kind), Math.abs(x.dev).toLocaleString("fr-FR"), x.hist.toFixed(0), money(x.book), money(x.reval), `<strong>${money(x.gap)}</strong>`,
         esc(x.kind === "Trésorerie" ? (x.gap >= 0 ? "Gain de change 776" : "Perte de change 676") : (x.gap >= 0 ? "Écart de conversion passif 479 (gain latent)" : "Écart de conversion actif 478 (perte latente)"))]))}
       <div class="row" style="margin-top:12px">${F.fx.done ? `${btn("Voir l'écriture", `go('fin-compta/journaux/${esc(F.fx.done.entry)}')`, "ghost")}` : btn("Passer les écritures de réévaluation", "A.fin.fxPost()", "accent")}</div>
@@ -996,8 +1057,8 @@
         field("fin-fec-from", "Du", input("fin-fec-from", x?.from || "2026-01-01", 'type="date"')), field("fin-fec-to", "Au", input("fin-fec-to", x?.to || today, 'type="date"')),
       ])}
       <div class="row" style="margin-top:12px">${btn("Générer le fichier", "A.fin.fec()")}${x ? btn("Télécharger", "A.fin.fecDownload()", "ghost") : ""}</div>
-      ${x ? `<h3>Contrôles avant remise</h3>${tbl(["Contrôle", "Résultat"], [["Écritures validées uniquement, 18 colonnes normalisées", badge("OK", "on")], ["Total débit = total crédit", x.d === x.c ? badge("OK", "on") : badge("Écart", "dark")],
-        ["Numérotation continue par journal (RG-FIN-03)", gaps.length ? badge("Trou : " + gaps.join(", "), "dark") : badge("OK", "on")], ["Empreinte du fichier", `<code>${esc(x.hash)}</code>`]])}
+      ${x ? `<h3>Contrôles avant remise</h3>${tbl(["Contrôle", "Résultat"], [["Écritures validées uniquement, 18 colonnes normalisées", badge("OK", "ok")], ["Total débit = total crédit", x.d === x.c ? badge("OK", "ok") : badge("Écart", "bad")],
+        ["Numérotation continue par journal (RG-FIN-03)", gaps.length ? badge("Trou : " + gaps.join(", "), "bad") : badge("OK", "ok")], ["Empreinte du fichier", `<code>${esc(x.hash)}</code>`]])}
         <p class="muted">${x.n} lignes · ${esc(x.name)}. Aperçu :</p><pre style="overflow:auto;font-size:12px;max-height:220px">${esc([FEC_COLS.join("|"), ...x.preview].join("\n"))}</pre>` : ""}
       <p class="muted">${ref9("EF-FIN-025")} Le fichier est produit depuis les écritures validées, jamais depuis le brouillard.</p>`)}
       ${F.exports.length ? `<h3>Remises effectuées</h3>${tbl(["Date", "Format", "Période", "#Lignes", "Empreinte"], F.exports.map((e) => [fd(e.at), esc(e.fmt), `${fd(e.from)} → ${fd(e.to)}`, e.n, `<code>${esc(e.hash)}</code>`]))}` : ""}</section>
@@ -1014,12 +1075,12 @@
       <h3>Table de correspondance (extrait)</h3>${tbl(["Compte local SYSCOHADA", "Compte groupe", "Libellé groupe"], ERP_MAP.map(([a, g, l]) => [accLink(a), `<code>${esc(g)}</code>`, esc(l)]))}
       <div class="row" style="margin-top:12px"><button class="btn" onclick="A.fin.erpExport()" ${x.enabled ? "" : "disabled"}>Exporter ${since} écriture(s) vers ${esc(x.target)} (simulé)</button>${x.enabled ? "" : '<span class="muted">Activez l’option pour exporter.</span>'}</div>
       <p class="muted">Écritures validées non encore exportées, converties dans le plan du groupe ; connecteur simulé ${ref9("EF-FIN-027")}.</p>`)}
-      ${x.runs.length ? `<h2>Exports</h2>${tbl(["Date", "ERP", "#Écritures", "Statut"], x.runs.map((r) => [esc(r.at), esc(r.target), r.n, badge(r.status, "on")]))}` : ""}`
+      ${x.runs.length ? `<h2>Exports</h2>${tbl(["Date", "ERP", "#Écritures", "Statut"], x.runs.map((r) => [esc(r.at), esc(r.target), r.n, badge(r.status, "ok")]))}` : ""}`
   }
 
   // ----- Notes de frais (EF-FIN-026) -----
   const NDF_CAT = { "Repas d'affaires": ["638", 40000], "Déplacement": ["6181", 60000], "Hébergement en mission": ["6181", 80000], "Petites fournitures": ["638", 25000] }
-  const NDF_ST = { soumise: ["À valider", "outline"], validee: ["Validée, à rembourser", ""], rejetee: ["Rejetée", "dark"], remboursee: ["Remboursée", "on"] }
+  const NDF_ST = { soumise: ["À valider", "warn"], validee: ["Validée, à rembourser", "info"], rejetee: ["Rejetée", "bad"], remboursee: ["Remboursée", "ok"] }
   const ndfEmps = () => (D.hrm && D.hrm.emps ? D.hrm.emps.filter((e) => e.status === "actif").map((e) => e.name) : ["Kouadio Brou", "Estelle Yapi", "Moussa Traoré"])
   function ndfView() {
     const L = F.ndf, toPay = L.filter((n) => n.status === "validee")
@@ -1033,7 +1094,9 @@
         <div>${btn("Photographier le ticket (simulé)", "A.fin.ndfPhoto()", "ghost sm")} ${ui.finNdfFile ? badge(ui.finNdfFile, "outline") : ""}</div>
         <div id="fin-n-err"></div>${btn("Envoyer la note", "A.fin.ndfSubmit()", "accent")}</div>`, "App employé — notes de frais")
     return pageHead("Notes de frais", "Saisie mobile avec justificatif, validation, remboursement et comptabilisation. Montants d'exemple, remboursements mobile money simulés.", userBar())
-      + cards([kpi("À valider", String(L.filter((n) => n.status === "soumise").length), "notes soumises"), kpi("À rembourser", money(sum(toPay.map((n) => n.amount))), `${toPay.length} note(s) validée(s)`), kpi("Remboursé ce mois", money(sum(L.filter((n) => n.status === "remboursee").map((n) => n.amount))), "novembre 2026")])
+      + `<div class="grid g4">${st("À valider", L.filter((n) => n.status === "soumise").length, "notes soumises", "clock")}${st("À rembourser", money(sum(toPay.map((n) => n.amount))), `${toPay.length} note(s) validée(s)`, "wallet")}${st("Remboursé ce mois", money(sum(L.filter((n) => n.status === "remboursee").map((n) => n.amount))), "novembre 2026", "check")}${st("Hors plafond", L.filter((n) => n.amount > NDF_CAT[n.cat][1]).length, "validation du chef comptable", "alert")}</div>
+      <div class="dash" style="margin:16px 0"><div class="w6">${section("Montants par catégorie", donut(Object.keys(NDF_CAT).map((c) => ({ label: c, value: sum(L.filter((n) => n.cat === c && n.status !== "rejetee").map((n) => n.amount)) })).filter((x) => x.value), { fmt: money, center: shortNum(sum(L.filter((n) => n.status !== "rejetee").map((n) => n.amount))), sub: "FCFA" }))}</div>
+      <div class="w6">${section("Notes par statut", bars(Object.keys(NDF_ST).map((k) => ({ label: NDF_ST[k][0], value: L.filter((n) => n.status === k).length })), (v) => v + " note(s)"))}</div></div>`
       + split(mobile, `<h2>Notes du personnel</h2>${tbl(["N°", "Employé", "Date", "Catégorie", "Motif", "#Montant", "Justificatif", "Statut", ""], L.map((n) => {
           const over = n.amount > NDF_CAT[n.cat][1]
           const act = n.status === "soumise" ? btn("Valider", `A.fin.ndfValidate(${q(n.id)})`, "sm") + btn("Rejeter", `A.fin.ndfReject(${q(n.id)})`, "ghost sm")

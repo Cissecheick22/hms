@@ -66,7 +66,7 @@
       const quick = [["Nouvelle réservation", "reservations/new", "calendar"], ["Check-in", "checkin", "key"], ["Check-out", "checkout", "receipt"], ["Walk-in", "sej-mouv", "user"], ["Signaler une panne", "mnt-ot", "wrench"], ["Analytique", "analytique", "trend"]].filter(([, r]) => canSee(r.split("/")[0]))
       return pageHead(`Bonjour ${u.name.split(" ")[0]}`, `${D.hotel} · ${fdLong(today)} · données d'exemple`)
         + `<div class="quick" style="margin-bottom:18px">${quick.map(([l, r, i]) => `<button class="btn ghost sm" onclick="go('${r}')">${ico(i, 15)} ${esc(l)}</button>`).join("")}</div>`
-        + `<div class="grid g4">
+        + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))">
             ${stat({ label: "Occupation ce soir", value: pct(now.occ), icon: "bed", delta: delta(now.occ, prev.occ), hint: `${now.sold}/${now.n} chambres · vs hier`, trend: h.slice(-14).map((x) => x.occ), route: "analytique/hebergement" })}
             ${stat({ label: "Prix moyen (ADR)", value: money(now.adr), icon: "tag", delta: delta(now.adr, prev.adr), hint: "vs hier", trend: h.slice(-14).map((x) => x.adr), route: "analytique/hebergement" })}
             ${stat({ label: "RevPAR", value: money(now.revpar), icon: "trend", delta: delta(now.revpar, prev.revpar), hint: "revenu par chambre disponible", trend: h.slice(-14).map((x) => x.revpar), route: "analytique/revenus" })}

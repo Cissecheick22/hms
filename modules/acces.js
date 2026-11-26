@@ -262,13 +262,51 @@
     return [true, `${a.name} autorisé`]
   }
   const label = (c) => (c.type === "mobile" ? "Clé mobile " : "Carte ") + c.id
-  const credBadge = (s) => badge(s, s === "active" ? "on" : ["perdue", "échec", "à réencoder"].includes(s) ? "dark" : ["en cours"].includes(s) ? "outline" : "")
+  const credBadge = (s) => badge(s, s === "active" ? "ok" : s === "à réencoder" ? "warn" : ["perdue", "échec"].includes(s) ? "bad" : s === "en cours" ? "info" : "outline")
   let encodingMsg = null // état transitoire (non sauvegardé)
   const pending = () => C.alarms.filter((a) => a.status === "ouverte")
   const lowBat = () => C.locks.filter((l) => l.battery != null && l.battery < 20)
   const offline = () => C.locks.filter((l) => l.offline)
   const occupied = (l) => l.room && occupant(l.room)
   const cloudBanner = () => (C.gateway.cloud ? "" : `<div class="err" style="margin-bottom:14px">Mode dégradé : la passerelle ${esc(C.gateway.id)} n'a plus de connexion au cloud. Encodage et commandes locales continuent ; ${C.gateway.queue.length} événement(s) en file locale, rejoués à la reconnexion (EF-ACC-023).</div>`)
+  // Historique d'exemple (14 jours, déterministe) raccordé à la valeur du jour : mini-courbes et évolutions des indicateurs
+  const rnd = (i) => { const x = Math.sin(i * 57.31 + 1.7) * 43758.5453; return x - Math.floor(x) }
+  const hist = (seed, base, spread, last) => Array.from({ length: 14 }, (_, i) => (i === 13 ? last : Math.max(0, Math.round((base + (rnd(seed + i) - 0.5) * spread) * 10) / 10)))
+  const dlt = (h) => (h[12] ? ((h[13] - h[12]) / Math.abs(h[12])) * 100 : null)
+  const statRow = (items) => `<div class="grid g4" style="margin-bottom:16px">${items.map(stat).join("")}</div>`
+  const countBy = (arr, f) => Object.entries(arr.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m }, {})).map(([label, value]) => ({ label, value }))
+  const cardsLine = () => { const cards = C.creds.filter((c) => c.type === "carte"); return [{ label: "Vierges en stock", value: C.cards.blank }, { label: "En circulation", value: cards.filter((c) => c.status === "active").length }, { label: "À recycler", value: C.cards.recycle }, { label: "Non restituées", value: C.cards.lost }] }
+  const headCles = () => {
+    const act = C.creds.filter((c) => c.status === "active"), stays = inHouse()
+    const mob = stays.filter((r) => C.creds.some((c) => c.resId === r.id && c.type === "mobile" && c.status === "active")).length
+    const todo = C.creds.filter((c) => ["à réencoder", "échec"].includes(c.status)).length
+    const hA = hist(3, Math.max(4, act.length), 6, act.length), hM = hist(11, 40, 20, Math.round((mob / Math.max(1, stays.length)) * 100))
+    return statRow([
+      { label: "Clés actives", value: String(act.length), icon: "key", delta: dlt(hA), hint: `${stays.length} séjour(s) en cours · vs hier`, trend: hA, route: "acc-cles/sejours" },
+      { label: "Adoption clé mobile", value: pct(hM[13]), icon: "phone", delta: dlt(hM), hint: `${mob} séjour(s) sur ${stays.length}`, trend: hM },
+      { label: "À réencoder ou en échec", value: String(todo), icon: "alert", hint: todo ? "à traiter à la réception" : "rien à traiter" },
+      { label: "Cartes vierges", value: String(C.cards.blank), icon: "layers", hint: `seuil de réassort 100 · ${C.cards.recycle} à recycler`, route: "acc-cles/lecture" },
+    ])
+  }
+  const headMateriel = () => {
+    const g = C.gateway, reach = C.locks.filter((l) => !l.offline).length, hB = hist(23, 2, 2, lowBat().length)
+    return statRow([
+      { label: "Passerelle edge", value: g.cloud ? "En ligne" : "Dégradée", icon: "server", hint: `${g.id} · agent ${g.version}${g.cloud ? " · " + g.beat : " · file " + g.queue.length}` },
+      { label: "Serrures joignables", value: `${reach}/${C.locks.length}`, icon: "lock", hint: `${C.locks.filter((l) => l.kind === "en ligne").length} en ligne, ${C.locks.filter((l) => l.kind !== "en ligne").length} autonomes`, route: "acc-materiel/serrures" },
+      { label: "Batteries faibles", value: String(lowBat().length), icon: "zap", delta: dlt(hB), good: false, hint: "sous 20 % · vs hier", trend: hB },
+      { label: "Encodeurs prêts", value: `${C.encoders.filter((e) => e.status === "prêt").length}/${C.encoders.length}`, icon: "plug", hint: `${supervisionIssues().length} anomalie(s) de supervision` },
+    ])
+  }
+  const headSecurite = () => {
+    const done = C.alarms.filter((a) => a.delay != null), denied = C.events.filter((e) => e.result === "refusée").length
+    const hA = hist(41, 4, 4, pending().length), hD = hist(53, Math.max(3, denied), 5, denied)
+    return statRow([
+      { label: "Alarmes ouvertes", value: String(pending().length), icon: "bell", delta: dlt(hA), good: false, hint: "temps réel · vs hier", trend: hA, route: "acc-securite/alarmes" },
+      { label: "Accès refusés", value: String(denied), icon: "shield", delta: dlt(hD), good: false, hint: "au journal · vs hier", trend: hD, route: "acc-securite/journal" },
+      { label: "Délai moyen de traitement", value: (done.length ? Math.round(sum(done, (a) => a.delay) / done.length) : 0) + " min", icon: "clock", hint: `${done.length} alarme(s) traitée(s)` },
+      { label: "Anomalies IA ouvertes", value: String(C.anomalies.filter((a) => a.status === "ouverte").length), icon: "brain", hint: "à examiner (simulé)", route: "acc-securite/ia" },
+    ])
+  }
   const roleBar = () => `<div class="row" style="margin-bottom:12px"><label for="acc-role" style="margin:0">Rôle simulé</label><select id="acc-role" style="max-width:220px" onchange="D.acc.role=this.value;render()">${ROLES.map((r) => `<option ${C.role === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>`
 
   // ---------- Écrans ----------
@@ -277,7 +315,7 @@
       sync()
       const tab = p[0] || "sejours"
       return pageHead("Clés et identifiants", "Cartes et clés mobiles des séjours, passes et badges du personnel, lecture de carte, stock. Encodeurs et serrures simulés.")
-        + cloudBanner()
+        + cloudBanner() + headCles()
         + subtabs("acc-cles", [["sejours", "Clés des séjours"], ["passes", "Passes et personnel"], ["simul", "Tester un accès"], ["lecture", "Lecture et stock de cartes"]], tab)
         + ({ sejours: stayKeys, passes: passesTab, simul: simTab, lecture: readTab }[tab] || stayKeys)()
     },
@@ -285,7 +323,7 @@
       sync()
       const tab = p[0] || "passerelle"
       return pageHead("Serrures et passerelle", "Supervision de la passerelle edge, des encodeurs et du parc de serrures ; commandes à distance (matériel simulé).")
-        + cloudBanner()
+        + cloudBanner() + headMateriel()
         + subtabs("acc-materiel", [["passerelle", "Passerelle et encodeurs"], ["serrures", "Parc de serrures"], ["architecture", "Architecture SaaS-matériel"]], tab)
         + ({ passerelle: gatewayTab, serrures: locksTab, architecture: archTab }[tab] || gatewayTab)()
     },
@@ -293,7 +331,7 @@
       sync()
       const tab = p[0] || "alarmes"
       return pageHead("Sécurité des accès", "Alarmes en temps réel, journal immuable des accès, actions d'urgence, détection d'anomalies et indicateurs (exemple).")
-        + cloudBanner()
+        + cloudBanner() + headSecurite()
         + subtabs("acc-securite", [["alarmes", `Alarmes (${pending().length})`], ["journal", "Journal des accès"], ["urgence", "Lockdown et urgence"], ["ia", "IA sécurité"], ["kpi", "Indicateurs"]], tab)
         + ({ alarmes: alarmsTab, journal: journalTab, urgence: emergencyTab, ia: iaTab, kpi: kpiTab }[tab] || alarmsTab)()
     },
@@ -312,18 +350,16 @@
     const ids = creds.map((c) => c.id)
     const stayEv = C.events.filter((e) => /^fof\.stay/.test(e.detail) && ids.some((id) => e.cred.endsWith(" " + id))).slice(0, 8)
     const mob = creds.filter((c) => c.type === "mobile")
-    return split(listItems(stays.map((x) => { const n = C.creds.filter((c) => c.resId === x.id && c.status === "active").length; return { id: x.id, title: `Ch. ${x.room} · ${gname(x)}`, sub: `${n} clé(s) active(s) · départ ${fd(x.to)}`, badge: C.creds.some((c) => c.resId === x.id && c.status === "à réencoder") ? " " + badge("À réencoder", "dark") : "" } }), r.id, "acc-cles/sejours").replace(/go\('acc-cles\/sejours\/([^']+)'\)/g, "ui.accStay='$1';render()"),
-      `<div class="card"><div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(gname(r))}</span>${badge(`Serrure ${lock?.kind || "—"}`, "outline")}</div>
-        <div class="muted">${esc(r.id)} · validité jusqu'au ${fd(r.to)} 13:00 (départ + 1 h de grâce, RG-ACC-01) · espaces : ${esc(areasFor(r).join(", "))}</div>
-        <h3>Identifiants</h3>
+    return split(listItems(stays.map((x) => { const n = C.creds.filter((c) => c.resId === x.id && c.status === "active").length; return { id: x.id, title: `Ch. ${x.room} · ${gname(x)}`, sub: `${n} clé(s) active(s) · départ ${fd(x.to)}`, badge: C.creds.some((c) => c.resId === x.id && c.status === "à réencoder") ? " " + badge("À réencoder", "warn") : "" } }), r.id, "acc-cles/sejours").replace(/go\('acc-cles\/sejours\/([^']+)'\)/g, "ui.accStay='$1';render()"),
+      `<div class="stack">${section(`Ch. ${r.room} — ${gname(r)}`, `<div class="muted" style="margin-bottom:10px">${esc(r.id)} · validité jusqu'au ${fd(r.to)} 13:00 (départ + 1 h de grâce, RG-ACC-01) · espaces : ${esc(areasFor(r).join(", "))}</div>
         ${tbl(["Identifiant", "Type", "Titulaire", "Contenu encodé", "N° séq.", "Validité", "Version", "Statut", ""], creds.map((c) => [esc(c.id), esc(c.type), esc(HOLDERS[c.holder] || HOLDERS.principal),
           `ch. ${esc(roomsOf(c).join(" + "))}${connects(roomsOf(c)).map((l) => ` · ${esc(l.door)}`).join("")}<div class="muted">${esc((c.areas || []).join(", ") || "aucun espace")}</div>`,
           c.seq ?? "—", `${fd(c.from)} → ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}`, "v" + c.version, credBadge(c.status) + (c.reason ? ` ${ref(c.reason)}` : ""),
           c.status === "active" ? `<span class="row" style="flex-wrap:nowrap">${btn("Perdue", `A.acc.lost(${q(c.id)})`, "ghost sm")}${btn("Révoquer", `A.acc.revoke(${q(c.id)})`, "ghost sm")}</span>`
           : c.status === "à réencoder" || c.status === "échec" ? btn("Réencoder", `A.acc.reencode(${q(c.id)})`, "sm") : ""]), "Aucun identifiant.")}
         <p class="muted">Encodé sur la carte : chambre(s), espaces communs autorisés, début et fin de validité, n° de séquence (une « nouvelle clé » annule les précédentes) — EF-ACC-002.</p>
-        <h3>Émettre</h3>
-        <div class="form">
+`, badge(`Serrure ${lock?.kind || "—"}`, "outline"))}
+        ${section("Émettre des clés", `<div class="form">
           ${field("acc-enc", "Encodeur", select("acc-enc", encs.map((e) => [e.id, `${e.id} · ${e.post} · ${e.status}`]), C.enc, `onchange="D.acc.enc=this.value"`))}
           ${field("acc-n", "Nombre de cartes", select("acc-n", ["1", "2"], "1"))}
           ${field("acc-holder", "Titulaire", select("acc-holder", Object.entries(HOLDERS), "principal"))}
@@ -338,18 +374,24 @@
           ${btn("Nouvelle clé (annule les précédentes)", `A.acc.issue(${q(r.id)}, 'new')`, "ghost")}
           ${btn("Envoyer une clé mobile", `A.acc.mobile(${q(r.id)})`, "ghost")}</div>`}
         <p class="muted">${active} clé(s) active(s) sur ${MAX_KEYS} autorisées sans validation (RG-FOF-03). Duplicata : même n° de séquence, les clés existantes restent valides ; nouvelle clé : séquence + 1, les précédentes sont annulées (EF-ACC-003). Aucun succès affiché sans accusé du matériel ; 3 tentatives puis échec signalé (RG-ACC-10). Émission en une action (EF-ACC-001). Perte : invalidation immédiate en ligne, par n° de séquence hors ligne, journal et alerte (EF-ACC-009).</p>
-        <h3>Droits aux espaces communs</h3>
-        <div class="form">${field("acc-pkg", "Forfait acheté (RAT / SPA)", select("acc-pkg", [["", "Aucun"], ...((D.rat && D.rat.packages) || []).map((k) => [k.code, k.name])], C.pkgs[r.id] || "", `onchange="A.acc.setPkg(${q(r.id)}, this.value)"`))}
+`)}
+        ${section("Droits aux espaces communs", `<div class="form">${field("acc-pkg", "Forfait acheté (RAT / SPA)", select("acc-pkg", [["", "Aucun"], ...((D.rat && D.rat.packages) || []).map((k) => [k.code, k.name])], C.pkgs[r.id] || "", `onchange="A.acc.setPkg(${q(r.id)}, this.value)"`))}
           ${field("acc-tier", "Niveau de fidélité (CRM)", `<input id="acc-tier" value="${esc(tierOf(r))}" disabled>`)}${field("acc-cat", "Catégorie", `<input id="acc-cat" value="${esc(T(r.type).label)}" disabled>`)}</div>
-        ${tbl(["Espace", "Horaires", "Droit", "Motif"], rights(r).map((a) => [esc(a.name), esc(a.hours.join("–")), a.ok ? badge("Autorisé", "on") : badge("Refusé", "dark"), ref(a.why)]))}
+        ${tbl(["Espace", "Horaires", "Droit", "Motif"], rights(r).map((a) => [esc(a.name), esc(a.hours.join("–")), a.ok ? badge("Autorisé", "ok") : badge("Refusé", "bad"), ref(a.why)]))}
         <p class="muted">Calculés selon la catégorie, le niveau de fidélité (CRM), le forfait (RAT/SPA) et les horaires ; recalculés à chaque changement (RG-ACC-07) et poussés aux serrures en ligne. EF-ACC-011</p>
-        <h3>Événements de séjour reçus</h3>
-        ${tbl(["Horodatage", "Identifiant", "Événement", "Effet"], stayEv.map((e) => [esc(e.at.slice(11)) + ` ${ref(fd(e.at.slice(0, 10)))}`, esc(e.cred), esc(e.detail.split(" ")[0]), esc(e.type + " · " + e.result)]), "Aucun événement fof.stay.* pour ce séjour.")}
+`)}
+        ${section("Événements de séjour reçus", `${tbl(["Horodatage", "Identifiant", "Événement", "Effet"], stayEv.map((e) => [esc(e.at.slice(11)) + ` ${ref(fd(e.at.slice(0, 10)))}`, esc(e.cred), esc(e.detail.split(" ")[0]), esc(e.type + " · " + e.result)]), "Aucun événement fof.stay.* pour ce séjour.")}
         <p class="muted">fof.stay.checked-in : carte associée et clé mobile émise automatiquement ${C.mobileAuto ? "(activé)" : "(désactivé)"} ${btn(C.mobileAuto ? "Désactiver" : "Activer", "D.acc.mobileAuto=!D.acc.mobileAuto;render()", "ghost sm")} (EF-ACC-005). fof.stay.extended : prolongation à distance en ligne, réencodage signalé hors ligne (EF-ACC-006). fof.stay.room-moved : ancienne chambre révoquée, nouvelle attribuée (EF-ACC-007). fof.stay.checked-out : tous les identifiants révoqués (EF-ACC-008). ${btn("Prolonger / changer de chambre", "go('sej-mouv/chambre')", "ghost sm")}</p>
-        ${mob.length ? `<h3>Clé mobile dans l'application client</h3><div class="row" style="align-items:flex-start">${phone(mob.map((c) => `<div class="card" style="margin-bottom:8px"><strong>Chambre ${esc(roomsOf(c).join(" + "))}</strong><div class="muted">${esc(c.id)} · jusqu'au ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}</div>
-          ${c.status === "active" ? `<div style="margin-top:8px">${btn("Approcher le téléphone (BLE/NFC)", `A.acc.tap(${q(c.id)})`, "sm")}</div>` : `<div style="margin-top:8px">${badge(c.status === "révoquée" ? "Clé révoquée à distance" : c.status, "dark")}</div>`}</div>`).join(""), "Application client")}
-          <p class="muted" style="max-width:280px">Clé émise via le SDK du fabricant (simulé), ouverture en BLE ou NFC. « Révoquer » la retire à distance du téléphone, immédiatement. EF-ACC-010</p></div>` : ""}
+`)}
+        ${mob.length ? section("Clé mobile dans l'application client", `<div class="row" style="align-items:flex-start">${phone(mob.map((c) => `<div class="card" style="margin-bottom:8px"><strong>Chambre ${esc(roomsOf(c).join(" + "))}</strong><div class="muted">${esc(c.id)} · jusqu'au ${esc(c.to.slice(8, 10) + "/" + c.to.slice(5, 7) + " " + c.to.slice(11))}</div>
+          ${c.status === "active" ? `<div style="margin-top:8px">${btn("Approcher le téléphone (BLE/NFC)", `A.acc.tap(${q(c.id)})`, "sm")}</div>` : `<div style="margin-top:8px">${badge(c.status === "révoquée" ? "Clé révoquée à distance" : c.status, "bad")}</div>`}</div>`).join(""), "Application client")}
+          <p class="muted" style="max-width:280px">Clé émise via le SDK du fabricant (simulé), ouverture en BLE ou NFC. « Révoquer » la retire à distance du téléphone, immédiatement. EF-ACC-010</p></div>`) : ""}
       </div>`)
+      + `<div class="dash" style="margin-top:16px">
+          <div class="w4">${section("Identifiants par statut", donut(countBy(C.creds, (c) => c.status), { fmt: (v) => v, center: String(C.creds.length), sub: "identifiants" }))}</div>
+          <div class="w4">${section("Cartes et clés mobiles", donut([{ label: "Cartes", value: C.creds.filter((c) => c.type === "carte" && c.status === "active").length }, { label: "Clés mobiles", value: C.creds.filter((c) => c.type === "mobile" && c.status === "active").length }], { fmt: (v) => v, center: String(C.creds.filter((c) => c.status === "active").length), sub: "actives" }))}</div>
+          <div class="w4">${section("Encodages réussis par encodeur", bars(C.encoders.map((e) => ({ label: e.id, value: e.ok })), (v) => v.toLocaleString("fr-FR")))}</div>
+        </div>`
   }
   const pairOf = (no) => { const l = C.locks.find((x) => x.pair && x.pair.includes(no)); return l ? l.pair.find((x) => x !== no) : null }
   const connects = (rooms) => C.locks.filter((l) => l.pair && l.pair.every((no) => rooms.includes(no)))
@@ -358,14 +400,14 @@
   function passesTab() {
     return `${roleBar()}<div class="cols"><section><h2>Passes (master keys)</h2>
       ${tbl(["Réf.", "Type", "Titulaire", "Validité", "Demandé par", "Statut", ""], C.passes.map((x) => [esc(x.id), esc(x.type), esc(x.holder), `${fd(x.from)} → ${fd(x.to)}${x.hours ? " · " + esc(x.hours) : ""}`, esc(x.by) + (x.validatedBy ? `<div class="muted">validé : ${esc(x.validatedBy)}</div>` : ""),
-        badge(x.status, x.status === "active" ? "on" : x.status === "à valider" ? "dark" : "outline"),
+        badge(x.status, x.status === "active" ? "ok" : x.status === "à valider" ? "warn" : "outline"),
         x.status === "à valider" ? btn("Valider (2e personne)", `A.acc.validatePass(${q(x.id)})`, "sm") : x.status === "active" ? btn("Révoquer", `A.acc.revokePass(${q(x.id)})`, "ghost sm") : x.status === "sous scellés" ? btn("Briser les scellés", `A.acc.breakSeal(${q(x.id)})`, "ghost sm") : ""]))}
       ${card("Demander un passe", form([field("ps-type", "Type", select("ps-type", ["Passe d'étage 1", "Passe d'étage 2", "Passe d'étage 3", "Passe de service", "Passe général"], "Passe d'étage 1")),
         field("ps-holder", "Titulaire", select("ps-holder", C.staff.map((s) => [`${s.name} (${s.role.toLowerCase()})`, `${s.name} · ${s.role}`]), "")),
         field("ps-days", "Durée (jours)", input("ps-days", "1", 'type="number" min="1" max="90"')), `<div class="full" id="ps-err"></div>`,
         `<div class="full">${btn("Soumettre à validation", "A.acc.requestPass()", "ghost")}</div>`]) + `<p class="muted">Attribution nominative, durée limitée et double validation (EF-ACC-014). Un passe général exige le rôle Responsable sécurité.</p>`, 'style="margin-top:14px"')}</section>
       <section><h2>Badges du personnel</h2>
-      ${tbl(["Badge", "Employé", "Profil", "Poste", "Dernier usage", "Statut", ""], C.staff.map((s) => [esc(s.id), esc(s.name), esc(`${s.role} · ${s.zone}`), esc(s.shift), fd(s.last), badge(s.status, s.status === "actif" ? "on" : /30 j/.test(s.status) ? "dark" : ""),
+      ${tbl(["Badge", "Employé", "Profil", "Poste", "Dernier usage", "Statut", ""], C.staff.map((s) => [esc(s.id), esc(s.name), esc(`${s.role} · ${s.zone}`), esc(s.shift), fd(s.last), badge(s.status, s.status === "actif" ? "ok" : /30 j/.test(s.status) ? "warn" : "outline"),
         /révoqué/.test(s.status) ? "" : `<span class="row" style="flex-wrap:nowrap">${s.status === "actif" ? btn("Fin de poste", `A.acc.shift(${q(s.id)}, false)`, "ghost sm") : btn(/30 j/.test(s.status) ? "Réactiver (validation)" : "Début de poste", `A.acc.shift(${q(s.id)}, true)`, "ghost sm")}${btn("Départ", `A.acc.terminate(${q(s.id)})`, "ghost sm")}</span>`]))}
       <p class="muted">Activation au pointage et suspension en fin de poste (hrm.shift.started / ended), révocation définitive au départ (hrm.employee.terminated), événements RH simulés — EF-ACC-013. Badge inutilisé 30 jours suspendu automatiquement (RG-ACC-08). ${btn("Appliquer la règle des 30 jours", "A.acc.idleRule()", "ghost sm")}</p>
       <h3>Profils d'accès</h3>${tbl(["Profil", "Poste RH", "Portes et zones", "Plages", "Jours", "Mode intimité"], C.profiles.map((x) => { const n = ((D.hrm && D.hrm.emps) || []).filter((e) => e.job === x.post).length; return [esc(x.role), esc(x.post) + ` ${ref(n + " employé(s) RH")}`, esc(x.doors.map(doorLabel).join(", ")), esc(`Poste ± ${x.margin} min`), esc(x.days), esc(x.privacy)] }))}
@@ -389,7 +431,7 @@
         field("sim-door", "Porte", select("sim-door", C.locks.map((l) => [l.id, `${l.door} · ${l.kind}`]), ui.accSimDoor || "L-PISC")), field("sim-time", "Heure", input("sim-time", ui.accSimTime || nowT(), 'type="time"')),
         `<div class="full" id="sim-err"></div>`, `<div class="full">${btn("Présenter", "A.acc.present()")}</div>`])}
       <p class="muted">La serrure applique : validité (RG-ACC-01), chambres encodées et clés partagées (EF-ACC-027), porte communicante, espaces et horaires (EF-ACC-011), restrictions enfant (EF-ACC-004), n° de séquence des serrures autonomes (EF-ACC-009), profils du personnel et poste en cours (EF-ACC-012, EF-ACC-013), mode intimité (RG-ACC-06), lockdown. Chaque essai est journalisé.</p>`)}</section>
-      <section><h2>Derniers essais</h2>${tbl(["Heure", "Identifiant", "Porte", "Résultat", "Motif"], C.sims.map((x) => [esc(x.t), esc(x.who), esc(x.door), x.ok ? badge("Accordé", "on") : badge("Refusé", "dark"), ref(x.why)]), "Aucun essai.")}</section></div>`
+      <section><h2>Derniers essais</h2>${tbl(["Heure", "Identifiant", "Porte", "Résultat", "Motif"], C.sims.map((x) => [esc(x.t), esc(x.who), esc(x.door), x.ok ? badge("Accordé", "ok") : badge("Refusé", "bad"), ref(x.why)]), "Aucun essai.")}</section></div>`
   }
 
   // ---------- Lecture de carte et stock ----------
@@ -400,26 +442,30 @@
     return `<div class="cols"><section>${card("Lire une carte posée sur l'encodeur", `${form([field("rd-card", "Carte présentée (simulation)", select("rd-card", [["", "Carte vierge"], ...cards.map((c) => [c.id, `${c.id} · ch. ${c.room} · ${c.status}`])], "")),
         field("rd-enc", "Encodeur", select("rd-enc", C.encoders.map((e) => [e.id, `${e.id} · ${e.post}`]), C.enc)), `<div class="full">${btn("Lire la carte", "A.acc.read()")}</div>`])}
       ${last ? `<div class="card" style="margin-top:12px">${last}</div>` : ""}<p class="muted">EF-ACC-022 : chambre, validité et titulaire lus sur la carte.</p>`)}</section>
-      <section><h2>Stock de cartes</h2><div class="grid">${kpi("Cartes vierges", C.cards.blank, "en stock")}${kpi("En circulation", inUse, "cartes actives")}${kpi("À recycler", C.cards.recycle, "retournées au check-out")}${kpi("Non restituées", C.cards.lost, `coût ${money(C.cards.lost * CARD_COST)}`)}</div>
-        <div class="row" style="margin-top:12px">${btn("Recycler les cartes retournées", "A.acc.recycle()", "ghost")}${btn("Facturer une carte non restituée", "A.acc.billCard()", "ghost")}</div>
-        <p class="muted">${C.cards.billed} carte(s) non restituée(s) facturée(s) ce mois (EF-ACC-026). Seuil de réapprovisionnement : 100 cartes.</p></section></div>`
+      <section class="stack"><div class="grid g4">${stat({ label: "Cartes vierges", value: String(C.cards.blank), icon: "layers", hint: "en stock" })}${stat({ label: "En circulation", value: String(inUse), icon: "key", hint: "cartes actives" })}${stat({ label: "À recycler", value: String(C.cards.recycle), icon: "refresh", hint: "retournées au check-out" })}${stat({ label: "Non restituées", value: String(C.cards.lost), icon: "alert", hint: `coût ${money(C.cards.lost * CARD_COST)}` })}</div>
+        ${section("Stock de cartes", donut(cardsLine(), { fmt: (v) => v, center: String(sum(cardsLine(), (x) => x.value)), sub: "cartes" })
+          + `<div class="row" style="margin-top:12px">${btn("Recycler les cartes retournées", "A.acc.recycle()", "ghost")}${btn("Facturer une carte non restituée", "A.acc.billCard()", "ghost")}</div>
+        <p class="muted">${C.cards.billed} carte(s) non restituée(s) facturée(s) ce mois (EF-ACC-026). Seuil de réapprovisionnement : 100 cartes.</p>`)}</section></div>`
   }
 
   // ---------- Passerelle et encodeurs ----------
   function gatewayTab() {
     const g = C.gateway, certDays = nights(today, g.cert)
     const issues = supervisionIssues()
-    return `<div class="cols"><section>${card(`Passerelle edge ${g.id}`, `<div class="row between"><strong>${g.cloud ? "Connectée au cloud" : "Autonome (hors ligne)"}</strong>${badge(g.cloud ? "En ligne" : "Mode dégradé", g.cloud ? "on" : "dark")}</div>
+    const lockMix = [{ label: "En ligne, joignables", value: C.locks.filter((l) => l.kind === "en ligne" && !l.offline).length }, { label: "Autonomes (hors ligne)", value: C.locks.filter((l) => l.kind !== "en ligne" && !l.offline).length }, { label: "Injoignables", value: offline().length }]
+    return `<div class="dash"><div class="w8">${section(`Passerelle edge ${g.id}`, `<div class="row between"><strong>${g.cloud ? "Connectée au cloud" : "Autonome (hors ligne)"}</strong>${badge(g.cloud ? "En ligne" : "Mode dégradé", g.cloud ? "ok" : "bad")}</div>
         ${tbl(["Élément", "Valeur"], [["Version de l'agent", esc(g.version)], ["Dernier battement", esc(g.cloud ? g.beat : "— (liaison coupée)")], ["Liaison", "Sortante uniquement, TLS 1.3 + mTLS"],
-          ["Certificat", `${esc(g.certFp)} · expire le ${fd(g.cert)} (J-${certDays})${certDays <= 10 ? " " + badge("Renouvellement auto", "outline") : ""}`], ["Haute disponibilité", g.ha ? "Passerelle secondaire active" : "Non (passerelle unique)"],
+          ["Certificat", `${esc(g.certFp)} · expire le ${fd(g.cert)} (J-${certDays})${certDays <= 10 ? " " + badge("Renouvellement auto", "info") : ""}`], ["Haute disponibilité", g.ha ? "Passerelle secondaire active" : "Non (passerelle unique)"],
           ["Adaptateur", esc(g.adapter)], ["Capacités", esc(g.caps.join(", "))], ["File locale", `${g.queue.length} événement(s)`]])}
-        <div class="row" style="margin-top:12px">${g.cloud ? btn("Simuler une coupure Internet", "A.acc.cloud(false)", "ghost") : btn("Rétablir la connexion et resynchroniser", "A.acc.cloud(true)", "accent")}${btn("Renouveler le certificat", "A.acc.renewCert()", "ghost")}</div>`)}
-      ${card("Supervision du parc", `${tbl(["Élément", "Contrôle", "Constat"], issues.map((x) => [esc(x.what), esc(x.check), badge(x.text, "dark")]), "Aucune anomalie.")}
-        <p class="muted">${issues.length} anomalie(s) : connectivité, version, batterie et certificats de la passerelle, des encodeurs et des serrures. ${btn("Lancer la supervision et alerter", "A.acc.supervise()", "ghost sm")} EF-ACC-025</p>`, 'style="margin-top:14px"')}</section>
-      <section><h2>Encodeurs</h2>${tbl(["Encodeur", "Poste", "#Temps moyen", "#Réussis", "#Échecs", "Statut", ""], C.encoders.map((e) => [esc(e.id), esc(e.post), (sum(e.ms) / e.ms.length / 1000).toFixed(1) + " s", e.ok, e.fail, badge(e.status, e.status === "prêt" ? "on" : "dark"),
+        <div class="row" style="margin-top:12px">${g.cloud ? btn("Simuler une coupure Internet", "A.acc.cloud(false)", "ghost") : btn("Rétablir la connexion et resynchroniser", "A.acc.cloud(true)", "accent")}${btn("Renouveler le certificat", "A.acc.renewCert()", "ghost")}</div>`)}</div>
+      <div class="w4">${section("Parc de serrures", donut(lockMix, { fmt: (v) => v, center: String(C.locks.length), sub: "serrures" }), btn("Voir le parc", "go('acc-materiel/serrures')", "ghost sm"))}</div>
+      <div class="w6">${section("Supervision du parc", `${tbl(["Élément", "Contrôle", "Constat"], issues.map((x) => [esc(x.what), esc(x.check), badge(x.text, "warn")]), "Aucune anomalie.")}
+        <p class="muted">${issues.length} anomalie(s) : connectivité, version, batterie et certificats de la passerelle, des encodeurs et des serrures. ${btn("Lancer la supervision et alerter", "A.acc.supervise()", "ghost sm")} EF-ACC-025</p>`)}</div>
+      <div class="w6">${section("Encodeurs", `${tbl(["Encodeur", "Poste", "#Temps moyen", "#Réussis", "#Échecs", "Statut", ""], C.encoders.map((e) => [esc(e.id), esc(e.post), (sum(e.ms) / e.ms.length / 1000).toFixed(1) + " s", e.ok, e.fail, badge(e.status, e.status === "prêt" ? "ok" : "bad"),
         btn(e.status === "prêt" ? "Simuler une panne" : "Remettre en service", `A.acc.toggleEnc(${q(e.id)})`, "ghost sm")]))}
         <p class="muted">En cas de panne, un autre encodeur prêt du même établissement est proposé automatiquement.</p>
-        ${g.queue.length ? `<h3>File locale (en attente de resynchronisation)</h3>${tbl(["Horodatage", "Événement"], g.queue.map((x) => [esc(x.at), esc(x.text)]))}` : ""}</section></div>`
+        <h3>Temps moyen d'encodage (objectif &lt; 3 s)</h3>${bars(C.encoders.map((e) => ({ label: e.id, value: Math.round(sum(e.ms) / e.ms.length) })), (v) => (v / 1000).toFixed(1).replace(".", ",") + " s")}
+        ${g.queue.length ? `<h3>File locale (en attente de resynchronisation)</h3>${tbl(["Horodatage", "Événement"], g.queue.map((x) => [esc(x.at), esc(x.text)]))}` : ""}`)}</div></div>`
   }
 
   function supervisionIssues() {
@@ -440,9 +486,12 @@
     const f = ui.accLockF || "toutes"
     ui.accLockF = f
     const list = C.locks.filter((l) => f === "toutes" || (f === "alerte" ? l.offline || (l.battery != null && l.battery < 20) : f === "ligne" ? l.kind === "en ligne" : l.kind === "hors ligne"))
-    return `${roleBar()}${chips("accLockF", { toutes: "Toutes", alerte: "En alerte", ligne: "En ligne", horsligne: "Hors ligne (autonomes)" }, { toutes: C.locks.length, alerte: lowBat().length + offline().length })}
+    const bat = C.locks.filter((l) => l.battery != null).sort((a, b) => a.battery - b.battery).slice(0, 12)
+    return `<div class="dash" style="margin-bottom:16px"><div class="w8">${section("Batteries les plus faibles", columns(bat.map((l) => l.door.replace("Ch. ", "")), bat.map((l) => l.battery), (v) => v + " %"))}</div>
+      <div class="w4">${section("Firmware", donut(countBy(C.locks.filter((l) => l.fw), (l) => l.fw < FW_LATEST ? `${l.fw} (à mettre à jour)` : `${l.fw} (à jour)`), { fmt: (v) => v, center: FW_LATEST, sub: "dernière version" }))}</div></div>
+      ${roleBar()}${chips("accLockF", { toutes: "Toutes", alerte: "En alerte", ligne: "En ligne", horsligne: "Hors ligne (autonomes)" }, { toutes: C.locks.length, alerte: lowBat().length + offline().length })}
       ${tbl(["Porte", "Zone", "Type", "État", "#Batterie", "Firmware", "Dernier contact", ""], list.map((l) => [esc(l.door) + (l.dnd ? " " + badge("Ne pas déranger", "outline") : "") + (occupied(l) ? ` ${ref("occupée")}` : ""), esc(l.zone), esc(l.kind),
-        l.offline ? badge("Injoignable", "dark") : esc(l.state) + (l.doorOpen ? ` ${badge("porte ouverte", "dark")}` : ""), l.battery == null ? "secteur" : l.battery < 20 ? `<strong>${l.battery} %</strong>` : l.battery + " %", esc(l.fw) + (l.fw < "4.2.0" && l.kind !== "en ligne" ? ` ${ref("maj dispo")}` : ""), esc(l.last.slice(11) ? fd(l.last.slice(0, 10)) + " " + l.last.slice(11) : l.last),
+        l.offline ? badge("Injoignable", "bad") : esc(l.state) + (l.doorOpen ? ` ${badge("porte ouverte", "warn")}` : ""), l.battery == null ? "secteur" : l.battery < 20 ? `<strong>${l.battery} %</strong>` : l.battery + " %", esc(l.fw) + (l.fw < "4.2.0" && l.kind !== "en ligne" ? ` ${ref("maj dispo")}` : ""), esc(l.last.slice(11) ? fd(l.last.slice(0, 10)) + " " + l.last.slice(11) : l.last),
         l.kind === "en ligne" ? `<span class="row" style="flex-wrap:nowrap">${btn("Ouvrir", `A.acc.command(${q(l.id)}, 'open')`, "ghost sm")}${btn("Verrouiller", `A.acc.command(${q(l.id)}, 'lock')`, "ghost sm")}${l.room ? "" : btn(l.state === "mode bureau" ? "Fin mode bureau" : "Mode bureau", `A.acc.command(${q(l.id)}, 'office')`, "ghost sm")}${btn("État", `A.acc.command(${q(l.id)}, 'status')`, "ghost sm")}</span>`
         : btn("Collecter le journal", `A.acc.collect(${q(l.id)})`, "ghost sm")]))}
       <div id="cmd-err"></div>
@@ -469,11 +518,13 @@
   // ---------- Alarmes ----------
   function alarmsTab() {
     const list = C.alarms.slice().sort((a, b) => (a.status === "ouverte" ? 0 : 1) - (b.status === "ouverte" ? 0 : 1) || b.at.localeCompare(a.at))
-    return `${tbl(["Horodatage", "Type", "Porte", "Détail", "Statut", ""], list.map((a) => [esc(a.at.slice(11) ? fd(a.at.slice(0, 10)) + " " + a.at.slice(11) : a.at), esc(a.type), esc(a.door), esc(a.detail),
-        badge(a.status, a.status === "ouverte" ? "dark" : "") + (a.by ? ` ${ref(`${a.by} · ${a.delay} min`)}` : ""),
+    return `<div class="dash"><div class="w12">${section(`Alarmes (${pending().length} ouverte(s))`, `${tbl(["Horodatage", "Type", "Porte", "Détail", "Statut", ""], list.map((a) => [esc(a.at.slice(11) ? fd(a.at.slice(0, 10)) + " " + a.at.slice(11) : a.at), esc(a.type), esc(a.door), esc(a.detail),
+        badge(a.status, a.status === "ouverte" ? "bad" : "ok") + (a.by ? ` ${ref(`${a.by} · ${a.delay} min`)}` : ""),
         a.status === "ouverte" ? `<span class="row" style="flex-wrap:nowrap">${btn("Acquitter", `A.acc.ack(${q(a.id)})`, "sm")}${/Batterie|hors ligne/i.test(a.type) ? btn("Ordre de travail", `A.acc.workOrder(${q(a.door)}, ${q(a.type)})`, "ghost sm") : ""}</span>` : ""]))}
-      <p class="muted">Flux temps réel (WebSocket simulé) : porte forcée ou restée ouverte, refus répétés, batterie faible, serrure hors ligne, sabotage (EF-ACC-017). ${btn("Simuler une alarme", "A.acc.simAlarm()", "ghost sm")}</p>
-      ${C.workOrders.length ? `<h3>Ordres de travail créés (maintenance)</h3>${tbl(["Réf.", "Porte", "Motif", "Créé"], C.workOrders.map((w) => [esc(w.id), esc(w.door), esc(w.reason), esc(w.at)]))}` : ""}`
+      <p class="muted">Flux temps réel (WebSocket simulé) : porte forcée ou restée ouverte, refus répétés, batterie faible, serrure hors ligne, sabotage (EF-ACC-017).</p>`, btn("Simuler une alarme", "A.acc.simAlarm()", "ghost sm"))}</div>
+      <div class="w6">${section("Alarmes par type", donut(countBy(C.alarms, (a) => a.type), { fmt: (v) => v, center: String(C.alarms.length), sub: "alarmes" }))}</div>
+        <div class="w6">${section("Ouvertes par heure de déclenchement", columns(["0-6 h", "6-12 h", "12-18 h", "18-24 h"], [0, 6, 12, 18].map((h) => pending().filter((a) => { const x = Number(a.at.slice(11, 13)); return x >= h && x < h + 6 }).length), (v) => v))}</div>
+      ${C.workOrders.length ? `<div class="w12">${section("Ordres de travail créés (maintenance)", tbl(["Réf.", "Porte", "Motif", "Créé"], C.workOrders.map((w) => [esc(w.id), esc(w.door), esc(w.reason), esc(w.at)])))}</div>` : ""}</div>`
   }
 
   // ---------- Journal ----------
@@ -483,7 +534,7 @@
     const list = C.events.filter((e) => !f || e.door === f)
     const qr = ui.accQuery
     return `<div class="stack"><section><div class="row"><label for="acc-door" style="margin:0">Porte</label><select id="acc-door" style="max-width:220px" onchange="ui.accDoor=this.value;render()"><option value="">Toutes</option>${doors.map((d) => `<option ${d === f ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>
-      <div style="margin-top:10px">${tbl(["Horodatage", "Porte", "Identifiant", "Événement", "Résultat", "Détail", "Empreinte"], list.map((e) => [esc(e.at.slice(11)) + ` ${ref(fd(e.at.slice(0, 10)))}`, esc(e.door), esc(e.cred), esc(e.type), e.result === "refusée" ? badge("refusée", "dark") : esc(e.result), ref(e.detail), `<code>${esc(e.hash)}</code>`]))}</div>
+      <div style="margin-top:10px">${tbl(["Horodatage", "Porte", "Identifiant", "Événement", "Résultat", "Détail", "Empreinte"], list.map((e) => [esc(e.at.slice(11)) + ` ${ref(fd(e.at.slice(0, 10)))}`, esc(e.door), esc(e.cred), esc(e.type), e.result === "refusée" ? badge("refusée", "bad") : esc(e.result), ref(e.detail), `<code>${esc(e.hash)}</code>`]))}</div>
       <p class="muted">Journal en ajout seul, chaque ligne chaînée à la précédente : toute modification casserait la chaîne (EF-ACC-019). ${btn("Vérifier l'intégrité", "A.acc.verifyChain()", "ghost sm")}</p></section>
       <section>${card("Interroger une serrure", `<p class="muted" style="margin-top:0">Qui est entré dans une chambre sur une plage horaire ? Droit spécifique et justification obligatoires ; la consultation est elle-même journalisée (EF-ACC-021).</p>
         ${roleBar()}${form([field("qy-door", "Porte", select("qy-door", doors, doors.find((d) => d.startsWith("Ch.")) || doors[0])), field("qy-from", "De", input("qy-from", "00:00", 'type="time"')), field("qy-to", "À", input("qy-to", "23:59", 'type="time"')),
@@ -502,7 +553,7 @@
   function emergencyTab() {
     const e = C.emergency
     return `${roleBar()}<div class="cols"><section>${card(e ? `${e.kind} en cours — ${e.zone}` : "Déclencher une action d'urgence", e ? `<p>Déclenché à ${esc(e.at)} par ${esc(e.by)}, validé par ${esc(e.second)}. Motif : ${esc(e.reason)}.</p>
-        ${tbl(["Serrure", "Accusé", "Délai"], e.results.map((x) => [esc(x.door), x.ok ? badge("Confirmé", "on") : badge("Non confirmé", "dark"), x.ok ? (x.ms / 1000).toFixed(1) + " s" : ref(x.why)]))}
+        ${tbl(["Serrure", "Accusé", "Délai"], e.results.map((x) => [esc(x.door), x.ok ? badge("Confirmé", "ok") : badge("Non confirmé", "bad"), x.ok ? (x.ms / 1000).toFixed(1) + " s" : ref(x.why)]))}
         <p class="muted">${e.results.filter((x) => !x.ok).length} serrure(s) non confirmée(s) : intervention physique requise.</p>
         <div class="form">${field("em-second2", "Second valideur pour la levée", select("em-second2", ["", "Arsène Gbané (responsable sécurité)", "Kouamé Ahoua (duty manager)", "Jean-Marc Tanoh (directeur d'exploitation)"], ""))}<div style="align-self:end">${btn("Lever l'action d'urgence", "A.acc.release()", "accent")}</div></div><div id="em-err"></div>`
       : form([field("em-kind", "Action", select("em-kind", ["Lockdown", "Ouverture d'urgence (évacuation)"], (ui.accEm || {}).kind || "Lockdown")),
@@ -527,7 +578,7 @@
       ${aiBox("Fins de batterie prévues", `Prévision d'après la consommation observée et le taux d'échec de lecture (modèle simulé). Première échéance : ${pred[0].l.door} dans ${pred[0].days} jours.`, btn("Créer les ordres préventifs (< 30 j)", "A.acc.predictiveWO()", "sm"))}
       ${tbl(["Serrure", "#Batterie", "#Jours restants"], pred.map((x) => [esc(x.l.door), x.l.battery + " %", x.days < 30 ? `<strong>${x.days}</strong>` : x.days]))}
       <h2>Corrélation sécurité</h2>
-      ${tbl(["Heure", "Badge", "Chambre", "Tâche planifiée"], staffEntries.map((e) => { const no = e.door.replace("Ch. ", ""); const s = C.staff.find((x) => e.cred.endsWith(x.id)); const ok = (s && (D.assignments || {})[no] === s.name) || C.workOrders.some((w) => w.door === e.door); return [esc(e.at.slice(11)), esc(holderOf(e.cred)), esc(no), ok ? badge("Justifiée", "on") : badge("Aucune tâche", "dark")] }), "Aucune entrée du personnel.")}
+      ${tbl(["Heure", "Badge", "Chambre", "Tâche planifiée"], staffEntries.map((e) => { const no = e.door.replace("Ch. ", ""); const s = C.staff.find((x) => e.cred.endsWith(x.id)); const ok = (s && (D.assignments || {})[no] === s.name) || C.workOrders.some((w) => w.door === e.door); return [esc(e.at.slice(11)), esc(holderOf(e.cred)), esc(no), ok ? badge("Justifiée", "ok") : badge("Aucune tâche", "warn")] }), "Aucune entrée du personnel.")}
       <p class="muted">Rapprochement des entrées du personnel avec les tâches housekeeping (répartition de l'écran Statut des chambres) et maintenance.</p></section></div>`
   }
 
@@ -539,18 +590,23 @@
     const byType = {}; C.alarms.forEach((a) => (byType[a.type] = (byType[a.type] || 0) + 1))
     const done = C.alarms.filter((a) => a.delay != null)
     const denied = {}; C.events.filter((e) => e.result === "refusée").forEach((e) => (denied[`${e.door} — ${e.detail || "refus"}`] = (denied[`${e.door} — ${e.detail || "refus"}`] || 0) + 1))
-    return `<div class="grid">
-        ${kpi("Temps moyen d'encodage", (sum(ms) / ms.length / 1000).toFixed(1) + " s", "objectif < 3 s")}
-        ${kpi("Taux d'échec d'encodage", pct((fail / (ok + fail)) * 100), `${fail} échecs / ${ok + fail} tentatives`)}
-        ${kpi("Adoption clé mobile", pct((mob.length / Math.max(1, stays.length)) * 100), `${mob.length} séjours sur ${stays.length}`)}
-        ${kpi("Serrures hors ligne", offline().length, "temps réel")}
-        ${kpi("Batterie faible", lowBat().length, "< 20 %")}
-        ${kpi("Cartes non restituées", C.cards.lost, money(C.cards.lost * CARD_COST))}
-        ${kpi("Délai moyen de traitement", (done.length ? Math.round(sum(done, (a) => a.delay) / done.length) : 0) + " min", `${done.length} alarme(s) traitée(s)`)}</div>
-      <div class="cols"><section><h3>Alarmes par type</h3>${bars(Object.entries(byType).map(([label, value]) => ({ label, value })))}</section>
-      <section><h3>Accès refusés par porte et motif</h3>${bars(Object.entries(denied).map(([label, value]) => ({ label, value })))}</section></div>
-      <h3>Temps moyen par encodeur</h3>${bars(C.encoders.map((e) => ({ label: `${e.id} · ${e.post}`, value: Math.round(sum(e.ms) / e.ms.length) })), (v) => (v / 1000).toFixed(1) + " s")}
-      <p class="muted">§10.12 — calculé sur les données d'exemple.</p>`
+    const encT = sum(ms) / ms.length / 1000, hE = hist(61, 2.4, 0.5, Math.round(encT * 10) / 10), failR = (fail / (ok + fail)) * 100, hF = hist(67, 2, 1.2, Math.round(failR * 10) / 10)
+    const mobR = (mob.length / Math.max(1, stays.length)) * 100, hM = hist(71, 40, 18, Math.round(mobR))
+    return `<div class="grid g4">
+        ${stat({ label: "Temps moyen d'encodage", value: encT.toFixed(1).replace(".", ",") + " s", icon: "clock", delta: dlt(hE), good: false, hint: "objectif < 3 s · vs hier", trend: hE })}
+        ${stat({ label: "Taux d'échec d'encodage", value: pct(failR), icon: "alert", delta: dlt(hF), good: false, hint: `${fail} échecs / ${ok + fail} tentatives`, trend: hF })}
+        ${stat({ label: "Adoption clé mobile", value: pct(mobR), icon: "phone", delta: dlt(hM), hint: `${mob.length} séjours sur ${stays.length}`, trend: hM })}
+        ${stat({ label: "Serrures hors ligne", value: String(offline().length), icon: "lock", hint: "temps réel", route: "acc-materiel/serrures" })}
+        ${stat({ label: "Batterie faible", value: String(lowBat().length), icon: "zap", hint: "< 20 %", route: "acc-materiel/serrures" })}
+        ${stat({ label: "Cartes non restituées", value: String(C.cards.lost), icon: "layers", hint: money(C.cards.lost * CARD_COST) })}
+        ${stat({ label: "Délai moyen de traitement", value: (done.length ? Math.round(sum(done, (a) => a.delay) / done.length) : 0) + " min", icon: "bell", hint: `${done.length} alarme(s) traitée(s)` })}</div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Temps moyen d'encodage sur 14 jours (exemple)", lineChart(hE.map((_, i) => fd(addDays(today, i - 13))), [{ name: "Temps moyen (s)", values: hE }], { fmt: (v) => v.toFixed(1).replace(".", ",") + " s" }))}</div>
+        <div class="w4">${section("Alarmes par type", donut(Object.entries(byType).map(([label, value]) => ({ label, value })), { fmt: (v) => v, center: String(C.alarms.length), sub: "alarmes" }))}</div>
+        <div class="w6">${section("Accès refusés par porte et motif", Object.keys(denied).length ? bars(Object.entries(denied).map(([label, value]) => ({ label, value }))) : `<p class="muted">Aucun refus.</p>`)}</div>
+        <div class="w6">${section("Temps moyen par encodeur", bars(C.encoders.map((e) => ({ label: `${e.id} · ${e.post}`, value: Math.round(sum(e.ms) / e.ms.length) })), (v) => (v / 1000).toFixed(1) + " s"))}</div>
+      </div>
+      <p class="muted">§10.12 — calculé sur les données d'exemple ; historiques sur 14 jours : exemple.</p>`
   }
 
   // ---------- Actions ----------

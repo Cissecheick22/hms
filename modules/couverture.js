@@ -75,7 +75,7 @@
       if (tab === "modules")
         body = tbl(["Code", "Module de la spec", "Section", "Phase", "Écrans de la maquette"], rows.map((r) => [
           `<strong>${esc(r.code)}</strong>`, esc(r.title), esc(r.sec), esc(r.phase),
-          r.screens.length ? r.screens.map((s) => `<button class="link" onclick="go('${esc(s.id)}')">${esc(s.label)}</button>`).join(" · ") : badge("À faire", "dark"),
+          r.screens.length ? r.screens.map((s) => `<button class="link" onclick="go('${esc(s.id)}')">${esc(s.label)}</button>`).join(" · ") : badge("À faire", "bad"),
         ]))
       else if (tab === "phases")
         body = tbl(["Phase", "Modules", "Jalon"], PHASES.map(([ph, mods, jalon]) => [`<strong>${esc(ph)}</strong>`, esc(mods), esc(jalon)]))
@@ -84,7 +84,16 @@
         body = `<p class="muted">Décisions d'architecture du vrai projet, à trancher avant les phases indiquées. Elles n'affectent pas la maquette.</p>`
           + tbl(["ID", "Décision", "Options", "Échéance"], DECISIONS.map((d) => d.map(esc)))
       return pageHead("Couverture de la spécification", "Chaque module de la spécification HMS SaaS et les écrans qui le représentent dans cette maquette.")
-        + cards([kpi("Modules de la spec", SPEC.length, "§2 à §29"), kpi("Modules représentés", covered, covered === SPEC.length ? "couverture complète" : `${SPEC.length - covered} restant(s)`), kpi("Écrans", nbScreens, "hors pages de détail")])
+        + `<div class="grid g4">
+            ${stat({ label: "Modules de la spec", value: SPEC.length, icon: "list", hint: "§2 à §29" })}
+            ${stat({ label: "Modules représentés", value: covered, icon: "check", hint: covered === SPEC.length ? "couverture complète" : `${SPEC.length - covered} restant(s)` })}
+            ${stat({ label: "Écrans", value: nbScreens, icon: "layers", hint: "hors pages de détail" })}
+            ${stat({ label: "Décisions en suspens", value: DECISIONS.length, icon: "alert", hint: "à trancher avant les phases", route: "couverture/decisions" })}
+          </div>`
+        + (tab === "modules" ? `<div class="dash" style="margin-top:16px">
+            <div class="w4">${section("Couverture des modules", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge(covered / SPEC.length * 100, "Modules représentés")}<div><div class="stat-val">${covered}/${SPEC.length}</div><div class="muted">modules de la spec représentés</div></div></div>`)}</div>
+            <div class="w8">${section("Écrans par phase de livraison", (() => { const ph = [...new Set(rows.map((r) => r.phase))]; return columns(ph.map((x) => x === "toutes" ? "Transverse" : "Ph. " + x), ph.map((x) => rows.filter((r) => r.phase === x).reduce((n, r) => n + r.screens.length, 0))) })())}</div>
+          </div>` : "")
         + `<div style="margin-top:20px">${subtabs("couverture", [["modules", "Modules"], ["phases", "Plan de livraison"], ["decisions", "Décisions en suspens"]], tab)}</div>`
         + body
     },

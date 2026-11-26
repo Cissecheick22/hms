@@ -132,37 +132,46 @@
     const per = ui.biPer
     const t = tonight(), m = agg(hist.filter((h) => h.d.slice(0, 7) === today.slice(0, 7))), w = agg(hist.slice(-7))
     const a = per === "jour" ? null : per === "7j" ? w : m
+    const rows = per === "7j" ? hist.slice(-7) : hist.filter((h) => h.d.slice(0, 7) === today.slice(0, 7)), tr = hist.slice(-14)
+    const dl = (x, y) => (y ? ((x - y) / y) * 100 : null)
     const tiles = a
-      ? [kpi("Occupation", pct(a.occ), `N-1 ${sign(a.occ - a.lyOcc)} pts · budget ${B.budget.occ} %`),
-        kpi("ADR", money(a.adr), `N-1 ${sign(((a.adr - a.lyAdr) / a.lyAdr) * 100)} · budget ${k(B.budget.adr)}`),
-        kpi("RevPAR", money(a.revpar), `N-1 ${sign(((a.revpar - a.lyRevpar) / a.lyRevpar) * 100)} · budget ${k(B.budget.revpar)}`),
-        kpi("TRevPAR", money(a.trevpar), `budget ${k(B.budget.trevpar)}`),
-        kpi("GOPPAR", money(a.goppar), `budget ${k(B.budget.goppar)}`)]
-      : [kpi("Occupation ce soir", pct(t.occ), `${t.sold} / ${t.avail} chambres vendables (réservations réelles)`),
-        kpi("ADR ce soir", money(t.adr), "tarifs des réservations en portefeuille"),
-        kpi("RevPAR ce soir", money(t.revpar), "revenu hébergement ÷ chambres vendables"),
-        kpi("Arrivées / départs", `${arrivals().length} / ${departures().length}`, "jour hôtelier")]
-    const ref = a || m, fc = monthForecast()
+      ? [stat({ label: "Occupation", value: pct(a.occ), icon: "bed", delta: dl(a.occ, a.lyOcc), hint: `vs N-1 · budget ${B.budget.occ} %`, trend: tr.map((h) => (h.sold / h.avail) * 100) }),
+        stat({ label: "ADR", value: money(a.adr), icon: "tag", delta: dl(a.adr, a.lyAdr), hint: `vs N-1 · budget ${k(B.budget.adr)}`, trend: tr.map((h) => h.adr) }),
+        stat({ label: "RevPAR", value: money(a.revpar), icon: "trend", delta: dl(a.revpar, a.lyRevpar), hint: `vs N-1 · budget ${k(B.budget.revpar)}`, trend: tr.map((h) => h.room / h.avail) }),
+        stat({ label: "TRevPAR", value: money(a.trevpar), icon: "coins", delta: dl(a.trevpar, B.budget.trevpar), hint: `vs budget ${k(B.budget.trevpar)}`, trend: tr.map((h) => h.total / h.avail) }),
+        stat({ label: "GOPPAR", value: money(a.goppar), icon: "chart", delta: dl(a.goppar, B.budget.goppar), hint: `vs budget ${k(B.budget.goppar)}`, trend: tr.map((h) => h.gop / h.avail) }),
+        stat({ label: "Chambres vendues", value: String(a.sold), icon: "key", hint: `sur ${a.avail} disponibles`, trend: tr.map((h) => h.sold) }),
+        stat({ label: "Revenu total", value: k(a.total) + " FCFA", icon: "wallet", hint: "toutes activités", trend: tr.map((h) => h.total) }),
+        stat({ label: "Résultat brut (GOP)", value: k(a.gop) + " FCFA", icon: "pie", hint: pct((a.gop / a.total) * 100) + " des revenus", trend: tr.map((h) => h.gop) })]
+      : [stat({ label: "Occupation ce soir", value: pct(t.occ), icon: "bed", hint: `${t.sold} / ${t.avail} chambres vendables (réservations réelles)`, trend: tr.map((h) => (h.sold / h.avail) * 100) }),
+        stat({ label: "ADR ce soir", value: money(t.adr), icon: "tag", hint: "tarifs des réservations en portefeuille", trend: tr.map((h) => h.adr) }),
+        stat({ label: "RevPAR ce soir", value: money(t.revpar), icon: "trend", hint: "revenu hébergement ÷ chambres vendables", trend: tr.map((h) => h.room / h.avail) }),
+        stat({ label: "Arrivées / départs", value: `${arrivals().length} / ${departures().length}`, icon: "key", hint: "jour hôtelier", route: "checkin" })]
+    const ref = a || m, fc = monthForecast(), fnb = (per === "jour" ? hist.filter((h) => h.d.slice(0, 7) === today.slice(0, 7)) : rows).reduce((s, h) => s + h.fnb, 0)
     return `${chips("biPer", { jour: "Ce soir", "7j": "7 derniers jours", mtd: "Mois en cours" })}
-      <div class="grid">${tiles.join("")}</div>
+      <div class="grid g4">${tiles.join("")}</div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section("Occupation : réalisé et N-1 (30 jours)", lineChart(hist.map((h) => fd(h.d)), [{ name: "Réalisé", values: hist.map((h) => (h.sold / h.avail) * 100) }, { name: "N-1", values: hist.map((h) => (h.lySold / h.avail) * 100) }], { fmt: (v) => Math.round(v) + " %", max: 100 }), btn("Tendances", "go('bi-dash/tendances')", "ghost sm"))}</div>
+        <div class="w4">${section(`Revenus — ${per === "7j" ? "7 jours" : "mois en cours"}`, donut([{ label: "Hébergement", value: ref.room }, { label: "Restauration", value: fnb }, { label: "Autres (spa, blanchisserie…)", value: Math.max(0, ref.total - ref.room - fnb) }], { fmt: money, center: k(ref.total), sub: "FCFA" }))}</div>
+      </div>
       <h2>Prévision de fin de mois</h2>
-      <div class="grid">${kpi("Occupation prévue", pct(fc.occ), `budget ${B.budget.occ} % · ${sign(fc.occ - B.budget.occ)} pts`)}${kpi("ADR prévu", money(fc.adr), `budget ${k(B.budget.adr)}`)}${kpi("RevPAR prévu", money(fc.revpar), `budget ${k(B.budget.revpar)} · ${sign(((fc.revpar - B.budget.revpar) / B.budget.revpar) * 100)}`)}${kpi("GOPPAR prévu", money(fc.goppar), `budget ${k(B.budget.goppar)}`)}</div>
+      <div class="grid g4">${stat({ label: "Occupation prévue", value: pct(fc.occ), icon: "bed", delta: dl(fc.occ, B.budget.occ), hint: `vs budget ${B.budget.occ} %` })}${stat({ label: "ADR prévu", value: money(fc.adr), icon: "tag", delta: dl(fc.adr, B.budget.adr), hint: `vs budget ${k(B.budget.adr)}` })}${stat({ label: "RevPAR prévu", value: money(fc.revpar), icon: "trend", delta: dl(fc.revpar, B.budget.revpar), hint: `vs budget ${k(B.budget.revpar)}` })}${stat({ label: "GOPPAR prévu", value: money(fc.goppar), icon: "chart", delta: dl(fc.goppar, B.budget.goppar), hint: `vs budget ${k(B.budget.goppar)}` })}</div>
       <p class="muted">Réalisé jusqu'à la veille + réservations en portefeuille et pick-up attendu jusqu'au dernier jour du mois. <span style="font-size:12px">EF-BIR-002</span></p>
       ${aiBox("Commentaire automatique des écarts", `Sur le mois, le RevPAR est à ${money(m.revpar)} (${sign(((m.revpar - B.budget.revpar) / B.budget.revpar) * 100)} vs budget). L'écart vient surtout de l'occupation (${pct(m.occ)} contre ${B.budget.occ} % prévus) ; l'ADR tient le budget grâce au segment Affaires. Le segment Groupes recule de 18 nuitées par rapport à N-1.`,
         btn("Demander au copilote", "go('aip-ia/copilote')", "ghost sm"))}
-      <div class="cols">
-        <section><h2>Comparaison budget et N-1 — ${per === "7j" ? "7 jours" : "mois en cours"}</h2>
+      <div class="dash" style="margin-top:16px">
+        <div class="w8">${section(`Comparaison budget et N-1 — ${per === "7j" ? "7 jours" : "mois en cours"}`, `
           ${tbl(["Indicateur", "#Réalisé", "#Budget", "#N-1", "#Prévision fin de mois", "#Écart budget"], [
             ["Occupation", pct(ref.occ), B.budget.occ + " %", pct(ref.lyOcc), pct(fc.occ), sign(ref.occ - B.budget.occ) + " pts"],
             ["ADR", money(ref.adr), money(B.budget.adr), money(ref.lyAdr), money(fc.adr), sign(((ref.adr - B.budget.adr) / B.budget.adr) * 100)],
             ["RevPAR", money(ref.revpar), money(B.budget.revpar), money(ref.lyRevpar), money(fc.revpar), sign(((ref.revpar - B.budget.revpar) / B.budget.revpar) * 100)],
             ["TRevPAR", money(ref.trevpar), money(B.budget.trevpar), "—", "—", sign(((ref.trevpar - B.budget.trevpar) / B.budget.trevpar) * 100)],
             ["GOPPAR", money(ref.goppar), money(B.budget.goppar), "—", money(fc.goppar), sign(((ref.goppar - B.budget.goppar) / B.budget.goppar) * 100)],
-          ])}</section>
-        <section><h2>Revenus — ${per === "7j" ? "7 jours" : "mois en cours"}</h2>
+          ])}`)}</div>
+        <div class="w4">${section("Revenus et résultat brut", `
           ${bars([{ label: "Hébergement", value: ref.room }, { label: "Restauration", value: hist.filter((h) => per === "7j" ? hist.slice(-7).includes(h) : h.d.slice(0, 7) === today.slice(0, 7)).reduce((s, h) => s + h.fnb, 0) },
             { label: "Autres (spa, blanchisserie…)", value: ref.total - ref.room - hist.filter((h) => per === "7j" ? hist.slice(-7).includes(h) : h.d.slice(0, 7) === today.slice(0, 7)).reduce((s, h) => s + h.fnb, 0) }, { label: "Résultat brut (GOP)", value: ref.gop }], k)}
-          <p class="muted">Jour hôtelier de référence pour les indicateurs quotidiens (RG-BIR-03). Consolidation multi-établissements : un seul établissement dans ce tenant (EF-BIR-003).</p></section>
+          <p class="muted">Jour hôtelier de référence pour les indicateurs quotidiens (RG-BIR-03). Consolidation multi-établissements : un seul établissement dans ce tenant (EF-BIR-003).</p>`)}</div>
       </div>`
   }
 
@@ -172,22 +181,38 @@
     const outlier = hist.map((h, i) => ({ h, v: occ[i] })).sort((a, b) => a.v - b.v)[0]
     const days = Array.from({ length: 14 }, (_, i) => addDays(today, i))
     const pick = days.map((d, i) => { const now = otb(d).length; const before = Math.max(0, now - Math.round(rnd(i + 300) * 2.4)); return { d, now, before, pu: now - before } })
-    return `<h2>Occupation — 30 derniers jours</h2>
-      ${card("", columns(hist.map((h) => fd(h.d)), occ, (v) => v + " %"))}
-      <h2>RevPAR — 30 derniers jours</h2>
-      ${card("", columns(hist.map((h) => fd(h.d)), rp, (v) => k(v)))}
+    const totPu = pick.reduce((s_, x) => s_ + x.pu, 0)
+    return `<div class="grid g4">
+        ${stat({ label: "Occupation moyenne (30 j)", value: Math.round(mean) + " %", icon: "bed", hint: "historique d'exemple", trend: occ })}
+        ${stat({ label: "RevPAR moyen (30 j)", value: money(rp.reduce((s_, v) => s_ + v, 0) / rp.length), icon: "trend", hint: "par chambre disponible", trend: rp })}
+        ${stat({ label: "Pick-up sur 7 jours", value: "+" + totPu, icon: "zap", hint: "chambres gagnées pour les 14 prochains jours", trend: pick.map((x) => x.pu) })}
+        ${stat({ label: "Jour atypique", value: fd(outlier.h.d), icon: "alert", hint: `occupation ${outlier.v} % (moyenne ${Math.round(mean)} %)` })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w6">${section("Occupation — 30 derniers jours", lineChart(hist.map((h) => fd(h.d)), [{ name: "Occupation", values: occ }], { fmt: (v) => Math.round(v) + " %", max: 100 }))}</div>
+        <div class="w6">${section("RevPAR — 30 derniers jours", lineChart(hist.map((h) => fd(h.d)), [{ name: "RevPAR", values: rp }], { fmt: k }))}</div>
+      </div>
+      <div style="height:16px"></div>
       ${aiBox("Détection d'anomalies", `Le ${fd(outlier.h.d)} sort de la tendance : occupation ${outlier.v} % contre ${Math.round(mean)} % en moyenne sur 30 jours (−${Math.round(mean - outlier.v)} pts). Cause probable : annulation d'un groupe la veille (à confirmer).`, btn("Ouvrir le rapport d'occupation", "go('bi-rapports/bibliotheque/RPT-OCC')", "ghost sm"))}
       <h2>Pick-up — 14 prochains jours</h2>
       <p class="muted">Chambres en portefeuille aujourd'hui (réservations de la maquette) comparées à il y a 7 jours (historique d'exemple).</p>
-      ${card("", columns(pick.map((x) => fd(x.d)), pick.map((x) => x.pu), (v) => "+" + v))}
+      ${section("Pick-up par date d'arrivée", columns(pick.map((x) => fd(x.d)), pick.map((x) => x.pu), (v) => "+" + v))}
       ${tbl(["Date", "#En portefeuille", "#Il y a 7 jours", "#Pick-up", "#Occupation en portefeuille"], pick.map((x) => [`${esc(wd(x.d))} ${fd(x.d)}`, x.now, x.before, "+" + x.pu, pct((x.now / sellable()) * 100)]))}`
   }
 
   function segments() {
     const totalRn = B.segments.reduce((s, x) => s + x.rn, 0), totalCh = B.channels.reduce((s, x) => s + x.rn, 0)
-    return `<div class="cols">
-        <section><h2>Nuitées par segment — mois</h2>${bars(B.segments.map((s) => ({ label: s.name, value: s.rn })), (v) => v + " n.")}</section>
-        <section><h2>Nuitées par canal — mois</h2>${bars(B.channels.map((s) => ({ label: s.name, value: s.rn })), (v) => v + " n.")}</section>
+    const revSeg = B.segments.reduce((s, x) => s + x.rn * x.adr, 0), direct = B.channels.filter((c) => !c.cost).reduce((s, x) => s + x.rn, 0)
+    return `<div class="grid g4">
+        ${stat({ label: "Nuitées du mois", value: String(totalRn), icon: "moon", hint: `${B.segments.length} segments` })}
+        ${stat({ label: "ADR moyen", value: money(revSeg / totalRn), icon: "tag", hint: "toutes clientèles" })}
+        ${stat({ label: "Part des canaux sans commission", value: pct((direct / totalCh) * 100), icon: "globe", hint: "direct et contrats entreprises" })}
+        ${stat({ label: "Coût d'acquisition moyen", value: pct((B.channels.reduce((s, c) => s + c.rn * c.cost, 0) / totalCh) * 100), icon: "coins", hint: "pondéré par les nuitées" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w6">${section("Nuitées par segment — mois", donut(B.segments.map((s) => ({ label: s.name, value: s.rn })), { fmt: (v) => v + " n.", center: String(totalRn), sub: "nuitées" }))}</div>
+        <div class="w6">${section("Nuitées par canal — mois", donut(B.channels.map((s) => ({ label: s.name, value: s.rn })), { fmt: (v) => v + " n.", center: String(totalCh), sub: "nuitées" }))}</div>
+        <div>${section("Revenu hébergement par segment", bars(B.segments.map((s) => ({ label: s.name, value: s.rn * s.adr })), money))}</div>
       </div>
       <h2>Détail par segment</h2>
       ${tbl(["Segment", "#Nuitées", "#Part", "#ADR", "#Revenu hébergement"], B.segments.map((s) => [esc(s.name), s.rn, pct((s.rn / totalRn) * 100), money(s.adr), money(s.rn * s.adr)]), "",
@@ -199,19 +224,29 @@
 
   function couts() {
     const mk = B.market
-    return `<div class="cols">
-        <section><h2>Coût par chambre occupée — par service</h2>${bars(B.cpor, money)}
-          <p class="muted">Total : ${money(B.cpor.reduce((s, x) => s + x.value, 0))} par chambre occupée (mois, exemple).</p></section>
-        <section><h2>Indices de pénétration</h2>
-          <div class="grid">${kpi("MPI", mk.mpi.toLocaleString("fr-FR"), "occupation vs marché")}${kpi("ARI", mk.ari.toLocaleString("fr-FR"), "ADR vs marché")}${kpi("RGI", mk.rgi.toLocaleString("fr-FR"), "RevPAR vs marché")}</div>
-          <p class="muted">Ensemble concurrentiel de 5 hôtels d'Abidjan, données de marché simulées (EF-BIR-010, « si disponibles »). 100 = part équitable.</p></section>
+    const cp = B.cpor.reduce((s, x) => s + x.value, 0)
+    return `<div class="grid g4">
+        ${stat({ label: "Coût par chambre occupée", value: money(cp), icon: "bed", hint: "mois, exemple" })}
+        ${stat({ label: "MPI", value: mk.mpi.toLocaleString("fr-FR"), icon: "users", delta: mk.mpi - 100, hint: "occupation vs marché (100 = équitable)" })}
+        ${stat({ label: "ARI", value: mk.ari.toLocaleString("fr-FR"), icon: "tag", delta: mk.ari - 100, hint: "ADR vs marché" })}
+        ${stat({ label: "RGI", value: mk.rgi.toLocaleString("fr-FR"), icon: "trend", delta: mk.rgi - 100, hint: "RevPAR vs marché" })}
+      </div>
+      <div class="dash" style="margin-top:16px">
+        <div class="w6">${section("Coût par chambre occupée — par service", donut(B.cpor, { fmt: money, center: k(cp), sub: "FCFA / ch." }))}</div>
+        <div class="w6">${section("Indices de pénétration", bars([{ label: "MPI (occupation)", value: mk.mpi }, { label: "ARI (prix)", value: mk.ari }, { label: "RGI (revenu)", value: mk.rgi }], (v) => v.toLocaleString("fr-FR")) + `<p class="muted" style="margin:10px 0 0">Ensemble concurrentiel de 5 hôtels d'Abidjan, données de marché simulées (EF-BIR-010, « si disponibles »). 100 = part équitable.</p>`)}</div>
       </div>`
   }
 
   function bibliotheque(p) {
     const r = REP(p[1]) || B.reports[0], cats = [...new Set(B.reports.map((x) => x.cat))]
     const f = ui.biRun?.id === r.id ? ui.biRun : null
-    return split(`${cats.map((c) => `<h3>${esc(c)}</h3>${listItems(B.reports.filter((x) => x.cat === c).map((x) => ({ id: x.id, title: x.name })), r.id, "bi-rapports/bibliotheque")}`).join("")}`,
+    const worst = Math.max(...B.lake.map((x) => x.lag))
+    return `<div class="grid g4" style="margin-bottom:16px">
+        ${stat({ label: "Rapports standards", value: String(B.reports.length), icon: "file", hint: `${cats.length} catégories` })}
+        ${stat({ label: "Exécutions récentes", value: String(B.runs.length), icon: "refresh", hint: "PDF et Excel (simulés)" })}
+        ${stat({ label: "Envois planifiés actifs", value: String(B.schedules.filter((x) => x.active).length), icon: "mail", hint: `sur ${B.schedules.length} planifications`, route: "bi-rapports/planifies" })}
+        ${stat({ label: "Fraîcheur des données", value: worst + " min", icon: "clock", hint: "cible < 15 min", route: "bi-rapports/connecteurs" })}
+      </div>` + split(`${cats.map((c) => `<h3>${esc(c)}</h3>${listItems(B.reports.filter((x) => x.cat === c).map((x) => ({ id: x.id, title: x.name })), r.id, "bi-rapports/bibliotheque")}`).join("")}`,
       `<div class="card">
         <div class="row between"><span class="big">${esc(r.name)}</span>${badge(r.cat, "outline")}</div>
         <p class="muted">${esc(r.desc)} · EF-BIR-001</p>
@@ -244,13 +279,13 @@
     if (id === "RPT-SEG") return tbl(["Segment", "#Nuitées", "#Revenu"], B.segments.filter((s) => f.seg === "Tous" || s.name === f.seg).map((s) => [esc(s.name), s.rn, money(s.rn * s.adr)]))
     if (id === "RPT-AR") return tbl(["Folio", "Client", "#Solde", "Ancienneté"], inHouse().map((r) => [esc(r.id), esc(G(r.guest).name), money(folio(r).balance), nights(r.from, today) + " j"]))
     if (id === "RPT-HK") return tbl(["Statut", "#Chambres"], Object.entries(HK).map(([kk, [l]]) => [esc(l), D.rooms.filter((r) => r.hk === kk).length]))
-    return tbl(["Chambre", "Client", "Clé"], D.reservations.filter((r) => r.key).map((r) => [esc(r.room), esc(G(r.guest).name), badge(r.key === "active" ? "Active" : "Révoquée", r.key === "active" ? "on" : "outline")]))
+    return tbl(["Chambre", "Client", "Clé"], D.reservations.filter((r) => r.key).map((r) => [esc(r.room), esc(G(r.guest).name), badge(r.key === "active" ? "Active" : "Révoquée", r.key === "active" ? "ok" : "bad")]))
   }
 
   function planifies() {
     const pre = ui.biPrefill || B.reports[0].id
     return `${tbl(["Rapport", "Fréquence", "Destinataires", "Format", "Prochain envoi", "Statut", ""], B.schedules.map((s) => [
-        `<strong>${esc(REP(s.report).name)}</strong>`, esc(s.freq), esc(s.to), esc(s.format), s.active ? fd(s.next) : "—", s.active ? badge("Actif", "on") : badge("Suspendu", "outline"),
+        `<strong>${esc(REP(s.report).name)}</strong>`, esc(s.freq), esc(s.to), esc(s.format), s.active ? fd(s.next) : "—", s.active ? badge("Actif", "ok") : badge("Suspendu", "warn"),
         `<span class="row" style="flex-wrap:nowrap">${btn(s.active ? "Suspendre" : "Activer", `A.bir.toggleSched(${q(s.id)})`, "ghost sm")}${btn("Envoyer maintenant", `A.bir.sendNow(${q(s.id)})`, "ghost sm")}</span>`]))}
       <h2>Nouvelle planification</h2>
       <div class="card">${form([
@@ -280,7 +315,7 @@
           <div class="row" style="margin-top:10px">${btn("Enregistrer la vue", "A.bir.saveView()", "ghost sm")}<label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="bi-v-share" ${v.shared ? "checked" : ""}> Partager avec l'équipe de direction</label></div>` : ""}
         <p class="muted">Vues personnelles construites sur les indicateurs de la couche sémantique, sans écrire de requête. <span style="font-size:12px">EF-BIR-009</span></p>
       </div>
-      ${B.views.length ? `<h3>Mes vues enregistrées</h3>${tbl(["Vue", "Indicateur", "Dimension", "Visualisation", "Partage", ""], B.views.map((x, i) => [esc(x.name), esc({ rn: "Nuitées", rev: "Revenu hébergement", adr: "ADR" }[x.m]), esc(x.d), esc(x.g || "barres"), x.shared ? badge("Direction", "outline") : "Privée",
+      ${B.views.length ? `<h3>Mes vues enregistrées</h3>${tbl(["Vue", "Indicateur", "Dimension", "Visualisation", "Partage", ""], B.views.map((x, i) => [esc(x.name), esc({ rn: "Nuitées", rev: "Revenu hébergement", adr: "ADR" }[x.m]), esc(x.d), esc(x.g || "barres"), x.shared ? badge("Direction", "info") : "Privée",
         `<span class="row" style="flex-wrap:nowrap;gap:4px">${btn("Ouvrir", `A.bir.openView(${i})`, "ghost sm")}${btn("Supprimer", `A.bir.delView(${i})`, "ghost sm")}</span>`]))}` : ""}
       ${aiBox("Requête en langage naturel", "« Quel segment a le meilleur ADR ce mois ? » → Affaires individuels, 61 500 FCFA (requête : metric=adr · dimension=segment · période=MTD).", btn("Poser une question au copilote", "go('aip-ia/copilote')", "ghost sm"))}`
   }
@@ -305,18 +340,18 @@
   function connecteurs() {
     const worst = Math.max(...B.lake.map((x) => x.lag)), late = B.lake.filter((x) => x.lag >= LAG_MAX)
     return `<div class="grid">
-        ${kpi("Fraîcheur des données", worst + " min", "retard maximal du lakehouse (cible < 15 min)")}
-        ${kpi("Lignes intégrées", B.lake.reduce((t, x) => t + x.rows, 0).toLocaleString("fr-FR"), "depuis l'ouverture de la maquette (CDC + événements)")}
-        ${kpi("Temps du tableau de bord", "0,8 s", "p95 simulé (cible < 3 s)")}
+        ${stat({ label: "Fraîcheur des données", value: worst + " min", icon: "clock", hint: "retard maximal du lakehouse (cible < 15 min)" })}
+        ${stat({ label: "Lignes intégrées", value: B.lake.reduce((t, x) => t + x.rows, 0).toLocaleString("fr-FR"), icon: "server", hint: "depuis l'ouverture de la maquette (CDC + événements)" })}
+        ${stat({ label: "Temps du tableau de bord", value: "0,8 s", icon: "zap", hint: "p95 simulé (cible < 3 s)" })}
       </div>
       <h2>Alimentation du lakehouse <span class="muted" style="font-size:12px">EF-BIR-004</span></h2>
       ${late.length ? `<p class="err">Retard au-delà de ${LAG_MAX} min sur : ${esc(late.map((x) => x.name).join(", "))}. Les tableaux de bord affichent « données anciennes » pour ces sources.</p>` : ""}
-      ${tbl(["Flux", "Type", "#Objets dans le système source", "#Lignes intégrées", "Retard", "État", ""], B.lake.map((x) => [esc(x.name), badge(x.type, "outline"), lakeCount(x.obj), x.rows, x.lag >= LAG_MAX ? badge(x.lag + " min", "dark") : x.lag + " min",
-        x.ok ? badge("Actif", "on") : badge("Interrompu", "dark"), x.ok ? btn("Simuler une panne", `A.bir.lakeFail(${q(x.id)})`, "ghost sm") : btn("Relancer le flux", `A.bir.lakeFix(${q(x.id)})`, "sm")]))}
+      ${tbl(["Flux", "Type", "#Objets dans le système source", "#Lignes intégrées", "Retard", "État", ""], B.lake.map((x) => [esc(x.name), badge(x.type, "info"), lakeCount(x.obj), x.rows, x.lag >= LAG_MAX ? badge(x.lag + " min", "bad") : x.lag + " min",
+        x.ok ? badge("Actif", "ok") : badge("Interrompu", "bad"), x.ok ? btn("Simuler une panne", `A.bir.lakeFail(${q(x.id)})`, "ghost sm") : btn("Relancer le flux", `A.bir.lakeFix(${q(x.id)})`, "sm")]))}
       <div class="row" style="margin-top:10px">${btn("Lancer un cycle d'alimentation", "A.bir.lakeSync()")}<span class="muted">Capture des changements (CDC) sur les tables opérationnelles et consommation des événements du bus ; données personnelles pseudonymisées.</span></div>
       ${B.lakeRuns.length ? `<p class="muted">Derniers cycles : ${esc(B.lakeRuns.slice(0, 3).join(" · "))}</p>` : ""}
       <h2>Connecteurs BI tiers</h2>
-      ${tbl(["Connecteur", "État", "Dernière synchro", "Filtre de sécurité (ligne)", ""], B.connectors.map((c) => [esc(c.name), c.state === "actif" ? badge("Actif", "on") : badge("Inactif", "outline"), esc(c.lastSync), esc(c.rls),
+      ${tbl(["Connecteur", "État", "Dernière synchro", "Filtre de sécurité (ligne)", ""], B.connectors.map((c) => [esc(c.name), c.state === "actif" ? badge("Actif", "ok") : badge("Inactif", "outline"), esc(c.lastSync), esc(c.rls),
         `<span class="row" style="flex-wrap:nowrap">${btn(c.state === "actif" ? "Désactiver" : "Activer", `A.bir.toggleConn(${q(c.id)})`, "ghost sm")}${c.state === "actif" ? btn("Générer un jeton", `A.bir.token(${q(c.id)})`, "ghost sm") : ""}</span>`]))}
       ${ui.biToken ? `<div class="card" style="margin-top:14px"><strong>Jeton de lecture (exemple, non fonctionnel)</strong><p><code>${esc(ui.biToken)}</code></p><p class="muted">Valable 90 jours, lecture seule, limité à l'établissement Hôtel Exemple. Ce jeton est fictif.</p></div>` : ""}
       <p class="muted">Export vers Power BI ou Tableau via connecteurs sécurisés (EF-BIR-007). Données personnelles pseudonymisées (RG-BIR-02).</p>`

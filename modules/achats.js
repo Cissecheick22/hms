@@ -156,9 +156,9 @@
     return c ? { id: c.id, price: c.prices.find((y) => y.item === item).price } : null
   }
   const expiredDocs = (sup) => sup.docs.filter(([, v]) => v !== "valide" && v < today)
-  const DST = { brouillon: ["Brouillon", "outline"], soumise: ["À approuver", ""], approuvee: ["Approuvée", "on"], rejetee: ["Rejetée", "dark"], commandee: ["Commandée", "outline"] }
-  const OST = { envoyee: ["Envoyée", ""], partielle: ["Reçue partiellement", "outline"], recue: ["Reçue", "on"] }
-  const FST = { a_rapprocher: ["À rapprocher", ""], bloquee: ["Bloquée", "dark"], approuvee: ["Bon à payer", "on"], a_valider: ["OCR à valider", "outline"] }
+  const DST = { brouillon: ["Brouillon", "outline"], soumise: ["À approuver", "warn"], approuvee: ["Approuvée", "ok"], rejetee: ["Rejetée", "bad"], commandee: ["Commandée", "info"] }
+  const OST = { envoyee: ["Envoyée", "info"], partielle: ["Reçue partiellement", "warn"], recue: ["Reçue", "ok"] }
+  const FST = { a_rapprocher: ["À rapprocher", "warn"], bloquee: ["Bloquée", "bad"], approuvee: ["Bon à payer", "ok"], a_valider: ["OCR à valider", "info"] }
   const b2 = (m, k) => badge(m[k][0], m[k][1])
   const itemOpts = () => P.items.map((i) => [i.code, `${i.name} — ${money(i.cost)}/${i.unit}`])
 
@@ -178,15 +178,25 @@
     return { ok: Math.abs(gap) <= (base * P.tolerance) / 100, issues, gap }
   }
 
+  const statRow = (items) => `<div class="grid g4" style="margin-bottom:16px">${items.map(stat).join("")}</div>`
+  const poTotal = (o) => o.lines.reduce((t, l) => t + l.qty * l.price, 0)
+  const storeValue = (st) => P.stock.filter((x) => x.store === st).reduce((t, x) => t + x.qty * IT(x.item).cost, 0)
+
   // ---------- Écran 1 : Achats ----------
   function achats(p) {
     const tab = p[0] || "demandes"
     return pageHead("Achats", "Du besoin au bon à payer : demandes, approbations, commandes, réceptions et rapprochement des factures. Montants d'exemple ; envois aux fournisseurs simulés.",
       btn("Nouvelle demande", "go('prc-achats/demandes/new')"))
-      + cards([kpi("Demandes à approuver", P.requests.filter((r) => r.status === "soumise").length, "circuit par montant"),
-        kpi("Commandes en attente", P.orders.filter((o) => o.status !== "recue").length, "envoyées ou partielles"),
-        kpi("Factures bloquées", P.invoices.filter((f) => f.status === "bloquee" || (f.status === "a_rapprocher" && !match(f).ok)).length, `tolérance ${P.tolerance} %`),
-        kpi("Engagé ce mois", money(P.orders.filter((o) => o.date >= "2026-11-01").reduce((s, o) => s + o.lines.reduce((t, l) => t + l.qty * l.price, 0), 0)), "commandes de novembre")])
+      + (() => {
+        const month = today.slice(0, 8) + "01", d14 = Array.from({ length: 14 }, (_, i) => addDays(today, i - 13))
+        const cum = d14.map((d) => P.orders.filter((o) => o.date >= month && o.date <= d).reduce((s, o) => s + poTotal(o), 0))
+        const pendingDA = P.requests.filter((r) => r.status === "soumise")
+        return statRow([
+          { label: "Demandes à approuver", value: String(pendingDA.length), icon: "filecheck", hint: `${money(pendingDA.reduce((s, r) => s + daTotal(r), 0))} · circuit par montant`, route: "prc-achats/demandes" },
+          { label: "Commandes en attente", value: String(P.orders.filter((o) => o.status !== "recue").length), icon: "cart", hint: "envoyées ou partielles", route: "prc-achats/commandes" },
+          { label: "Factures bloquées", value: String(P.invoices.filter((f) => f.status === "bloquee" || (f.status === "a_rapprocher" && !match(f).ok)).length), icon: "alert", hint: `tolérance ${P.tolerance} % · rapprochement 3 voies`, route: "prc-achats/factures" },
+          { label: "Engagé ce mois", value: money(cum[13]), icon: "coins", hint: "commandes du mois · cumul sur 14 jours", trend: cum }])
+      })()
       + subtabs("prc-achats", [["demandes", "Demandes d'achat"], ["commandes", "Commandes"], ["receptions", "Réceptions"], ["factures", "Factures fournisseurs"], ["fournisseurs", "Fournisseurs"]], tab)
       + ({ demandes: tabRequests, commandes: tabOrders, receptions: tabReceipts, factures: tabInvoices, fournisseurs: tabSuppliers }[tab] || tabRequests)(p.slice(1))
   }
@@ -196,6 +206,10 @@
     const cur = p[0] === "new" ? null : DA(p[0]) || list[0]
     const left = listItems(list.map((r) => ({ id: r.id, title: `${r.id} · ${r.service}`, badge: " " + b2(DST, r.status), sub: `${money(daTotal(r))} · ${r.by}` })), cur && cur.id, "prc-achats/demandes")
     return split(left, p[0] === "new" ? requestForm() : cur ? requestDetail(cur) : "")
+      + `<div class="dash" style="margin:16px 0">
+          <div class="w8">${section("Budget engagé par service", bars(Object.entries(P.budgets).map(([k, [b, u]]) => ({ label: k, value: Math.round((u / b) * 100) })), (v) => v + " %") + `<p class="muted" style="margin:8px 0 0">Part du budget mensuel déjà engagée (exemple) ; une demande qui dépasse le budget est signalée (EF-PRC-011).</p>`)}</div>
+          <div class="w4">${section("Demandes par statut", donut(Object.keys(DST).map((k) => ({ label: DST[k][0], value: P.requests.filter((r) => r.status === k).length })).filter((x) => x.value), { fmt: (v) => v, center: String(P.requests.length), sub: "demandes" }))}</div>
+        </div>`
       + aiBox("Détection d'anomalies d'achat", "DA-117 : 2 demandes Hébergement en 3 jours pour les mêmes articles, total juste sous le seuil DAF (fractionnement possible). Boissons Lagune Exemple : prix facturé 10 % au-dessus du prix de commande. À examiner par le contrôle de gestion.")
   }
 
@@ -221,7 +235,7 @@
       <p class="${over ? "err" : "muted"}">Budget ${esc(r.service)} : ${money(used)} engagés sur ${money(budget)}${over ? ` — cette demande dépasse le budget de ${money(used + total - budget)} (EF-PRC-011).` : "."}</p>
       <h3>Circuit d'approbation</h3>
       <p class="muted" style="font-size:12px">Chef de service ; DAF à partir de ${money(P.thresholds.daf)} ; Directeur à partir de ${money(P.thresholds.dg)} (RG-PRC-02).</p>
-      <div class="row">${req.map((x) => { const a = r.approvals.find((y) => y.role === x); return a ? badge(`${x} : ${a.who}`, "on") : badge(`${x} : en attente`, "outline") }).join(" ")}</div>
+      <div class="row">${req.map((x) => { const a = r.approvals.find((y) => y.role === x); return a ? badge(`${x} : ${a.who}`, "ok") : badge(`${x} : en attente`, "warn") }).join(" ")}</div>
       ${r.status === "soumise" ? `<div class="row" style="margin-top:12px">${btn(`Approuver (${nextRole})`, `A.prc.approve(${q(r.id)})`, "accent")}${btn("Rejeter", `A.prc.reject(${q(r.id)})`, "ghost")}</div>` : ""}
       ${r.status === "brouillon" ? `<div class="row" style="margin-top:12px">${btn("Soumettre", `A.prc.submit(${q(r.id)})`)}</div>` : ""}
       ${r.status === "approuvee" ? `<h3>Transformer en commande</h3><div class="row" style="flex-wrap:nowrap">${select("da-sup", P.suppliers.map((s) => [s.id, s.name + (expiredDocs(s).length ? " (documents expirés)" : "")]), IT(r.lines[0].item).supplier)}${btn("Créer et envoyer le bon de commande", `A.prc.toOrder(${q(r.id)})`)}</div>
@@ -261,7 +275,7 @@
         const st = f.status === "a_rapprocher" ? (m.ok ? "a_rapprocher" : "bloquee") : f.status
         return card("", `<div class="row between"><strong>${esc(f.id)} · ${esc(SUP(f.supplier).name)} · réf. ${esc(f.ref)}</strong><span class="row">${b2(FST, st)}<span class="kpi" style="font-size:18px">${money(total)}</span></span></div>
           <p class="muted" style="margin:4px 0">Reçue le ${fd(f.date)} · commande ${esc(f.po || "aucune")}${f.credit ? ` · avoir de ${money(f.credit)} déduit` : ""}</p>
-          ${m.issues.length ? `<div class="err">${m.issues.map(esc).join("<br>")}${m.gap ? `<br>Écart : ${money(m.gap)}` : ""}</div>` : `<p style="margin:4px 0">${badge("3 voies concordantes", "on")}</p>`}
+          ${m.issues.length ? `<div class="err">${m.issues.map(esc).join("<br>")}${m.gap ? `<br>Écart : ${money(m.gap)}` : ""}</div>` : `<p style="margin:4px 0">${badge("3 voies concordantes", "ok")}</p>`}
           ${f.status === "approuvee" ? `<p class="muted" style="margin:4px 0">Transmise à la comptabilité fournisseurs (FIN).</p>` : `<div class="row" style="margin-top:8px">${btn(f.status === "a_valider" ? "Valider la lecture OCR" : "Approuver (bon à payer)", `A.prc.approveInvoice(${q(f.id)})`, m.ok ? "sm" : "ghost sm")}${!m.ok && f.po ? btn("Appliquer l'avoir fournisseur", `A.prc.creditNote(${q(f.id)})`, "ghost sm") : ""}</div>`}`)
       }).join("")
       + aiBox("Extraction de factures", "Déposez un PDF fournisseur : le texte est lu (OCR + modèle de langage, simulés), puis fournisseur, commande, lignes et montants sont proposés. Un humain valide avant rapprochement.",
@@ -287,7 +301,7 @@
   function tabSuppliers(p) {
     const cur = p[0] === "new" ? null : SUP(p[0]) || P.suppliers[0]
     const left = `<div class="row" style="margin-bottom:8px">${btn("Nouveau fournisseur", "go('prc-achats/fournisseurs/new')", "ghost sm")}${muted("EF-PRC-002")}</div>`
-      + listItems(P.suppliers.map((s) => ({ id: s.id, title: s.name, badge: (s.bankChange ? " " + badge("RIB à valider", "on") : "") + (expiredDocs(s).length ? " " + badge("Document expiré", "dark") : ""), sub: `${s.family} · note ${s.rating.toFixed(1).replace(".", ",")} / 5` })), cur && cur.id, "prc-achats/fournisseurs")
+      + listItems(P.suppliers.map((s) => ({ id: s.id, title: s.name, badge: (s.bankChange ? " " + badge("RIB à valider", "warn") : "") + (expiredDocs(s).length ? " " + badge("Document expiré", "bad") : ""), sub: `${s.family} · note ${s.rating.toFixed(1).replace(".", ",")} / 5` })), cur && cur.id, "prc-achats/fournisseurs")
     if (!cur) return split(left, supplierForm())
     const po = P.orders.filter((o) => o.supplier === cur.id)
     const late = po.filter((o) => o.received && o.received > o.expected).length
@@ -299,16 +313,16 @@
       </div>
       <div class="row">${btn("Enregistrer", `A.prc.saveSupplier(${q(cur.id)})`)}</div>
       <h3>Documents légaux</h3>
-      ${tbl(["Document", "Validité", ""], cur.docs.map(([d, v], i) => [esc(d), v === "valide" ? badge("Valide", "outline") : !v ? badge("À fournir", "on") : v < today ? badge(`Expirée le ${fd(v)}`, "on") : `jusqu'au ${fd(v)}/${v.slice(0, 4)}`,
+      ${tbl(["Document", "Validité", ""], cur.docs.map(([d, v], i) => [esc(d), v === "valide" ? badge("Valide", "ok") : !v ? badge("À fournir", "warn") : v < today ? badge(`Expirée le ${fd(v)}`, "bad") : `jusqu'au ${fd(v)}/${v.slice(0, 4)}`,
         v === "valide" || (v && v >= addDays(today, 30)) ? "" : btn("Enregistrer le document renouvelé", `A.prc.renewDoc(${q(cur.id)}, ${i})`, "ghost sm")]))}
       ${expiredDocs(cur).length ? `<p class="err">Document légal expiré : aucune nouvelle commande ne peut être envoyée à ce fournisseur.</p>` : ""}
       <h3>Évaluation</h3>
-      ${cards([kpi("Note", cur.rating.toFixed(1).replace(".", ",") + " / 5", "qualité, délai, prix"), kpi("Commandes", po.length, "sur la période"), kpi("Livraisons en retard", late, `délai annoncé ${cur.lead} j`)])}
+      <div class="grid g4">${stat({ label: "Note", value: cur.rating.toFixed(1).replace(".", ",") + " / 5", icon: "star", hint: "qualité, délai, prix" })}${stat({ label: "Commandes", value: String(po.length), icon: "cart", hint: money(po.reduce((s, o) => s + poTotal(o), 0)) })}${stat({ label: "Livraisons en retard", value: String(late), icon: "clock", hint: `délai annoncé ${cur.lead} j` })}</div>
       <div class="row" style="margin-top:8px;flex-wrap:nowrap">${[["ev-q", "Qualité"], ["ev-d", "Délai"], ["ev-p", "Prix"]].map(([id, l]) => `<label for="${id}" style="margin:0">${l}</label>${select(id, ["1", "2", "3", "4", "5"], "4", 'style="max-width:70px"')}`).join("")}${btn("Enregistrer l'évaluation", `A.prc.evaluate(${q(cur.id)})`, "ghost sm")}</div>
       ${(cur.evals || []).length ? `<p class="muted" style="font-size:12px">${cur.evals.map((e) => `${fd(e.date)} : qualité ${e.q}, délai ${e.d}, prix ${e.p}`).join(" · ")}</p>` : ""}
       <h3>Contrats-cadres groupe</h3>
       ${tbl(["Contrat", "Portée", "Période", "Prix négociés", "État"], ctr.map((c) => [esc(c.id) + " " + muted(c.title), esc(c.scope), `${fd(c.from)}/${c.from.slice(2, 4)} → ${fd(c.to)}/${c.to.slice(2, 4)}`,
-        esc(c.prices.map((x) => `${IT(x.item).name} : ${money(x.price)}`).join(" ; ")), c.to < today ? badge("Échu", "dark") : c.from > today ? badge("À venir", "outline") : badge("Actif", "on")]), "Aucun contrat-cadre pour ce fournisseur.")}
+        esc(c.prices.map((x) => `${IT(x.item).name} : ${money(x.price)}`).join(" ; ")), c.to < today ? badge("Échu", "bad") : c.from > today ? badge("À venir", "info") : badge("Actif", "ok")]), "Aucun contrat-cadre pour ce fournisseur.")}
       <p class="muted" style="font-size:12px">Les prix d'un contrat actif remplacent le prix de référence à la création du bon de commande.</p>
       <h3>Coordonnées bancaires</h3>
       <p>RIB actuel : ${esc(cur.iban)} ${muted("chiffré, affichage masqué")}</p>
@@ -324,8 +338,11 @@
     const low = P.stock.filter((x) => x.min > 0 && x.qty < x.min)
     const expSoon = P.stock.flatMap((x) => (x.lots || []).map((l) => ({ ...l, item: x.item }))).filter((l) => l.exp <= addDays(today, 3))
     return pageHead("Stocks", "Niveaux par magasin, seuils, lots et péremption, mouvements, transferts et inventaires. Valorisation au coût moyen pondéré (CMUP). Données d'exemple.")
-      + cards([kpi("Valeur du stock", money(value), "au CMUP"), kpi("Articles sous le seuil", low.length, "réapprovisionnement à lancer"),
-        kpi("Lots à consommer sous 3 j", expSoon.length, "denrées périssables"), kpi("Alertes de seuil", P.alerts.filter((a) => !a.done).length, "levées par les ventes et sorties")])
+      + statRow([
+        { label: "Valeur du stock", value: money(value), icon: "coins", hint: `au CMUP · ${P.stores.length} magasins` },
+        { label: "Articles sous le seuil", value: String(low.length), icon: "alert", hint: `${low.filter((x) => x.qty === 0).length} en rupture · réapprovisionnement à lancer`, route: "prc-stocks/niveaux" },
+        { label: "Lots à consommer sous 3 j", value: String(expSoon.length), icon: "clock", hint: "denrées périssables" },
+        { label: "Alertes de seuil", value: String(P.alerts.filter((a) => !a.done).length), icon: "bell", hint: "levées par les ventes et sorties" }])
       + subtabs("prc-stocks", [["niveaux", "Niveaux et alertes"], ["mouvements", "Mouvements et transferts"], ["inventaire", "Inventaire"], ["articles", "Articles"], ["kpi", "Indicateurs"]], tab)
       + ({ niveaux: tabLevels, mouvements: tabMoves, inventaire: tabCount, articles: tabItems, kpi: tabKpi }[tab] || tabLevels)(p.slice(1))
   }
@@ -337,16 +354,20 @@
     const rows = P.stock.filter((x) => (store === "tous" || x.store === store) && (x.max > 0 || x.qty > 0))
     const prop = reorderProposal()
     const alerts = P.alerts.filter((a) => !a.done)
-    return (alerts.length ? card(`Alertes de seuil (${alerts.length})`, tbl(["Date", "Article", "Magasin", "#Stock", "#Seuil", "Origine"], alerts.slice(0, 8).map((a) => [fd(a.date), esc(IT(a.item).name), esc(a.store), a.qty, a.min, esc(a.centre)]))
+    const lowRows = P.stock.filter((x) => x.min > 0).map((x) => ({ label: `${IT(x.item).name.replace(/ \(.*\)/, "")} · ${x.store}`, value: Math.round((x.qty / x.min) * 100) })).sort((a, b) => a.value - b.value).slice(0, 7)
+    return `<div class="dash" style="margin-bottom:16px">
+        <div class="w4">${section("Valeur par magasin", donut(P.stores.map((st) => ({ label: st, value: storeValue(st) })).filter((x) => x.value), { fmt: money, center: shortNum(P.stock.reduce((t, x) => t + x.qty * IT(x.item).cost, 0)), sub: "FCFA" }))}</div>
+        <div class="w8">${section("Articles les plus proches du seuil (stock / seuil)", bars(lowRows, (v) => v + " %") + `<p class="muted" style="margin:8px 0 0">Sous 100 % : article sous le seuil, proposé à la commande.</p>`)}</div></div>`
+      + (alerts.length ? card(`Alertes de seuil (${alerts.length})`, tbl(["Date", "Article", "Magasin", "#Stock", "#Seuil", "Origine"], alerts.slice(0, 8).map((a) => [fd(a.date), esc(IT(a.item).name), esc(a.store), a.qty, a.min, esc(a.centre)]))
         + `<div class="row" style="margin-top:8px">${btn("Créer les demandes proposées", "A.prc.reorder()", "sm")}${btn("Marquer comme vues", "A.prc.ackAlerts()", "ghost sm")}</div>`) : "")
-      + `<div class="chips">${[["tous", "Tous les magasins"], ...P.stores.map((s) => [s, s])].map(([k, l]) => `<button aria-pressed="${store === k}" onclick="ui.prcStore=${q(k)};render()">${esc(l)}</button>`).join("")}</div>`
+      + section("Niveaux par article", `<div class="chips">${[["tous", "Tous les magasins"], ...P.stores.map((s) => [s, s])].map(([k, l]) => `<button aria-pressed="${store === k}" onclick="ui.prcStore=${q(k)};render()">${esc(l)}</button>`).join("")}</div>`
       + tbl(["Article", "Magasin", "#Stock", "#Seuil", "#Max", "#Valeur", "Lots / péremption", "État"], rows.map((x) => {
         const it = IT(x.item), low = x.qty < x.min
         return [esc(it.name), esc(x.store), `${x.qty} ${esc(it.unit)}`, x.min, x.max, money(x.qty * it.cost),
-          (x.lots || []).map((l) => `${esc(l.lot)} : ${l.qty} au ${fd(l.exp)}${l.exp <= addDays(today, 3) ? " " + badge("Bientôt périmé", "on") : ""}`).join("<br>") || "—",
-          x.qty === 0 ? badge("Rupture", "dark") : low ? badge("Sous le seuil", "on") : badge("OK", "outline")]
+          (x.lots || []).map((l) => `${esc(l.lot)} : ${l.qty} au ${fd(l.exp)}${l.exp <= addDays(today, 3) ? " " + badge("Bientôt périmé", "warn") : ""}`).join("<br>") || "—",
+          x.qty === 0 ? badge("Rupture", "bad") : low ? badge("Sous le seuil", "warn") : badge("OK", "ok")]
       }))
-      + `<p class="muted">Règle de sortie des denrées : premier périmé, premier sorti ${muted("EF-PRC-010")}</p>`
+      + `<p class="muted">Règle de sortie des denrées : premier périmé, premier sorti ${muted("EF-PRC-010")}</p>`) + `<div style="margin-top:16px"></div>`
       + card("Seuils de réapprovisionnement", `<div class="row" style="flex-wrap:nowrap">${select("th-row", P.stock.map((x, i) => [String(i), `${IT(x.item).name} — ${x.store}`]).filter((_, i) => P.stock[i].max > 0 || P.stock[i].qty > 0), ui.prcTh || "0", `onchange="ui.prcTh=this.value;render()"`)}
           ${input("th-min", (P.stock[Number(ui.prcTh || 0)] || {}).min ?? 0, 'type="number" min="0" style="max-width:90px" aria-label="Seuil"')}${input("th-max", (P.stock[Number(ui.prcTh || 0)] || {}).max ?? 0, 'type="number" min="0" style="max-width:90px" aria-label="Maximum"')}${btn("Enregistrer", "A.prc.setThreshold()", "ghost")}</div>
           <p class="muted" style="font-size:12px;margin-bottom:0">Sous le seuil, l'article est proposé à la commande pour revenir au maximum (quantité = max − stock) ${muted("EF-PRC-009")}</p><div id="th-err"></div>`)
@@ -388,10 +409,16 @@
     const delays = P.orders.filter((o) => o.received).map((o) => nights(o.date, o.received))
     const gaps = P.counts.reduce((s, c) => s + c.gap, 0)
     return `<p class="muted">Indicateurs §16.12 sur les données d'exemple (rotation et économies : valeurs d'exemple du mois).</p>`
-      + cards([kpi("Rotation des stocks", "2,6", "consommation / stock moyen, sur 30 j"), kpi("Écarts d'inventaire", money(gaps), "dernier inventaire, tous magasins"),
-        kpi("Délai fournisseur", (delays.reduce((s, d) => s + d, 0) / Math.max(1, delays.length)).toFixed(1).replace(".", ",") + " j", "commande → réception"), kpi("Économies achats", money(412000), "prix négocié vs référence")])
-      + cards([card("Engagé / budget par service", bars(Object.entries(P.budgets).map(([k, [b, u]]) => ({ label: k, value: Math.round((u / b) * 100) })), (v) => v + " %")),
-        card("Valeur de stock par magasin", bars(P.stores.map((s) => ({ label: s, value: P.stock.filter((x) => x.store === s).reduce((t, x) => t + x.qty * IT(x.item).cost, 0) })), money))])
+      + `<div class="grid g4">${[
+        { label: "Rotation des stocks", value: "2,6", icon: "refresh", delta: 8.3, hint: "consommation / stock moyen, 30 j · vs mois précédent (exemple)", trend: [2.1, 2.3, 2.2, 2.4, 2.4, 2.6] },
+        { label: "Écarts d'inventaire", value: money(gaps), icon: "calc", hint: "dernier inventaire, tous magasins" },
+        { label: "Délai fournisseur", value: (delays.reduce((s, d) => s + d, 0) / Math.max(1, delays.length)).toFixed(1).replace(".", ",") + " j", icon: "clock", hint: "commande → réception" },
+        { label: "Économies achats", value: money(412000), icon: "coins", hint: "prix négocié vs référence (exemple)" }].map(stat).join("")}</div>`
+      + `<div class="dash" style="margin-top:16px">
+          <div class="w6">${section("Engagé / budget par service", bars(Object.entries(P.budgets).map(([k, [b, u]]) => ({ label: k, value: Math.round((u / b) * 100) })), (v) => v + " %"))}</div>
+          <div class="w6">${section("Valeur de stock par magasin", donut(P.stores.map((st) => ({ label: st, value: storeValue(st) })).filter((x) => x.value), { fmt: money, center: shortNum(P.stock.reduce((t, x) => t + x.qty * IT(x.item).cost, 0)), sub: "FCFA" }))}</div>
+          <div class="w12">${section("Écarts d'inventaire par magasin", columns(P.counts.map((c) => c.store), P.counts.map((c) => Math.abs(c.gap)), money) + `<p class="muted" style="margin:8px 0 0">Valeur absolue des écarts du dernier inventaire (${P.counts.map((c) => `${c.store} : ${money(c.gap)}`).join(" ; ")}).</p>`)}</div>
+        </div>`
   }
 
   // ---------- Actions ----------

@@ -70,16 +70,22 @@
   const views = {
     architecture(p) {
       const tab = p[0] || "conteneurs"
+      const prod = [...new Set(EVENTS.map((e) => e[1]))].map((m) => ({ label: m, value: EVENTS.filter((e) => e[1] === m).length })).sort((a, b) => b.value - a.value)
+      const consumed = MODULES.map((m) => ({ label: m, value: EVENTS.filter((e) => e[2].split(" ").includes(m)).length })).filter((x) => x.value).sort((a, b) => b.value - a.value)
       let body = ""
       if (tab === "conteneurs")
-        body = `<p class="muted">Vue C4 niveau 2, simplifiée. Les flèches indiquent le sens des appels.</p>`
+        body = `<div class="dash"><div class="w8">` + section("Conteneurs (C4 niveau 2)", `<p class="muted" style="margin-top:0">Vue simplifiée. Les flèches indiquent le sens des appels.</p>`
           + LAYERS.map(([name, boxes], i) => `${i ? `<div style="text-align:center;color:var(--ink2);margin:6px 0">↓</div>` : ""}
             <h3 style="margin:0 0 6px">${esc(name)}</h3><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px">${boxes.map(([t, s]) => box(t, s)).join("")}</div>`).join("")
-          + `<p class="muted" style="margin-top:14px">Hiérarchie multi-tenant : groupe (tenant) → marque → établissement. Offres d'isolation : mutualisée, base dédiée, déploiement régional dédié.</p>`
+          + `<p class="muted" style="margin-top:14px">Hiérarchie multi-tenant : groupe (tenant) → marque → établissement. Offres d'isolation : mutualisée, base dédiée, déploiement régional dédié.</p>`)
+          + `</div><div class="w4">`
+          + section("Conteneurs par couche", donut(LAYERS.map(([n, b]) => ({ label: n, value: b.length })), { fmt: (v) => v, center: String(LAYERS.reduce((n, l) => n + l[1].length, 0)), sub: "conteneurs" }))
+          + `<div style="margin-top:16px">` + section("Événements publiés par module", bars(prod), btn("Catalogue", "go('architecture/evenements')", "ghost sm")) + `</div>`
+          + `<div style="margin-top:16px">` + section("Modules les plus abonnés", bars(consumed.slice(0, 6)), "") + `</div></div></div>`
       else if (tab === "adr")
         body = tbl(["ADR", "Décision", "Pourquoi"], ADR.map(([id, d, w]) => [`<strong>${esc(id)}</strong>`, esc(d), esc(w)]))
       else if (tab === "donnees")
-        body = tbl(["Donnée maîtresse", "Module propriétaire", "Modules consommateurs"], OWNERSHIP.map(([d, o, c]) => [esc(d), badge(o, "on"), esc(c)]))
+        body = tbl(["Donnée maîtresse", "Module propriétaire", "Modules consommateurs"], OWNERSHIP.map(([d, o, c]) => [esc(d), badge(o, "info"), esc(c)]))
           + `<p class="muted">Chaque module possède ses données ; les autres les lisent par son interface publique ou par ses événements.</p>`
       else if (tab === "evenements") {
         const ev = EVENTS.find((e) => e[0] === ui.archEvent) || EVENTS[1]
@@ -87,12 +93,18 @@
         body = split(
           `<div class="list">${EVENTS.map((e) => `<button aria-current="${e === ev}" onclick="ui.archEvent=${q(e[0])};render()"><strong style="font-family:ui-monospace,monospace;font-size:13px">${esc(e[0])}</strong><div class="muted">${esc(e[1])} → ${esc(e[2].split(" ").length)} module(s)</div></button>`).join("")}</div>`,
           card("", `<div class="big" style="font-family:ui-monospace,monospace;font-size:17px">${esc(ev[0])}</div><p>${esc(ev[3])}</p>
-            <div class="row" style="margin:10px 0">${badge("Producteur : " + ev[1], "info")} ${badge(cons.length + " consommateur(s)", "on")}</div>
+            <div class="row" style="margin:10px 0">${badge("Producteur : " + ev[1], "info")} ${badge(cons.length + " consommateur(s)", "ok")}</div>
             <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px">${MODULES.map((m) => box(m, "", m === ev[1] ? "on" : cons.includes(m) ? "" : "dim")).join("")}</div>
             <p class="muted" style="margin-top:12px">Publication par outbox puis Kafka, enveloppe CloudEvents (tenant, établissement, corrélation). Consommateurs idempotents.</p>`))
       } else body = tbl(["ID", "Exigence", "Cible"], ENF.map((r) => [`<strong>${esc(r[0])}</strong>`, esc(r[1]), esc(r[2])]))
       return pageHead("Architecture", "Référence technique de la spécification : décisions, conteneurs, données, événements entre modules et exigences non fonctionnelles.")
-        + subtabs("architecture", [["conteneurs", "Conteneurs"], ["adr", "Décisions (ADR)"], ["donnees", "Propriété des données"], ["evenements", "Événements"], ["enf", "Exigences non fonctionnelles"]], tab)
+        + `<div class="grid g4">
+            ${stat({ label: "Décisions (ADR)", value: ADR.length, icon: "filecheck", hint: "décisions d'architecture", route: "architecture/adr" })}
+            ${stat({ label: "Modules métier", value: MODULES.length, icon: "layers", hint: `${OWNERSHIP.length} données maîtresses attribuées`, route: "architecture/donnees" })}
+            ${stat({ label: "Événements inter-modules", value: EVENTS.length, icon: "zap", hint: `${EVENTS.reduce((n, e) => n + e[2].split(" ").length, 0)} abonnements`, route: "architecture/evenements" })}
+            ${stat({ label: "Exigences non fonctionnelles", value: ENF.length, icon: "sliders", hint: "disponibilité 99,95 %", route: "architecture/enf" })}
+          </div>`
+        + `<div style="margin-top:16px">${subtabs("architecture", [["conteneurs", "Conteneurs"], ["adr", "Décisions (ADR)"], ["donnees", "Propriété des données"], ["evenements", "Événements"], ["enf", "Exigences non fonctionnelles"]], tab)}</div>`
         + body
     },
   }

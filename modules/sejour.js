@@ -152,7 +152,7 @@
     if (r.contract || r.group) v -= 5
     return Math.max(2, Math.min(90, v))
   }
-  const riskBadge = (r) => { const v = risk(r); return badge(v + " %", v >= 30 ? "dark" : v >= 15 ? "outline" : "") }
+  const riskBadge = (r) => { const v = risk(r); return badge(v + " %", v >= 30 ? "bad" : v >= 15 ? "warn" : "ok") }
   const penalty = (r) => ({ "Carte bancaire": r.rate, "Compte société": r.rate, Acompte: D.payments[r.id] || 0, "Mobile Money": D.payments[r.id] || 0 }[r.guarantee] || 0)
   const penaltyText = (r) => ({ "Carte bancaire": "1re nuit prélevée (jeton PSP)", "Compte société": "1re nuit facturée à la société", Acompte: "acompte conservé", "Mobile Money": "garantie mobile money conservée" }[r.guarantee] || "libérée sans frais (RG-RES-01)")
   const pendingArr = (d = S.biz) => D.reservations.filter((r) => r.from === d && r.status === "confirmee")
@@ -189,8 +189,8 @@
     if (/Carte/.test(x.mode || "") && x.amount > 250000) v += 12
     return Math.min(95, v)
   }
-  const fraudBadge = (v) => badge(v + "/100", v >= 60 ? "dark" : v >= 30 ? "outline" : "")
-  const payStatus = (s) => badge(s, s === "confirmé" ? "on" : s === "à vérifier" ? "dark" : "outline")
+  const fraudBadge = (v) => badge(v + "/100", v >= 60 ? "bad" : v >= 30 ? "warn" : "ok")
+  const payStatus = (s) => badge(s, s === "confirmé" ? "ok" : s === "à vérifier" ? "bad" : s === "en attente" ? "warn" : "outline")
 
   // Folio en fenêtres : A = client, B = société / compte maître (selon le routage)
   const windows = (r) => {
@@ -208,6 +208,13 @@
   const allInvoices = () => [...S.invoices.map((i) => ({ ...i, client: i.client || (R(i.resId) ? gname(R(i.resId)) : "—") })), ...D.reservations.filter((r) => r.invoice && !S.invoices.some((i) => i.id === r.invoice))
     .map((r) => ({ id: r.invoice, date: today, client: gname(r), resId: r.id, amount: folio(r).total, live: true }))]
   const credited = (id) => sum(S.credits.filter((c) => c.invoice === id), (c) => c.amount)
+  // ---------- Indicateurs et graphiques (calculés sur les données de la maquette) ----------
+  const dl = (d) => d.slice(8, 10) + "/" + d.slice(5, 7)
+  const sellable = () => D.rooms.filter((x) => x.hk !== "hs").length || 1
+  const occAt = (d) => (D.rooms.filter((x) => x.hk !== "hs" && resAt(x.no, d)).length / sellable()) * 100
+  const payFamily = (m) => (/Mobile/.test(m) ? "Mobile money" : /Carte/.test(m) ? "Carte" : /City/.test(m) ? "City ledger" : /Espèces/.test(m) ? "Espèces" : m)
+  const byFamily = (ps) => { const m = {}; ps.forEach((p) => { const k = payFamily(p.mode); m[k] = (m[k] || 0) + p.amount }); return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value) }
+  const g4 = (items) => `<div class="grid g4" style="margin-bottom:16px">${items.join("")}</div>`
 
   // ---------- Écrans « Réception & séjour » ----------
   const views = {
@@ -217,12 +224,12 @@
       const rows = D.rooms.map((room) => {
         let cells = "", i = 0
         while (i < days.length) {
-          if (room.hk === "hs") { cells += `<td colspan="${days.length - i}" style="padding:4px"><span class="pill dark" style="display:block">Hors commande${room.note ? " — " + esc(room.note) : ""}</span></td>`; break }
+          if (room.hk === "hs") { cells += `<td colspan="${days.length - i}" style="padding:4px"><span class="pill bad" style="display:block">Hors commande${room.note ? " — " + esc(room.note) : ""}</span></td>`; break }
           const r = resAt(room.no, days[i])
           if (!r) { cells += "<td></td>"; i++; continue }
           let span = 1
           while (i + span < days.length && resAt(room.no, days[i + span]) === r) span++
-          cells += `<td colspan="${span}" style="padding:4px"><span class="pill ${r.status === "arrivee" ? "on" : "outline"}" style="display:block;overflow:hidden;text-overflow:ellipsis" title="${esc(r.id + " · " + gname(r))}">${esc(gname(r))}</span></td>`
+          cells += `<td colspan="${span}" style="padding:4px"><span class="pill ${r.status === "arrivee" ? "ok" : "info"}" style="display:block;overflow:hidden;text-overflow:ellipsis" title="${esc(r.id + " · " + gname(r))}">${esc(gname(r))}</span></td>`
           i += span
         }
         return `<tr><td style="white-space:nowrap"><strong>${esc(room.no)}</strong> <span class="muted">${esc(room.type)}</span></td><td>${pill(HK, room.hk)}</td>${cells}</tr>`
@@ -230,25 +237,39 @@
       const unassigned = D.reservations.filter((r) => r.status === "confirmee" && !r.preRoom && r.to > S.biz).sort((a, b) => a.from.localeCompare(b.from))
       const props = proposals(unassigned)
       const ups = upsellOffers()
-      return pageHead("Plan des chambres", `Occupation par chambre sur 10 nuits à partir du ${fd(S.biz)} (exemple). En séjour en vert, pré-attribuées en contour, hors commande en noir.`)
-        + `<div class="tablewrap"><table style="min-width:980px"><thead><tr><th>Ch.</th><th>Ménage</th>${days.map((d) => `<th>${esc(wd(d))} ${fd(d)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`
-        + `<div class="cols"><section><h2>Réservations sans chambre</h2><p class="muted">Pré-attribution d'une chambre libre sur tout le séjour (EF-RES-014).</p>`
+      const occ = days.map(occAt), hs = D.rooms.filter((x) => x.hk === "hs").length
+      return pageHead("Plan des chambres", `Occupation par chambre sur 10 nuits à partir du ${fd(S.biz)} (exemple). En séjour en vert, pré-attribuées en bleu, hors commande en rouge.`)
+        + g4([
+          stat({ label: "Occupation ce soir", value: pct(occ[0]), icon: "bed", delta: occ[1] != null && occ[0] ? ((occ[1] - occ[0]) / occ[0]) * 100 : null, hint: "évolution demain", trend: occ }),
+          stat({ label: "Occupation moyenne 10 nuits", value: pct(sum(occ) / occ.length), icon: "calendar", hint: "séjours et pré-attributions" }),
+          stat({ label: "Réservations sans chambre", value: String(unassigned.length), icon: "key", hint: `${props.length} proposition(s) IA prête(s)` }),
+          stat({ label: "Hors commande", value: String(hs), icon: "wrench", good: false, hint: "retirées de la vente", route: "chambres" })])
+        + `<div class="dash" style="margin-bottom:16px"><div class="w8">${section("Occupation sur 10 nuits", lineChart(days.map(dl), [{ name: "Occupation (%)", values: occ }], { fmt: (v) => Math.round(v) + " %", max: 100, height: 190 }))}</div>
+          <div class="w4">${section("Chambres par type", donut(typeOrder.map((t) => ({ label: T(t).label, value: D.rooms.filter((x) => x.type === t).length })), { fmt: (v) => v + " ch.", center: String(D.rooms.length), sub: "chambres" }))}</div></div>`
+        + `<div class="card sec"><div class="sec-head"><h3>Plan des chambres — 10 nuits</h3></div><div class="tablewrap"><table style="min-width:980px"><thead><tr><th>Ch.</th><th>Ménage</th>${days.map((d) => `<th>${esc(wd(d))} ${fd(d)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div></div>`
+        + `<div class="dash" style="margin-top:16px"><div class="w6"><div class="card sec"><div class="sec-head"><h3>Réservations sans chambre (${unassigned.length})</h3></div><p class="muted" style="margin-top:0">Pré-attribution d'une chambre libre sur tout le séjour (EF-RES-014).</p>`
         + tbl(["Réf.", "Client", "Dates", "Type", "Chambre"], unassigned.map((r) => {
           const c = freeRooms(r.type, r.from, r.to, r.id)
           return [esc(r.id), esc(gname(r)) + vip(G(r.guest)), `${fd(r.from)} → ${fd(r.to)}`, esc(T(r.type).label),
             `<select aria-label="Chambre pour ${esc(r.id)}" onchange="A.sej.preassign(${q(r.id)}, this.value)"><option value="">— choisir —</option>${c.map((x) => `<option value="${esc(x.no)}">${esc(x.no)} · ${esc(HK[x.hk][0])}</option>`).join("")}</select>`]
         }), "Toutes les réservations à venir ont une chambre pré-attribuée.")
-        + `${D.reservations.some((r) => r.preRoom && r.status === "confirmee") ? `<p class="muted" style="margin-top:8px">Pré-attributions : ${D.reservations.filter((r) => r.preRoom && r.status === "confirmee").map((r) => `${esc(r.id)} → ${esc(r.preRoom)} <button class="link" onclick="A.sej.preassign(${q(r.id)}, '')">retirer</button>`).join(" · ")}</p>` : ""}</section>`
-        + `<section><h2>Suggestions</h2><div class="stack">`
+        + `${D.reservations.some((r) => r.preRoom && r.status === "confirmee") ? `<p class="muted" style="margin-top:8px">Pré-attributions : ${D.reservations.filter((r) => r.preRoom && r.status === "confirmee").map((r) => `${esc(r.id)} → ${esc(r.preRoom)} <button class="link" onclick="A.sej.preassign(${q(r.id)}, '')">retirer</button>`).join(" · ")}</p>` : ""}</div></div>`
+        + `<div class="w6"><div class="card sec"><div class="sec-head"><h3>Suggestions</h3></div><div class="stack">`
         + aiBox("Attribution optimisée des chambres", (props.length ? props.map((p) => `${p.r.id} (${gname(p.r)}) → ${p.room.no} : ${p.why}`).join(" · ") : "Aucune réservation à attribuer.") + " Type, préférences, propreté et demandes pris en compte (EF-FOF-002).", props.length ? btn("Appliquer la proposition", "A.sej.applyProps()", "sm") : "")
         + ups.map((u) => aiBox("Upsell au check-in", `${gname(u.r)} (${u.r.id}, ${T(u.r.type).label}) : proposer ${T(u.to).label} pour ${money(u.price)} de plus par nuit, soit ${money(u.price * nights(u.r.from, u.r.to))} sur le séjour. Prix recommandé par le modèle (simulé).`, btn("Surclassement accepté", `A.sej.upsell(${q(u.r.id)}, ${q(u.to)}, ${u.price})`, "sm"))).join("")
-        + `</div></section></div>`
+        + `</div></div></div></div>`
     },
 
     // Mouvements de séjour : walk-in, changement de chambre / prolongation, délogement, no-shows
     mouv(p) {
       const tab = p[0] || "walkin"
+      const pend = pendingArr(), atRisk = pend.filter((r) => risk(r) >= 30)
       return pageHead("Mouvements de séjour", "Clients sans réservation, changements de chambre, prolongations, délogements et no-shows (exemple).")
+        + g4([
+          stat({ label: "Walk-ins", value: String(D.reservations.filter((r) => r.walkin).length), icon: "user", hint: `${D.rooms.filter((x) => x.hk === "propre" && !occupant(x.no)).length} chambre(s) propre(s) et libre(s)` }),
+          stat({ label: "Changements de chambre", value: String(S.moves.length), icon: "refresh", hint: `${inHouse().length} séjour(s) en cours` }),
+          stat({ label: "Délogements", value: String(S.walks.length), icon: "bus", good: false, hint: `coût ${money(sum(S.walks, (w) => w.cost))}` }),
+          stat({ label: "No-shows à risque", value: `${atRisk.length}/${pend.length}`, icon: "alert", hint: `${S.noshows.length} no-show(s) traité(s)` })])
         + subtabs("sej-mouv", [["walkin", "Walk-in"], ["chambre", "Changement de chambre et prolongation"], ["delogement", "Délogement"], ["noshow", "No-shows et pénalités"]], tab)
         + ({ walkin: walkinTab, chambre: moveTab, delogement: walkTab, noshow: noshowTab }[tab] || walkinTab)()
     },
@@ -256,7 +277,14 @@
     // Groupes, liste d'attente, copilote de réservation
     groupes(p) {
       const tab = p[0] || "groupes"
+      const blocked = sum(S.groups, (g) => sum(typeOrder, (t) => g.block[t])), picked = sum(S.groups, (g) => g.rooming.filter((x) => x.resId).length)
+      const nextCut = S.groups.filter((g) => !g.released).sort((a, b) => a.cutoff.localeCompare(b.cutoff))[0]
       return pageHead("Groupes et liste d'attente", "Blocs de groupes avec cut-off et rooming list, liste d'attente, saisie assistée des demandes (exemple).")
+        + g4([
+          stat({ label: "Groupes", value: String(S.groups.length), icon: "users", hint: `${S.groups.filter((g) => g.released).length} cut-off appliqué(s)` }),
+          stat({ label: "Chambres bloquées", value: String(blocked), icon: "layers", hint: `${picked} reprise(s) · ${pct((picked / Math.max(1, blocked)) * 100)}` }),
+          stat({ label: "Prochain cut-off", value: nextCut ? fd(nextCut.cutoff) : "—", icon: "clock", hint: nextCut ? `${nextCut.name} · J-${Math.max(0, nights(S.biz, nextCut.cutoff))}` : "aucun bloc actif" }),
+          stat({ label: "Liste d'attente", value: String(S.waitlist.filter((w) => w.status !== "convertie").length), icon: "list", hint: `${S.waitlist.filter((w) => w.status === "convertie").length} convertie(s)` })])
         + subtabs("sej-groupes", [["groupes", "Groupes et blocs"], ["allot", "Allotements et contrats"], ["attente", "Liste d'attente"], ["copilote", "Copilote de réservation"]], tab)
         + ({ groupes: groupsTab, allot: allotTab, attente: waitTab, copilote: copilotTab }[tab] || groupsTab)()
     },
@@ -264,7 +292,13 @@
     // Audit de nuit, main courante, indicateurs
     audit(p) {
       const tab = p[0] || "audit"
+      const checks = auditChecks(), openLog = S.log.filter((e) => e.status === "ouverte")
       return pageHead("Audit de nuit et main courante", `Date hôtelière simulée : ${fdLong(S.biz)}.`)
+        + g4([
+          stat({ label: "Contrôles préalables", value: `${checks.filter((c) => c.ok).length}/${checks.length}`, icon: "filecheck", hint: `${checks.filter((c) => c.block && !c.ok).length} bloquant(s)` }),
+          stat({ label: "Audits archivés", value: String(S.audits.length), icon: "moon", hint: S.audits[0] ? `dernier : ${fd(S.audits[0].date)}` : "aucun" }),
+          stat({ label: "Nuitées publiées", value: String(S.postings.length), icon: "receipt", hint: "journal du revenu hébergement" }),
+          stat({ label: "Main courante", value: String(openLog.length), icon: "message", hint: `point(s) ouvert(s) sur ${S.log.length}`, route: "sej-audit/journal" })])
         + subtabs("sej-audit", [["audit", "Audit de nuit"], ["journal", "Main courante et demandes"], ["kpi", "Indicateurs"]], tab)
         + ({ audit: auditTab, journal: journalTab, kpi: kpiTab }[tab] || auditTab)()
     },
@@ -273,26 +307,52 @@
     folios(p) {
       const list = inHouse().sort((a, b) => a.room.localeCompare(b.room))
       const r = R(p[0]) && R(p[0]).status === "arrivee" ? R(p[0]) : list[0]
+      const tot = sum(list, (x) => folio(x).total), bal = sum(list, (x) => Math.max(0, folio(x).balance)), routed = list.filter((x) => S.routing[x.id])
       return pageHead("Folios et routage", "Folio par séjour en deux fenêtres (client / société), routage, imputations, transferts et encaissements. Montants d'exemple.")
+        + g4([
+          stat({ label: "Folios ouverts", value: String(list.length), icon: "receipt", hint: "un par séjour en cours" }),
+          stat({ label: "Total imputé", value: money(tot), icon: "coins", hint: "toutes fenêtres" }),
+          stat({ label: "Soldes à encaisser", value: money(bal), icon: "wallet", good: false, hint: `${pct((bal / Math.max(1, tot)) * 100)} du total`, route: "checkout" }),
+          stat({ label: "Folios routés", value: String(routed.length), icon: "building", hint: "fenêtre B vers une société" })])
         + split(listItems(list.map((x) => ({ id: x.id, title: `Ch. ${x.room} · ${gname(x)}`, sub: `${x.id} · solde ${money(folio(x).balance)}`, badge: S.routing[x.id] ? " " + badge("Routage", "outline") : "" })), r?.id, "fol-folios"),
           r ? folioPanel(r) : `<p class="muted">Aucun client en séjour.</p>`)
-        + `<h2>Comptes maîtres de groupe</h2>` + masterAccounts()
+        + `<div class="dash" style="margin-top:16px"><div class="w6">${section("Solde par folio", list.length ? bars(list.map((x) => ({ label: `Ch. ${x.room} · ${gname(x)}`, value: Math.max(0, folio(x).balance) })), money) : `<p class="muted">—</p>`)}</div>
+          <div class="w6">${section("Comptes maîtres de groupe", masterAccounts())}</div></div>`
     },
     paiements(p) {
       const tab = p[0] || "journal"
+      const ps = allPayments(), okP = ps.filter((x) => x.status === "confirmé"), chk = ps.filter((x) => ["à vérifier", "en attente"].includes(x.status))
       return pageHead("Paiements", "Encaissements (cartes tokenisées, mobile money, espèces, virements), acomptes, remboursements et avoirs. PSP et opérateurs simulés.")
+        + g4([
+          stat({ label: "Encaissé", value: money(sum(okP, (x) => x.amount)), icon: "coins", hint: `${okP.length} paiement(s) confirmé(s)` }),
+          stat({ label: "À vérifier", value: String(chk.length), icon: "alert", good: false, hint: chk.length ? money(sum(chk, (x) => x.amount)) + " en suspens" : "rien en suspens" }),
+          stat({ label: "Acomptes attendus", value: money(sum(S.deposits.filter((d) => d.status !== "reçu"), (d) => d.amount)), icon: "calendar", hint: `${S.deposits.filter((d) => d.status !== "reçu").length} échéance(s)`, route: "fol-paiements/acomptes" }),
+          stat({ label: "Remboursements à valider", value: String(S.refunds.filter((x) => x.status === "à valider").length), icon: "refresh", hint: `${S.disputes.filter((d) => d.status === "en cours").length} litige(s) en cours`, route: "fol-paiements/remboursements" })])
         + subtabs("fol-paiements", [["journal", "Journal des paiements"], ["acomptes", "Acomptes"], ["remboursements", "Remboursements"], ["avoirs", "Factures et avoirs"]], tab)
         + ({ journal: payJournal, acomptes: depositsTab, remboursements: refundsTab, avoirs: creditsTab }[tab] || payJournal)()
     },
     ledger(p) {
       const tab = p[0] || "comptes"
+      const open = S.ar.invoices.filter((i) => arOpen(i) > 0), totalOpen = sum(open, arOpen), billed90 = sum(S.ar.invoices.filter((i) => age(i) <= 90), (i) => i.amount)
+      const overdue = open.filter((i) => age(i) > (S.ar.accounts.find((a) => a.id === i.acc)?.terms || 30))
       return pageHead("City ledger", "Comptes débiteurs des sociétés et agences : encours, âge des créances, lettrage et relances (exemple).")
+        + g4([
+          stat({ label: "Encours total", value: money(totalOpen), icon: "bank", hint: `${open.length} pièce(s) ouverte(s)` }),
+          stat({ label: "Créances échues", value: money(sum(overdue, arOpen)), icon: "alert", good: false, hint: `${overdue.length} pièce(s) au-delà du délai`, route: "fol-ledger/relances" }),
+          stat({ label: "DSO", value: Math.round((totalOpen / Math.max(1, billed90)) * 90) + " j", icon: "clock", hint: "encours / facturé 90 j × 90" }),
+          stat({ label: "Encaissements à lettrer", value: String(S.ar.receipts.filter((x) => !x.matched).length), icon: "filecheck", hint: "relevé bancaire importé", route: "fol-ledger/lettrage" })])
         + subtabs("fol-ledger", [["comptes", "Comptes débiteurs"], ["lettrage", "Lettrage"], ["relances", "Relances"]], tab)
         + ({ comptes: arAccounts, lettrage: arMatch, relances: arRemind }[tab] || arAccounts)()
     },
     caisse(p) {
       const tab = p[0] || "caisse"
+      const sh = openShift(), closed = S.shifts.filter((x) => x.status === "fermée")
       return pageHead("Caisses et clôture", "Caisse par utilisateur et par poste : ouverture, encaissements, clôture et écarts (EF-FOL-012).")
+        + g4([
+          stat({ label: "Caisse du poste", value: sh ? "Ouverte" : "Fermée", icon: "wallet", hint: sh ? `${sh.id} · ${sh.user} · depuis ${sh.opened}` : "encaissements espèces bloqués" }),
+          stat({ label: "Attendu en caisse", value: sh ? money(shiftCash(sh).expected) : "—", icon: "coins", hint: sh ? `fonds ${money(sh.float)} + espèces ${money(shiftCash(sh).inSum)}` : "aucune caisse ouverte" }),
+          stat({ label: "Écarts cumulés", value: money(sum(closed, (x) => x.gap)), icon: "calc", hint: `${closed.length} service(s) clôturé(s)`, trend: closed.slice().reverse().map((x) => x.gap) }),
+          stat({ label: "Services clôturés sans écart", value: `${closed.filter((x) => !x.gap).length}/${closed.length}`, icon: "check", hint: `seuil de motif : ${money(CASH_GAP_LIMIT)}` })])
         + subtabs("fol-caisse", [["caisse", "Caisse du poste"], ["kpi", "Indicateurs"]], tab)
         + (tab === "kpi" ? folKpi() : cashTab())
     },
@@ -334,7 +394,7 @@
         field("wi-nights", "Nuits", input("wi-nights", "1", 'type="number" min="1" max="30"')),
         field("wi-pay", "Garantie immédiate", select("wi-pay", ["Espèces", "Carte (jeton PSP)", "Mobile Money (Orange Money)", "Mobile Money (MTN MoMo)", "Mobile Money (Wave)"], "Espèces")),
         field("wi-amount", "Montant encaissé", input("wi-amount", free[0] ? String(T(free[0].type).rate) : "0", 'type="number" min="0" step="500"')),
-        `<div class="full" id="wi-police-row" style="display:none"><strong>Fiche de police</strong> ${badge("Obligatoire", "dark")} <span class="muted">Voyageur étranger : tous les champs sont exigés (RG-FOF-07). EF-CRM-013</span>
+        `<div class="full" id="wi-police-row" style="display:none"><strong>Fiche de police</strong> ${badge("Obligatoire", "warn")} <span class="muted">Voyageur étranger : tous les champs sont exigés (RG-FOF-07). EF-CRM-013</span>
           <div class="form" style="margin-top:6px">${[["birth", "Date de naissance", "date"], ["place", "Lieu de naissance"], ["prof", "Profession"], ["addr", "Adresse habituelle"], ["doc", "Passeport (n°)"], ["issued", "Délivré le", "date"], ["entry", "Entrée en Côte d'Ivoire le", "date"], ["from", "Provenance"], ["to", "Destination"]]
             .map(([k, l, t]) => field("wi-fp-" + k, l, input("wi-fp-" + k, k === "entry" ? S.biz : k === "to" ? "Abidjan" : "", t ? `type="${t}"` : ""))).join("")}</div></div>`,
         `<div class="full"><label class="row" style="color:var(--ink)"><input type="checkbox" id="wi-id"> Pièce d'identité présentée et conforme</label></div>`,
@@ -342,6 +402,7 @@
         `<div class="full row">${btn("Enregistrer l'arrivée et encoder la clé", "A.sej.walkin()", "accent")}</div>`,
       ])}`)}</section>
       <section><h2>Walk-ins du jour</h2>${tbl(["Réf.", "Client", "Ch.", "#Nuits", "#Encaissé"], recent.map((r) => [esc(r.id), esc(gname(r)), esc(r.room), nights(r.from, r.to), money(D.payments[r.id] || 0)]), "Aucun walk-in enregistré pour l'instant.")}
+      ${section("Chambres propres et libres par type", bars(typeOrder.map((t) => ({ label: T(t).label, value: free.filter((x) => x.type === t).length })), (v) => v + " ch."))}
       <p class="muted">Chambres propres et libres maintenant : ${free.length}. La disponibilité par type est vérifiée nuit par nuit pour ne pas prendre la chambre d'une arrivée prévue.</p></section></div>`
   }
 
@@ -383,7 +444,7 @@
         `<div class="full muted">Décision du chef de réception / duty manager. La 1re nuit chez le partenaire est à la charge de l'hôtel (EF-FOF-012).</div>`,
         `<div class="full">${btn("Déloger et réserver chez le partenaire", "A.sej.walk()")}</div>`,
       ]) : `<p class="muted">Aucune arrivée en attente pour la date hôtelière.</p>`)}</section>
-      <section><h2>Délogements</h2><div class="grid">${kpi("Délogements (mois)", S.walks.length, "exemple")}${kpi("Coût total", money(sum(S.walks, (w) => w.cost)), "nuitées partenaires + transport")}</div>
+      <section><h2>Délogements</h2>${S.walks.length ? bars(S.walks.map((w) => ({ label: `${fd(w.date)} · ${w.name}`, value: w.cost })), money) : ""}
       ${tbl(["Date", "Client", "Hôtel partenaire", "#Coût", "Compensation"], S.walks.map((w) => [fd(w.date), esc(w.name), esc(w.hotel), money(w.cost), esc(w.comp)]))}</section></div>`
   }
 
@@ -414,10 +475,11 @@
         `<div class="full" id="gr-err"></div>`, `<div class="full">${btn("Créer le bloc", "A.sej.newGroup()", "ghost")}</div>`])}`,
       `<div class="card"><div class="row between"><span class="big">${esc(g.name)}</span>${badge(accName(g.account), "outline")}</div>
         <div class="muted">${esc(g.id)} · du ${fd(g.from)} au ${fd(g.to)} · cut-off le ${fd(g.cutoff)} ${g.released ? "(appliqué)" : left >= 0 ? `(J-${left})` : "(dépassé)"} · facturation : hébergement au compte maître, extras à chaque participant</div>
-        <div class="grid" style="margin:14px 0">${kpi("Chambres bloquées", total, "bloc")}${kpi("Reprises", sum(typeOrder, picked), "réservations générées")}${kpi("Noms reçus", g.rooming.length, "rooming list")}</div>
+        <div class="row" style="gap:18px;margin:14px 0;flex-wrap:nowrap">${gauge(total ? (sum(typeOrder, picked) / total) * 100 : 0, "Taux de reprise du bloc")}
+          <div style="flex:1">${bars([{ label: "Chambres bloquées", value: total }, { label: "Noms reçus", value: g.rooming.length }, { label: "Reprises (réservations)", value: sum(typeOrder, picked) }], (v) => v)}</div></div>
         ${tbl(["Type", "#Bloquées", "#Noms", "#Reprises", "#Tarif groupe"], typeOrder.filter((t) => g.block[t] || listed(t)).map((t) => [esc(T(t).label), g.block[t], listed(t), picked(t), money(g.rate[t])]))}
         <h3>Rooming list</h3>
-        ${tbl(["Participant", "Type", "Réservation"], g.rooming.map((x) => [esc(x.name), esc(T(x.type).label), x.resId ? badge(x.resId, "on") : ref("à générer")]), "Aucun nom reçu.")}
+        ${tbl(["Participant", "Type", "Réservation"], g.rooming.map((x) => [esc(x.name), esc(T(x.type).label), x.resId ? badge(x.resId, "ok") : badge("À générer", "warn")]), "Aucun nom reçu.")}
         <label for="gr-import" style="margin-top:12px">Importer des noms (une ligne « Nom;Type », copier-coller depuis le tableur de l'organisateur)</label>
         <textarea id="gr-import" rows="3" placeholder="Hervé Séka;STD&#10;Mariam Doumbia;SUP"></textarea>
         <div id="gr-ierr"></div>
@@ -435,7 +497,7 @@
       ${tbl(["Réf.", "Bénéficiaire", "Type", "Période", "#Accordées", "#Prises", "Libération", "Statut", ""], al.map((a) => {
         const due = !a.released && allotRel(a) <= S.biz
         return [esc(a.id), esc(a.holder), esc(T(a.type).label), `${fd(a.from)} → ${fd(a.to)}`, a.rooms, a.picked, `J-${a.release} (${fd(allotRel(a))})`,
-          a.released ? badge(a.releasedBy ? "Libéré (" + a.releasedBy + ")" : "Libéré", "outline") : due ? badge("Échu : libéré au prochain audit", "dark") : badge("Actif", "on"),
+          a.released ? badge(a.releasedBy ? "Libéré (" + a.releasedBy + ")" : "Libéré", "outline") : due ? badge("Échu : libéré au prochain audit", "warn") : badge("Actif", "ok"),
           a.released || a.picked >= a.rooms ? "" : btn("Réserver sur l'allotement", `A.sej.allotPick(${q(a.id)})`, "ghost sm")]
       }), "Aucun allotement (module Tarifs et distribution).")}
       ${al.length ? form([field("al-name", "Nom du client (réservation sur allotement)", input("al-name", "", 'placeholder="Ex. Serge Gnahoré"')), `<div class="full" id="al-err"></div>`]) : ""}
@@ -444,7 +506,7 @@
       <p class="muted">Tarifs négociés par type, volume annuel de nuitées et conditions ; la consommation est suivie à chaque réservation au plan « Contrat entreprise ». EF-RES-009</p>
       ${tbl(["Contrat", "Entreprise", "Tarifs STD / SUP / SUI", "Période", "#Volume", "#Consommé", "Suivi", "Conditions"], S.contracts.map((c) => { const u = ctUsed(c), p = Math.round((u / c.volume) * 100)
         return [esc(c.id), esc(c.name), typeOrder.map((t) => money(c.rates[t])).join(" / "), `${fd(c.from)}/${c.from.slice(2, 4)} → ${fd(c.to)}/${c.to.slice(2, 4)}`, c.volume, u,
-          `<span class="track" style="display:inline-block;width:80px;vertical-align:middle"><i style="width:${Math.min(100, p)}%"></i></span> ${badge(p + " %", p >= 100 ? "dark" : p >= 90 ? "outline" : "")}${p >= 100 ? muted("volume dépassé : renégocier") : p >= 90 ? muted("volume presque atteint") : ""}`, ref(c.conditions)] }))}
+          `<span class="track" style="display:inline-block;width:80px;vertical-align:middle"><i style="width:${Math.min(100, p)}%"></i></span> ${badge(p + " %", p >= 100 ? "bad" : p >= 90 ? "warn" : "ok")}${p >= 100 ? muted("volume dépassé : renégocier") : p >= 90 ? muted("volume presque atteint") : ""}`, ref(c.conditions)] }))}
       <h3>Nouveau contrat</h3>${form([field("ct-acc", "Compte", select("ct-acc", S.ar.accounts.map((a) => [a.id, a.name]), "AC2")),
         ...typeOrder.map((t) => field("ct-" + t, `Tarif ${T(t).label}`, input("ct-" + t, String(Math.round(T(t).rate * 0.85 / 500) * 500), 'type="number" min="0" step="500"'))),
         field("ct-vol", "Volume annuel (nuitées)", input("ct-vol", "50", 'type="number" min="1"')), field("ct-cond", "Conditions", input("ct-cond", "", 'placeholder="Ex. annulation sans frais 24 h avant"'), "full"),
@@ -454,8 +516,8 @@
     return `<div class="row between"><p class="muted" style="margin:0">Notification automatique dès qu'une disponibilité se libère (EF-RES-010, message simulé).</p>${btn("Vérifier les disponibilités", "A.sej.checkWait()")}</div>
       <div style="margin-top:12px">${tbl(["Réf.", "Client", "Contact", "Type", "Dates", "Priorité", "Disponible", "Statut", ""], S.waitlist.map((w) => {
         const ok = !nightsOk(w.type, w.from, w.to)
-        return [esc(w.id), esc(w.name), esc(w.contact), esc(T(w.type).label), `${fd(w.from)} → ${fd(w.to)}`, esc(w.prio), ok ? badge("Oui", "on") : ref("Complet"),
-          badge(w.status, w.status === "convertie" ? "on" : w.status === "notifiée" ? "outline" : ""),
+        return [esc(w.id), esc(w.name), esc(w.contact), esc(T(w.type).label), `${fd(w.from)} → ${fd(w.to)}`, esc(w.prio), ok ? badge("Oui", "ok") : badge("Complet", "bad"),
+          badge(w.status, w.status === "convertie" ? "ok" : w.status === "notifiée" ? "info" : "warn"),
           w.status === "convertie" ? esc(w.resId) : ok ? btn("Convertir en réservation", `A.sej.convertWait(${q(w.id)})`, "sm") : ""]
       }))}</div>
       <h3>Ajouter à la liste d'attente</h3>${form([field("wl-name", "Client", input("wl-name", "", 'placeholder="Nom"')), field("wl-contact", "Contact", input("wl-contact", "", 'placeholder="e-mail ou téléphone"')),
@@ -499,13 +561,16 @@
   const AUDIT_STEPS = ["Contrôles préalables et anomalies", "Traitement des no-shows", "Publication des nuitées et des taxes sur les folios", "Libération des allotements échus", "Édition et archivage des rapports", "Changement de date hôtelière"]
   function auditTab() {
     const checks = auditChecks(), blocked = checks.some((c) => c.block && !c.ok), run = auditRun
-    return `<div class="cols"><section><h2>Contrôles préalables</h2>
-      ${tbl(["Contrôle", "État", "Détail"], checks.map((c) => [esc(c.label), c.ok ? badge("OK", "on") : badge(c.block ? "Bloquant" : "Avertissement", c.block ? "dark" : "outline"), esc(c.hint)]))}
-      <div class="row" style="margin-top:12px">${run ? "" : btn(`Lancer l'audit du ${fd(S.biz)}`, "A.sej.runAudit()", blocked ? "" : "accent")}${blocked ? `<span class="muted">Audit bloqué tant qu'un contrôle bloquant n'est pas levé.</span>` : ""}</div></section>
-      <section><h2>Étapes</h2>${AUDIT_STEPS.map((s, i) => `<div class="step"><b class="n">${i + 1}</b><div><strong>${esc(s)}</strong> ${run ? (run.step > i ? badge("Fait", "on") : run.step === i ? badge("En cours", "outline") : "") : ""}${run && run.notes[i] ? `<div class="muted">${esc(run.notes[i])}</div>` : ""}</div></div>`).join("")}
-      ${run && run.step >= AUDIT_STEPS.length ? `<p style="margin-top:14px">${badge("Audit terminé", "on")} Nouvelle date hôtelière : <strong>${esc(fdLong(S.biz))}</strong> (toute la maquette passe à cette date).</p>${btn("Fermer le compte rendu", "A.sej.closeAudit()", "ghost sm")}` : ""}</section></div>
-      <h2>Audits archivés</h2>${tbl(["Date hôtelière", "Terminé à", "Par", "#No-shows", "#Taxe publiée", "#Chambres", ""], S.audits.map((a, i) => [fd(a.date), esc(a.at), esc(a.by), a.noshows, money(a.tax), a.rooms, a.report ? btn("Rapport", `ui.sejReport=${i};render()`, "ghost sm") : ref("archivé (PDF)")]))}
-      ${(() => { const a = S.audits[ui.sejReport]; return a && a.report ? card(`Rapport de l'audit du ${fd(a.date)}`, `<div class="grid">${kpi("Occupation", a.report.occ + " %", `${a.report.inHouse} chambre(s)`)}${kpi("Prix moyen (ADR)", money(a.report.adr), "nuitées publiées")}${kpi("RevPAR", money(a.report.revpar), "exemple")}${kpi("No-shows", a.report.noshows, "traités")}</div><p class="muted">${a.report.open} point(s) ouvert(s) en main courante. ${btn("Fermer", "ui.sejReport=null;render()", "ghost sm")}</p>`, 'style="margin-top:14px"') : "" })()}
+    const okN = checks.filter((c) => c.ok).length
+    return `<div class="dash"><div class="w8"><div class="card sec"><div class="sec-head"><h3>Contrôles préalables</h3></div>
+      ${tbl(["Contrôle", "État", "Détail"], checks.map((c) => [esc(c.label), c.ok ? badge("OK", "ok") : badge(c.block ? "Bloquant" : "Avertissement", c.block ? "bad" : "warn"), esc(c.hint)]))}
+      <div class="row" style="margin-top:12px">${run ? "" : btn(`Lancer l'audit du ${fd(S.biz)}`, "A.sej.runAudit()", blocked ? "" : "accent")}${blocked ? `<span class="muted">Audit bloqué tant qu'un contrôle bloquant n'est pas levé.</span>` : ""}</div></div></div>
+      <div class="w4">${section("Préparation de l'audit", `<div class="row" style="gap:16px;flex-wrap:nowrap">${gauge((okN / checks.length) * 100, "Contrôles au vert")}<div><div class="stat-val">${okN}/${checks.length}</div><div class="muted">contrôles au vert</div></div></div>`
+        + (S.audits.length > 1 ? `<h3 style="margin:16px 0 6px;font-size:14px">Taxe de séjour publiée par audit</h3>${columns(S.audits.slice(0, 6).reverse().map((a) => fd(a.date)), S.audits.slice(0, 6).reverse().map((a) => a.tax), shortNum)}` : ""))}
+      <div class="card sec" style="margin-top:16px"><div class="sec-head"><h3>Étapes</h3></div>${AUDIT_STEPS.map((s, i) => `<div class="step"><b class="n">${i + 1}</b><div><strong>${esc(s)}</strong> ${run ? (run.step > i ? badge("Fait", "ok") : run.step === i ? badge("En cours", "info") : "") : ""}${run && run.notes[i] ? `<div class="muted">${esc(run.notes[i])}</div>` : ""}</div></div>`).join("")}
+      ${run && run.step >= AUDIT_STEPS.length ? `<p style="margin-top:14px">${badge("Audit terminé", "ok")} Nouvelle date hôtelière : <strong>${esc(fdLong(S.biz))}</strong> (toute la maquette passe à cette date).</p>${btn("Fermer le compte rendu", "A.sej.closeAudit()", "ghost sm")}` : ""}</div></div></div>
+      <div style="margin-top:16px">${section("Audits archivés", tbl(["Date hôtelière", "Terminé à", "Par", "#No-shows", "#Taxe publiée", "#Chambres", ""], S.audits.map((a, i) => [fd(a.date), esc(a.at), esc(a.by), a.noshows, money(a.tax), a.rooms, a.report ? btn("Rapport", `ui.sejReport=${i};render()`, "ghost sm") : ref("archivé (PDF)")])))}</div>
+      ${(() => { const a = S.audits[ui.sejReport]; return a && a.report ? card(`Rapport de l'audit du ${fd(a.date)}`, `<div class="grid g4">${stat({ label: "Occupation", value: a.report.occ + " %", icon: "bed", hint: `${a.report.inHouse} chambre(s)` })}${stat({ label: "Prix moyen (ADR)", value: money(a.report.adr), icon: "tag", hint: "nuitées publiées" })}${stat({ label: "RevPAR", value: money(a.report.revpar), icon: "trend", hint: "exemple" })}${stat({ label: "No-shows", value: String(a.report.noshows), icon: "alert", hint: "traités" })}</div><p class="muted">${a.report.open} point(s) ouvert(s) en main courante. ${btn("Fermer", "ui.sejReport=null;render()", "ghost sm")}</p>`, 'style="margin-top:14px"') : "" })()}
       <p class="muted">EF-FOF-013 : contrôle des anomalies, publication des nuitées et taxes, no-shows, allotements, rapports archivés, changement de date hôtelière. ${S.postings.length} nuitée(s) publiée(s) dans le journal.</p>`
   }
 
@@ -520,7 +585,7 @@
         field("lg-due", "Échéance", input("lg-due", "", 'type="time"')), field("lg-text", "Texte", input("lg-text", "", 'placeholder="Ex. réveil à 6 h"'), "full"), `<div class="full">${btn("Ajouter à la main courante", "A.sej.addLog()", "ghost")}</div>`]))}</section></div>
       ${chips("sejLog", { toutes: "Toutes", ouvertes: "Ouvertes", demandes: "Demandes clients" }, { toutes: S.log.length, ouvertes: open.length, demandes: S.log.filter((e) => e.type === "Demande client").length })}
       ${tbl(["Horodatage", "Type", "Ch.", "Texte", "Auteur", "Échéance", "Statut", ""], list.map((e) => [esc(e.at), esc(e.type), esc(e.room || "—"), esc(e.text), esc(e.author), esc(e.due || "—"),
-        badge(e.status, e.status === "ouverte" ? "outline" : ""), e.status === "ouverte" ? btn("Marquer traité", `A.sej.doneLog(${q(e.id)})`, "ghost sm") : ref(e.doneMin ? `${e.doneMin} min` : "")]))}
+        badge(e.status, e.status === "ouverte" ? "warn" : "ok"), e.status === "ouverte" ? btn("Marquer traité", `A.sej.doneLog(${q(e.id)})`, "ghost sm") : ref(e.doneMin ? `${e.doneMin} min` : "")]))}
       <p class="muted">EF-FOF-014 / EF-FOF-015 : main courante, messages et demandes avec suivi des délais.</p>`
   }
 
@@ -534,18 +599,19 @@
     const stays = all.filter((r) => meta(r).mode), mob = stays.filter((r) => meta(r).mode === "mobile")
     const done = S.log.filter((e) => e.type === "Demande client" && e.doneMin).map((e) => e.doneMin).sort((a, b) => a - b)
     const median = done.length ? done[Math.floor(done.length / 2)] : 0
-    return `<h2>Réservations (§8.12)</h2><div class="grid">
-        ${kpi("Taux d'annulation", pct((canc.length / all.length) * 100), `${canc.length} sur ${all.length} réservations`)}
-        ${kpi("Taux de no-show", pct(expected.length ? (ns.length / expected.length) * 100 : 0), `${ns.length} sur ${expected.length} arrivées prévues`)}
-        ${kpi("Délai moyen de réservation", Math.round(sum(lead) / lead.length) + " j", "entre réservation et arrivée")}
-        ${kpi("Durée moyenne de séjour", (Math.round((sum(valid, (r) => nights(r.from, r.to)) / valid.length) * 10) / 10) + " nuits", "nuitées / réservations")}</div>
-      <div class="cols"><section><h3>Revenu hébergement par source</h3>${bars(rev("source"), money)}</section><section><h3>Revenu hébergement par segment</h3>${bars(rev("segment"), money)}</section></div>
-      <h2>Réception (§9.12)</h2><div class="grid">
-        ${(() => { const a = Math.round(sum(S.ckTimes) / S.ckTimes.length); return kpi("Durée moyenne de check-in", `${Math.floor(a / 60)} min ${String(a % 60).padStart(2, "0")} s`, `${S.ckTimes.length} check-ins mesurés (ouverture → clé)`) })()}
-        ${kpi("Taux de check-in mobile", pct((mob.length / Math.max(1, stays.length)) * 100), `${mob.length} sur ${stays.length} séjours`)}
-        ${kpi("Revenu upsell au comptoir", money(sum(S.upsells, (u) => u.amount)), `${S.upsells.length} surclassement(s)`)}
-        ${kpi("Délogements", `${S.walks.length} · ${money(sum(S.walks, (w) => w.cost))}`, "nombre et coût")}
-        ${kpi("Délai médian des demandes", median + " min", `${done.length} demande(s) traitée(s)`)}</div>
+    const ckAvg = Math.round(sum(S.ckTimes) / Math.max(1, S.ckTimes.length))
+    return `<h2>Réservations (§8.12)</h2><div class="grid g4">
+        ${stat({ label: "Taux d'annulation", value: pct((canc.length / all.length) * 100), icon: "alert", hint: `${canc.length} sur ${all.length} réservations` })}
+        ${stat({ label: "Taux de no-show", value: pct(expected.length ? (ns.length / expected.length) * 100 : 0), icon: "user", hint: `${ns.length} sur ${expected.length} arrivées prévues` })}
+        ${stat({ label: "Délai moyen de réservation", value: Math.round(sum(lead) / Math.max(1, lead.length)) + " j", icon: "calendar", hint: "entre réservation et arrivée" })}
+        ${stat({ label: "Durée moyenne de séjour", value: (Math.round((sum(valid, (r) => nights(r.from, r.to)) / Math.max(1, valid.length)) * 10) / 10) + " nuits", icon: "moon", hint: "nuitées / réservations" })}</div>
+      <div class="dash" style="margin-top:16px"><div class="w6">${section("Revenu hébergement par source", donut(rev("source"), { fmt: money, center: shortNum(sum(rev("source"), (x) => x.value)), sub: "FCFA" }))}</div><div class="w6">${section("Revenu hébergement par segment", bars(rev("segment"), money))}</div></div>
+      <h2>Réception (§9.12)</h2><div class="grid g4">
+        ${stat({ label: "Durée moyenne de check-in", value: `${Math.floor(ckAvg / 60)} min ${String(ckAvg % 60).padStart(2, "0")} s`, icon: "clock", good: false, hint: `${S.ckTimes.length} check-ins mesurés (ouverture → clé)`, trend: S.ckTimes })}
+        ${stat({ label: "Taux de check-in mobile", value: pct((mob.length / Math.max(1, stays.length)) * 100), icon: "phone", hint: `${mob.length} sur ${stays.length} séjours` })}
+        ${stat({ label: "Revenu upsell au comptoir", value: money(sum(S.upsells, (u) => u.amount)), icon: "trend", hint: `${S.upsells.length} surclassement(s)` })}
+        ${stat({ label: "Délogements", value: `${S.walks.length} · ${money(sum(S.walks, (w) => w.cost))}`, icon: "bus", hint: "nombre et coût" })}
+        ${stat({ label: "Délai médian des demandes", value: median + " min", icon: "message", hint: `${done.length} demande(s) traitée(s)` })}</div>
       <p class="muted">Valeurs calculées sur les données d'exemple de la maquette.</p>`
   }
 
@@ -570,8 +636,8 @@
     const pa = r.preauth, over = pa && w.f.balance > pa.amount
     return `<div class="card"><div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(gname(r))}</span>${rt ? badge(`Routage${rt.auto ? " auto" : ""} : ${rt.what} → ${accName(rt.to)}`, "outline") : ""}</div>
       <div class="muted">${esc(r.id)} · du ${fd(r.from)} au ${fd(r.to)} · garantie ${esc(r.guarantee)} · folio ouvert automatiquement au check-in · nuitées publiées par l'audit : ${posted}/${nights(r.from, r.to)}</div>
-      ${pa ? `<p style="margin:6px 0 0">${esc(pa.mode)} : ${money(pa.amount)} (${esc(pa.ref)})${over ? ` ${badge("Solde au-delà de l'autorisé", "dark")} ${btn("Ajuster la pré-autorisation", `A.fol.adjustPA(${q(r.id)})`, "ghost sm")}` : ""}</p>` : ""}
-      <div class="grid" style="margin:14px 0">${kpi("Total folio", money(w.f.total), "toutes fenêtres")}${kpi("Réglé", money(w.f.paid), "paiements + transferts")}${kpi("Solde", money(w.f.balance), w.f.balance > 0 ? "à encaisser avant départ" : "soldé")}</div>
+      ${pa ? `<p style="margin:6px 0 0">${esc(pa.mode)} : ${money(pa.amount)} (${esc(pa.ref)})${over ? ` ${badge("Solde au-delà de l'autorisé", "bad")} ${btn("Ajuster la pré-autorisation", `A.fol.adjustPA(${q(r.id)})`, "ghost sm")}` : ""}</p>` : ""}
+      <div class="grid g4" style="margin:14px 0">${stat({ label: "Total folio", value: money(w.f.total), icon: "receipt", hint: `A ${money(w.tA)} · B ${money(w.tB)}` })}${stat({ label: "Réglé", value: money(w.f.paid), icon: "check", hint: "paiements + transferts" })}${stat({ label: "Solde", value: money(w.f.balance), icon: "wallet", hint: w.f.balance > 0 ? "à encaisser avant départ" : "soldé" })}</div>
       <h3>Fenêtre A — client</h3>${tbl(["Désignation", "#Montant", ""], lineRows(w.A), "Aucune imputation.", `<tfoot><tr><td>Sous-total A</td><td class="num">${money(w.tA)}</td><td></td></tr></tfoot>`)}
       <h3>Fenêtre B — ${rt ? esc(accName(rt.to)) : "société / compte maître"}</h3>${tbl(["Désignation", "#Montant", ""], lineRows(w.B), "Fenêtre vide : définir un routage ou basculer une ligne.", `<tfoot><tr><td>Sous-total B${w.tr ? ` (dont ${money(w.tr)} transférés au city ledger)` : ""}</td><td class="num">${money(w.tB)}</td><td></td></tr></tfoot>`)}
       ${rt && w.restB > 0 ? `<div class="row" style="margin-top:10px">${btn(`Transférer ${money(w.restB)} au city ledger (${accName(rt.to)})`, `A.fol.toLedger(${q(r.id)})`)}<span class="muted">Le check-out exige un solde nul, sauf transfert city ledger autorisé (RG-FOL-02).</span></div>` : ""}
@@ -616,18 +682,21 @@
 
   // ---------- Paiements ----------
   function payJournal() {
-    const ps = allPayments()
-    return `${tbl(["Réf.", "Date", "Folio", "Moyen", "#Montant", "Statut", "Risque IA", "Note", ""], ps.map((p) => [esc(p.id), esc(p.at), p.resId ? `${esc(p.resId)}${muted(R(p.resId) ? gname(R(p.resId)) : "")}` : "—", esc(p.mode), money(p.amount), payStatus(p.status), fraudBadge(fraud(p)), ref(p.note || ""),
+    const ps = allPayments(), fam = byFamily(ps.filter((p) => p.status === "confirmé"))
+    return `<div class="dash" style="margin-bottom:16px"><div class="w6">${section("Encaissements par moyen de paiement", fam.length ? donut(fam, { fmt: money, center: shortNum(sum(fam, (x) => x.value)), sub: "FCFA" }) : `<p class="muted">—</p>`)}</div>
+      <div class="w6">${section("Paiements par statut", (() => { const st = {}; ps.forEach((p) => { st[p.status] = (st[p.status] || 0) + 1 })
+        return donut(Object.entries(st).map(([label, value]) => ({ label, value, color: label === "confirmé" ? "var(--s3)" : label === "à vérifier" ? "var(--s4)" : undefined })), { fmt: (v) => v + " paiement(s)", center: String(ps.length), sub: "paiements" }) })())}</div></div>
+      ${tbl(["Réf.", "Date", "Folio", "Moyen", "#Montant", "Statut", "Risque IA", "Note", ""], ps.map((p) => [esc(p.id), esc(p.at), p.resId ? `${esc(p.resId)}${muted(R(p.resId) ? gname(R(p.resId)) : "")}` : "—", esc(p.mode), money(p.amount), payStatus(p.status), fraudBadge(fraud(p)), ref(p.note || ""),
         p.status === "à vérifier" || p.status === "en attente" ? btn("Interroger l'opérateur", `A.fol.verifyMM(${q(p.id)})`, "sm") : ""]))}
       ${aiBox("Détection de fraude", "Scores en temps réel (vélocité, montant, carte étrangère, remboursement après départ, remboursements répétés par un même agent). Au-delà de 60/100, l'opération est bloquée pour revue humaine. Aucun paiement actuel ne dépasse le seuil.")}
-      <h2>Rétrofacturations et litiges</h2>${tbl(["Réf.", "Ouvert le", "Paiement", "#Montant", "Motif", "Statut", ""], S.disputes.map((d) => [esc(d.id), fd(d.opened), esc(d.pay), money(d.amount), esc(d.reason), badge(d.status, d.status === "en cours" ? "dark" : "outline"),
+      <h2>Rétrofacturations et litiges</h2>${tbl(["Réf.", "Ouvert le", "Paiement", "#Montant", "Motif", "Statut", ""], S.disputes.map((d) => [esc(d.id), fd(d.opened), esc(d.pay), money(d.amount), esc(d.reason), badge(d.status, d.status === "en cours" ? "warn" : "outline"),
         d.status === "en cours" ? btn("Envoyer les justificatifs", `A.fol.dispute(${q(d.id)})`, "ghost sm") : ""]))}
       <p class="muted">EF-FOL-005 à EF-FOL-007, EF-FOL-015. PSP et agrégateur mobile money simulés.</p>`
   }
   function depositsTab() {
     const st = (d) => (d.status === "attendu" && d.due < S.biz ? "en retard" : d.status)
     return `${tbl(["Réf.", "Réservation / groupe", "#Montant", "Échéance", "Statut", ""], S.deposits.map((d) => [esc(d.id), `${esc(d.resId || d.group)}${muted(d.label || (R(d.resId) ? gname(R(d.resId)) : ""))}`, money(d.amount), fd(d.due),
-        badge(st(d), st(d) === "reçu" ? "on" : st(d) === "en retard" ? "dark" : "outline") + (d.reminders ? muted(`${d.reminders} relance(s)`) : ""),
+        badge(st(d), st(d) === "reçu" ? "ok" : st(d) === "en retard" ? "bad" : "warn") + (d.reminders ? muted(`${d.reminders} relance(s)`) : ""),
         st(d) === "reçu" ? "" : `<span class="row" style="flex-wrap:nowrap">${btn("Relancer", `A.fol.remindDeposit(${q(d.id)})`, "ghost sm")}${btn("Encaisser", `A.fol.cashDeposit(${q(d.id)})`, "sm")}</span>`]))}
       <p class="muted">Échéanciers d'acompte et relance automatique des impayés (EF-RES-006) ; l'encaissement crédite le folio de la réservation.</p>`
   }
@@ -640,14 +709,14 @@
       `<div class="full" id="rf-err"></div>`,
       `<div class="full">${btn("Soumettre", "A.fol.refund()")}</div>`]) + `<p class="muted">Au-delà de ${money(REFUND_LIMIT)}, deux validations sont exigées par deux personnes distinctes (RG-FOL-04). EF-FOL-008</p>`)}</section>
       <section><h2>Demandes</h2>${tbl(["Réf.", "Folio", "#Montant", "Motif", "Demandé par", "Risque IA", "Statut", ""], S.refunds.map((x) => [esc(x.id), esc(x.label || `${x.resId} · ${R(x.resId) ? gname(R(x.resId)) : ""}${x.note ? " (" + x.note + ")" : ""}`), money(x.amount), esc(x.reason), esc(x.by), fraudBadge(fraud({ ...x, refund: true })),
-        badge(x.status, x.status === "effectué" ? "on" : x.status === "refusé" ? "" : "dark"),
+        badge(x.status, x.status === "effectué" ? "ok" : x.status === "refusé" ? "bad" : "warn"),
         x.status === "à valider" ? `<span class="row" style="flex-wrap:nowrap">${btn("2e validation", `A.fol.approve(${q(x.id)})`, "sm")}${btn("Refuser", `A.fol.reject(${q(x.id)})`, "ghost sm")}</span>` : ref(x.approvedBy ? "validé par " + x.approvedBy : "")]))}</section></div>`
   }
   function creditsTab() {
     const inv = allInvoices(), cur = inv.find((i) => i.id === ui.sejCredit)
     return `<p class="muted">Une facture émise n'est jamais modifiée ni supprimée : la correction passe par un avoir (EF-FOL-010). Numérotation continue par série (RG-FOL-06). Transmission à la plateforme fiscale simulée.</p>
-      ${tbl(["Facture", "Date", "Client", "#Montant TTC", "#Avoirs", "Transmission", ""], inv.map((i) => [esc(i.id), fd(i.date), esc(i.client), money(i.amount), credited(i.id) ? money(credited(i.id)) : "—", badge("Transmise (simulé)", "outline"),
-        credited(i.id) < i.amount ? btn("Émettre un avoir", `ui.sejCredit=${q(i.id)};render()`, "ghost sm") : badge("Annulée par avoir", "")]))}
+      ${tbl(["Facture", "Date", "Client", "#Montant TTC", "#Avoirs", "Transmission", ""], inv.map((i) => [esc(i.id), fd(i.date), esc(i.client), money(i.amount), credited(i.id) ? money(credited(i.id)) : "—", badge("Transmise (simulé)", "info"),
+        credited(i.id) < i.amount ? btn("Émettre un avoir", `ui.sejCredit=${q(i.id)};render()`, "ghost sm") : badge("Annulée par avoir", "outline")]))}
       ${cur ? card(`Avoir sur la facture ${cur.id}`, form([field("cr-amount", `Montant (max ${money(cur.amount - credited(cur.id))})`, input("cr-amount", String(cur.amount - credited(cur.id)), 'type="number" min="0" step="500"')),
         field("cr-why", "Motif", input("cr-why", "", 'placeholder="Ex. prestation non rendue"')), `<div class="full" id="cr-err"></div>`,
         `<div class="full row">${btn("Émettre l'avoir", `A.fol.credit(${q(cur.id)})`)}${btn("Fermer", "ui.sejCredit=null;render()", "ghost")}</div>`]), 'style="margin-top:14px"') : ""}
@@ -659,7 +728,10 @@
   function arAccounts() {
     const a = S.ar.accounts.find((x) => x.id === ui.sejAcc) || S.ar.accounts[0]
     const inv = S.ar.invoices.filter((i) => i.acc === a.id)
-    return `${tbl(["Compte", "#Plafond", "#Encours", "#Disponible", "Échéance", ...BUCKETS.map((b) => "#" + b[0]), ""], S.ar.accounts.map((x) => {
+    const openAll = S.ar.invoices.filter((i) => arOpen(i) > 0)
+    return `<div class="dash" style="margin-bottom:16px"><div class="w6">${section("Âge des créances", donut(BUCKETS.map(([label, lo, hi]) => ({ label, value: sum(openAll.filter((i) => age(i) >= lo && age(i) <= hi), arOpen) })), { fmt: money, center: shortNum(sum(openAll, arOpen)), sub: "FCFA" }))}</div>
+      <div class="w6">${section("Utilisation du plafond par compte", bars(S.ar.accounts.map((x) => ({ label: `${x.name} (${Math.round((accOpen(x.id) / x.limit) * 100)} %)`, value: accOpen(x.id) })), money))}</div></div>
+      ${tbl(["Compte", "#Plafond", "#Encours", "#Disponible", "Échéance", ...BUCKETS.map((b) => "#" + b[0]), ""], S.ar.accounts.map((x) => {
         const open = S.ar.invoices.filter((i) => i.acc === x.id && arOpen(i) > 0)
         return [esc(x.name), money(x.limit), money(accOpen(x.id)), money(x.limit - accOpen(x.id)), `${x.terms} j`,
           ...BUCKETS.map(([, lo, hi]) => { const v = sum(open.filter((i) => age(i) >= lo && age(i) <= hi), arOpen); return v ? money(v) : "—" }),
@@ -667,7 +739,7 @@
       }))}
       <h2>Relevé — ${esc(a.name)}</h2><p class="muted">${esc(a.contact)} · paiement à ${a.terms} jours</p>
       ${tbl(["Pièce", "Date", "Réf.", "#Montant", "#Réglé", "#Reste", "Âge", "Statut"], inv.map((i) => [esc(i.id), fd(i.date), esc(i.ref), money(i.amount), money(i.paid), money(arOpen(i)), age(i) + " j",
-        arOpen(i) <= 0 ? badge("Lettrée", "on") : age(i) > a.terms ? badge("Échue", "dark") : badge("Non échue", "outline")]), "Aucune pièce.")}`
+        arOpen(i) <= 0 ? badge("Lettrée", "ok") : age(i) > a.terms ? badge("Échue", "bad") : badge("Non échue", "info")]), "Aucune pièce.")}`
   }
   function arMatch() {
     const open = S.ar.receipts.filter((x) => !x.matched)
@@ -675,7 +747,7 @@
       ${tbl(["Encaissement", "Date", "Compte", "Libellé bancaire", "#Montant", "Suggestion IA", ""], open.map((x) => {
         const sug = S.ar.invoices.find((i) => i.acc === x.acc && arOpen(i) === x.amount)
         const cand = S.ar.invoices.filter((i) => i.acc === x.acc && arOpen(i) > 0)
-        return [esc(x.id), fd(x.date), esc(accName(x.acc)), ref(x.label), money(x.amount), sug ? badge(`${sug.id} (montant exact)`, "on") : ref("aucune correspondance exacte"),
+        return [esc(x.id), fd(x.date), esc(accName(x.acc)), ref(x.label), money(x.amount), sug ? badge(`${sug.id} (montant exact)`, "ok") : ref("aucune correspondance exacte"),
           `<span class="row" style="flex-wrap:nowrap"><select id="lt-${esc(x.id)}" aria-label="Pièce à lettrer" style="min-width:120px">${cand.map((i) => `<option value="${esc(i.id)}" ${sug === i ? "selected" : ""}>${esc(i.id)} · ${money(arOpen(i))}</option>`).join("")}</select>${btn("Lettrer", `A.fol.match(${q(x.id)})`, "sm")}</span>`]
       }), "Tous les encaissements sont lettrés.")}
       ${aiBox("Rapprochement automatique", open.length ? `${open.filter((x) => S.ar.invoices.some((i) => i.acc === x.acc && arOpen(i) === x.amount)).length} encaissement(s) sur ${open.length} correspondent exactement à une facture ouverte ; les autres sont proposés par ordre d'ancienneté. Validation humaine requise.` : "Rien à rapprocher.")}
@@ -685,7 +757,7 @@
     const due = S.ar.invoices.filter((i) => arOpen(i) > 0).map((i) => ({ i, a: S.ar.accounts.find((x) => x.id === i.acc) })).filter((x) => age(x.i) > x.a.terms)
       .sort((x, y) => y.a.late - x.a.late || age(y.i) - age(x.i))
     return `${aiBox("Prédiction de retard de paiement", due.length ? `Relancer en priorité ${due[0].a.name} : retard probable de ${due[0].a.late} jours d'après l'historique de règlement (modèle simulé).` : "Aucune créance échue.")}
-      ${tbl(["Pièce", "Compte", "#Reste", "Âge", "Retard prédit", "Relances", ""], due.map(({ i, a }) => [esc(i.id), esc(a.name), money(arOpen(i)), age(i) + " j", badge(a.late + " j", a.late > 45 ? "dark" : "outline"), i.reminders || 0,
+      ${tbl(["Pièce", "Compte", "#Reste", "Âge", "Retard prédit", "Relances", ""], due.map(({ i, a }) => [esc(i.id), esc(a.name), money(arOpen(i)), age(i) + " j", badge(a.late + " j", a.late > 45 ? "bad" : "warn"), i.reminders || 0,
         btn("Relancer (e-mail simulé)", `A.fol.remindAr(${q(i.id)})`, "ghost sm")]), "Aucune créance échue.")}`
   }
 
@@ -699,12 +771,12 @@
     const s = openShift()
     const byMode = (sh) => { const m = {}; allPayments().filter((p) => p.shift === sh.id && p.status === "confirmé").forEach((p) => (m[p.mode] = (m[p.mode] || 0) + p.amount)); return Object.entries(m).map(([label, value]) => ({ label, value })) }
     return `<div class="cols"><section>${s ? card(`Caisse ${s.id} — ouverte`, `<div class="muted">${esc(s.user)} · ${esc(s.post)} · ouverte à ${esc(s.opened)}</div>
-        <div class="grid" style="margin:14px 0">${kpi("Fonds de caisse", money(s.float), "à l'ouverture")}${kpi("Espèces encaissées", money(shiftCash(s).inSum), `${shiftCash(s).cash.length} opération(s)`)}${kpi("Attendu en caisse", money(shiftCash(s).expected), "fonds + espèces − sorties")}</div>
-        ${byMode(s).length ? `<h3>Encaissements du service par moyen</h3>${bars(byMode(s), money)}` : `<p class="muted">Aucun encaissement sur ce service pour l'instant.</p>`}
+        ${tbl(["Caisse", "#Montant"], [["Fonds de caisse (ouverture)", money(s.float)], [`Espèces encaissées (${shiftCash(s).cash.length} opération(s))`, money(shiftCash(s).inSum)], ["Sorties (remboursements espèces)", money(shiftCash(s).outSum)], ["<strong>Attendu en caisse</strong>", `<strong>${money(shiftCash(s).expected)}</strong>`]])}
+        ${byMode(s).length ? `<h3>Encaissements du service par moyen</h3>${donut(byMode(s), { fmt: money, center: shortNum(sum(byMode(s), (x) => x.value)), sub: "FCFA" })}` : `<p class="muted">Aucun encaissement sur ce service pour l'instant.</p>`}
         <h3>Clôture</h3>${form([field("cs-count", "Espèces comptées", input("cs-count", "", 'type="number" min="0" step="500"')), field("cs-why", "Motif d'écart (si > " + money(CASH_GAP_LIMIT) + ")", input("cs-why", "")),
           `<div class="full" id="cs-err"></div>`, `<div class="full">${btn("Clôturer la caisse", "A.fol.closeShift()")}</div>`])}`)
       : card("Aucune caisse ouverte", `<p class="muted">Les encaissements en espèces sont bloqués tant qu'aucune caisse n'est ouverte sur le poste.</p>${form([field("cs-float", "Fonds de caisse", input("cs-float", "50000", 'type="number" min="0" step="500"')), `<div class="full">${btn("Ouvrir la caisse", "A.fol.openShift()")}</div>`])}`)}</section>
-      <section><h2>Services clôturés</h2>${tbl(["Service", "Date", "Caissier", "#Attendu", "#Compté", "#Écart", "Motif"], S.shifts.filter((x) => x.status === "fermée").map((x) => [esc(x.id), fd(x.date), esc(x.user), money(x.expected), money(x.counted), x.gap ? `<strong>${money(x.gap)}</strong>` : money(0), esc(x.reason || "")]))}</section></div>`
+      <section>${section("Services clôturés", tbl(["Service", "Date", "Caissier", "#Attendu", "#Compté", "#Écart", "Motif"], S.shifts.filter((x) => x.status === "fermée").map((x) => [esc(x.id), fd(x.date), esc(x.user), money(x.expected), money(x.counted), x.gap ? badge(money(x.gap), Math.abs(x.gap) > CASH_GAP_LIMIT ? "bad" : "warn") : badge(money(0), "ok"), esc(x.reason || "")])))}</section></div>`
   }
   function folKpi() {
     const open = S.ar.invoices.filter((i) => arOpen(i) > 0), totalOpen = sum(open, arOpen)
@@ -714,13 +786,13 @@
     ps.forEach((p) => { const k = /Mobile/.test(p.mode) ? "Mobile money" : /Carte/.test(p.mode) ? "Carte" : /City/.test(p.mode) ? "City ledger" : p.mode; modes[k] = (modes[k] || 0) + p.amount })
     const tot = sum(Object.values(modes))
     const gaps = S.shifts.filter((x) => x.status === "fermée")
-    return `<div class="grid">
-        ${kpi("DSO", Math.round((totalOpen / Math.max(1, billed90)) * 90) + " j", "encours / facturé 90 j × 90")}
-        ${kpi("Créances ouvertes", money(totalOpen), `${open.length} pièce(s)`)}
-        ${kpi("Écarts de caisse", money(sum(gaps, (x) => x.gap)), `${gaps.length} service(s) clôturé(s)`)}
-        ${kpi("Taux de rétrofacturations", pct((S.disputes.length / Math.max(1, ps.length)) * 100), `${S.disputes.length} litige(s) / ${ps.length} transactions`)}</div>
-      <div class="cols"><section><h3>Âge des créances</h3>${bars(BUCKETS.map(([label, lo, hi]) => ({ label, value: sum(open.filter((i) => age(i) >= lo && age(i) <= hi), arOpen) })), money)}</section>
-      <section><h3>Répartition des moyens de paiement</h3>${bars(Object.entries(modes).map(([label, v]) => ({ label: `${label} (${Math.round((v / tot) * 100)} %)`, value: v })), money)}</section></div>
+    return `<div class="grid g4">
+        ${stat({ label: "DSO", value: Math.round((totalOpen / Math.max(1, billed90)) * 90) + " j", icon: "clock", hint: "encours / facturé 90 j × 90", route: "fol-ledger" })}
+        ${stat({ label: "Créances ouvertes", value: money(totalOpen), icon: "bank", hint: `${open.length} pièce(s)`, route: "fol-ledger" })}
+        ${stat({ label: "Écarts de caisse", value: money(sum(gaps, (x) => x.gap)), icon: "calc", hint: `${gaps.length} service(s) clôturé(s)` })}
+        ${stat({ label: "Taux de rétrofacturations", value: pct((S.disputes.length / Math.max(1, ps.length)) * 100), icon: "shield", hint: `${S.disputes.length} litige(s) / ${ps.length} transactions` })}</div>
+      <div class="dash" style="margin-top:16px"><div class="w6">${section("Âge des créances", bars(BUCKETS.map(([label, lo, hi]) => ({ label, value: sum(open.filter((i) => age(i) >= lo && age(i) <= hi), arOpen) })), money))}</div>
+      <div class="w6">${section("Répartition des moyens de paiement", donut(Object.entries(modes).map(([label, value]) => ({ label, value })), { fmt: money, center: shortNum(tot), sub: "FCFA" }))}</div></div>
       <p class="muted">§12.12 — valeurs calculées sur les données d'exemple.</p>`
   }
 
