@@ -25,12 +25,13 @@
     .chips button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer}
     .chips button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
     .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:28px}
+    .layout>*,.split>div{min-width:0}
     #tabs{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;padding:16px 0 30px}
     .navgroup{margin-bottom:14px}.navtitle{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin:0 0 4px 10px}
     #tabs button{display:block;width:100%;text-align:left;font:inherit;font-size:14px;border:0;background:none;color:var(--ink);border-radius:7px;padding:5px 10px;cursor:pointer}
     #tabs button:hover{background:var(--surface)}#tabs button[aria-current=true]{background:var(--ink);color:var(--bg)}
     #menu{display:none}
-    @media (max-width:900px){.layout{grid-template-columns:1fr}#menu{display:inline-block}#tabs{display:none;position:static;max-height:none}
+    @media (max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}#menu{display:inline-block}#tabs{display:none;position:static;max-height:none}
       body.menu-open #tabs{display:block}body.menu-open main,body.menu-open footer{display:none}#ctx{display:none}}
     .bars{display:flex;flex-direction:column;gap:6px}.barrow{display:grid;grid-template-columns:minmax(90px,30%) 1fr auto;gap:10px;align-items:center;font-size:14px}
     .track{height:10px;background:var(--line);border-radius:99px;overflow:hidden}.track i{display:block;height:100%;background:var(--ink)}
@@ -63,6 +64,7 @@
     .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}.btn.sm{padding:4px 10px;font-size:13px}
     .btn.accent{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
     .btn:disabled{opacity:.4;cursor:not-allowed}
+    @media (max-width:600px){.btn{white-space:normal}header .badge{display:none}}
     .link{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;cursor:pointer}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
     label{display:block;font-size:13px;color:var(--ink2);margin-bottom:4px}
@@ -98,10 +100,11 @@
       <span class="row" style="gap:12px">
         <button class="btn ghost sm" id="menu" aria-label="Menu">Menu</button>
         <span class="brand">HMS</span>
-        <span class="muted" id="ctx">Hôtel Exemple · date hôtelière : 26/11/2026</span>
+        <span class="muted" id="ctx">Hôtel Exemple Abidjan · date hôtelière : 26/11/2026</span>
       </span>
       <span style="display:flex;gap:8px;align-items:center">
         <span class="badge">Prototype · données d'exemple</span>
+        <button class="btn ghost sm" id="reset" title="Revenir aux données d'exemple d'origine">Réinitialiser</button>
         <button class="btn" id="theme" aria-label="Thème">◐</button>
       </span>
     </header>
@@ -109,7 +112,7 @@
       <nav id="tabs" aria-label="Modules"></nav>
       <div>
         <main id="app"></main>
-        <footer>Prototype non fonctionnel : aucune donnée réelle n'est enregistrée. Les actions sont simulées en mémoire et disparaissent au rechargement.</footer>
+        <footer>Prototype non fonctionnel : aucune donnée réelle n'est enregistrée. Les actions sont enregistrées dans ce navigateur uniquement ; « Réinitialiser » revient aux données d'exemple.</footer>
       </div>
     </div>
   </div>
@@ -118,6 +121,25 @@
   <script src="core.js"></script>
   <!-- Modules : un fichier par module de la spec (voir docs/MAQUETTE.md) -->
   <script src="modules/reception.js"></script>
+  <script src="modules/sejour.js"></script>
+  <script src="modules/acces.js"></script>
+  <script src="modules/distribution.js"></script>
+  <script src="modules/crm.js"></script>
+  <script src="modules/maintenance.js"></script>
+  <script src="modules/achats.js"></script>
+  <script src="modules/buanderie.js"></script>
+  <script src="modules/restauration.js"></script>
+  <script src="modules/spa.js"></script>
+  <script src="modules/evenements.js"></script>
+  <script src="modules/rh.js"></script>
+  <script src="modules/compta.js"></script>
+  <script src="modules/ia.js"></script>
+  <script src="modules/bi.js"></script>
+  <script src="modules/mobile.js"></script>
+  <script src="modules/plateforme.js"></script>
+  <script src="modules/exploitation.js"></script>
+  <script src="modules/architecture.js"></script>
+  <script src="modules/couverture.js"></script>
   <script>startApp()</script>
 </body>
 </html>

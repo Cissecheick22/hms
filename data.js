@@ -1,8 +1,9 @@
 // Données d'exemple du prototype HMS (chargées par index.html, y compris ouvert directement depuis le disque).
-// Tout est fictif : noms, numéros, montants. Dépôt public : jamais de vraie donnée.
+// Tout est fictif : noms ivoiriens inventés, numéros, montants. Dépôt public : jamais de vraie donnée.
 // L'état est modifié en mémoire par les écrans (rechargement de la page = retour à ces données).
 window.PROTOTYPE_DATA = {
-  hotel: "Hôtel Exemple",
+  hotel: "Hôtel Exemple Abidjan",
+  city: "Abidjan, Cocody",
   today: "2026-11-26",
   currency: "FCFA",
   roomTypes: [
@@ -10,7 +11,7 @@ window.PROTOTYPE_DATA = {
     { code: "SUP", label: "Supérieure", rate: 60000 },
     { code: "SUI", label: "Suite", rate: 110000 },
   ],
-  // statut housekeeping : propre | sale | inspection | hs (hors service)
+  // statut housekeeping : propre | sale | inspection | hs (hors commande : retirée de la vente)
   rooms: [
     { no: "101", type: "STD", floor: 1, hk: "propre" },
     { no: "102", type: "STD", floor: 1, hk: "sale" },
@@ -27,16 +28,16 @@ window.PROTOTYPE_DATA = {
     { no: "303", type: "SUI", floor: 3, hk: "propre" },
     { no: "304", type: "SUI", floor: 3, hk: "inspection" },
   ],
-  housekeepers: ["Femme de chambre A", "Femme de chambre B", "Femme de chambre C"],
-  assignments: { "102": "Femme de chambre A", "201": "Femme de chambre B", "205": "Femme de chambre B" },
+  housekeepers: ["Akissi Kouamé", "Amenan Koffi", "Fatou Diabaté"],
+  assignments: { "102": "Akissi Kouamé", "201": "Amenan Koffi", "205": "Amenan Koffi" },
   guests: [
-    { id: "G1", name: "Client Exemple 1", phone: "+225 00 00 00 01", email: "client1@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••01", vip: true, prefs: ["Étage élevé", "Oreillers fermes"] },
-    { id: "G2", name: "Client Exemple 2", phone: "+225 00 00 00 02", email: "client2@exemple.test", nationality: "Sénégal", idDoc: "Passeport ••••02", vip: false, prefs: ["Lit bébé"] },
-    { id: "G3", name: "Client Exemple 3", phone: "+225 00 00 00 03", email: "client3@exemple.test", nationality: "France", idDoc: "Passeport ••••03", vip: false, prefs: [] },
-    { id: "G4", name: "Client Exemple 4", phone: "+225 00 00 00 04", email: "client4@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••04", vip: true, prefs: ["Arrivée tardive", "Non-fumeur"] },
-    { id: "G5", name: "Client Exemple 5", phone: "+225 00 00 00 05", email: "client5@exemple.test", nationality: "Ghana", idDoc: "Passeport ••••05", vip: false, prefs: [] },
-    { id: "G6", name: "Client Exemple 6", phone: "+225 00 00 00 06", email: "client6@exemple.test", nationality: "Mali", idDoc: "Passeport ••••06", vip: false, prefs: ["Chambre calme"] },
-    { id: "G7", name: "Client Exemple 7", phone: "+225 00 00 00 07", email: "client7@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••07", vip: false, prefs: [] },
+    { id: "G1", name: "Aya Kouassi", phone: "+225 07 00 00 00 01", email: "aya.kouassi@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••01", vip: true, prefs: ["Étage élevé", "Oreillers fermes"] },
+    { id: "G2", name: "Ibrahim Ouattara", phone: "+225 07 00 00 00 02", email: "ibrahim.ouattara@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••02", vip: false, prefs: ["Lit bébé"] },
+    { id: "G3", name: "Christelle Yao", phone: "+225 07 00 00 00 03", email: "christelle.yao@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••03", vip: false, prefs: [] },
+    { id: "G4", name: "Kouadio Konan N'Guessan", phone: "+225 07 00 00 00 04", email: "kouadio.nguessan@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••04", vip: true, prefs: ["Arrivée tardive", "Non-fumeur"] },
+    { id: "G5", name: "Mariam Bamba", phone: "+225 07 00 00 00 05", email: "mariam.bamba@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••05", vip: false, prefs: [] },
+    { id: "G6", name: "Seydou Coulibaly", phone: "+225 07 00 00 00 06", email: "seydou.coulibaly@exemple.test", nationality: "Mali", idDoc: "Passeport ••••06", vip: false, prefs: ["Chambre calme"] },
+    { id: "G7", name: "Adjoua Brou", phone: "+225 07 00 00 00 07", email: "adjoua.brou@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••07", vip: false, prefs: [] },
   ],
   // statut : confirmee | arrivee (client présent) | partie | annulee
   reservations: [
