@@ -48,9 +48,10 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 
 - **Groupes du menu** (dans cet ordre) : Réception & séjour, Ventes & clients, Opérations, Services, Personnel, Finance, Pilotage & IA, Plateforme.
 - **Ids d'écran uniques** dans toute la maquette : préfixer si besoin (`fin-journal`, `hr-paie`). Ids déjà pris : `accueil`, `reservations`, `checkin`, `checkout`, `facture`, `chambres`, `clients`.
+- Champ `spec` (module ou écran) : codes de la spec couverts (`"§13 FNB"`, `"RES FOF"`), lus par la page Couverture de la spec.
 - Écran caché (détail, impression) : `{ id, hidden: true, navAs: "<écran parent>", view }`.
 - Sous-pages : `subtabs(base, [[id, label]], courant)`, route `#base/id`, ce qui permet au test de fumée de les visiter.
-- Après une action : modifier `D`, puis `render()` ou `go(route)`, et `toast("…")` pour confirmer.
+- Après une action : modifier `D`, puis `render()` ou `go(route)`, et `toast("…")` pour confirmer. `render()` sauvegarde l'état (D + ui) dans le navigateur ; il est rechargé au démarrage. Donc dans `D` : uniquement des données sérialisables en JSON (pas de `Date`, de `Set`, de fonction). Les compteurs d'ids vont dans `D` ou `ui`.
 
 ## Utilitaires (`core.js`)
 
