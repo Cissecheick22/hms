@@ -803,7 +803,7 @@
 
   const common = { code: "fof", phase: "4-10", actions }
   HMS.module({ ...common, group: "Réception & séjour", title: "Réception et séjour", spec: "§8 RES, §9 FOF, §10 ACC, §12 FOL", screens: [
-    { id: "accueil", label: "Tableau de bord", spec: "FOF", view: views.accueil },
+    { id: "accueil", label: "Réception du jour", spec: "FOF", view: views.accueil },
     { id: "reservations", label: "Réservations", spec: "RES", view: views.reservations, after: () => { if ($("#f-price")) A.fof.guarUi() } },
     { id: "checkin", label: "Check-in et clé", spec: "FOF ACC CRM", view: views.checkin },
     { id: "checkout", label: "Check-out et facture", spec: "FOF FOL ACC", view: views.checkout },

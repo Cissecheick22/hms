@@ -62,6 +62,9 @@ Puis ajouter `<script src="modules/restauration.js"></script>` dans `index.html`
 - Mise en page : `pageHead(titre, chapeau, actionsHtml)`, `card(titre, html)`, `cards([html])`, `split(gauche, droite)`, `listItems(items, idCourant, route)`, `subtabs`, `chips(cléUi, options, compteurs)`.
 - Données : `tbl(colonnes, lignes, vide, pied)` (préfixer une colonne par `#` pour l'aligner à droite, cellules = HTML déjà échappé), `kpi(libellé, valeur, aide)`, `badge(texte, "on"|"dark"|"outline"|"")`, `bars(items, fmt)`, `columns(libellés, valeurs, fmt)`.
 - Formulaires : `form([field(id, libellé, input(id, valeur) | select(id, options, valeur))])`, `val(id)`, `btn(libellé, onclick, "ghost"|"accent"|"sm")`.
+- Indicateurs illustrés : `stat({ label, value, icon, delta, good, hint, trend, route })` (icône `ICON`, évolution en %, mini-courbe). Blocs : `section(titre, html, actionHtml)`, grille `<div class="dash">` avec `w4` / `w6` / `w8`.
+- Graphiques SVG (palette validée `--s1`…`--s6`, info-bulles au survol) : `lineChart(labels, [{ name, values }], { fmt, max })`, `donut([{ label, value }], { fmt, center, sub })`, `gauge(pct, libellé)`, `spark(values)`, `bars`, `columns`.
+- Confirmation : toute action de modification ou de suppression déclenchée par l'utilisateur passe automatiquement par la fenêtre (`guard` dans core.js, selon le nom de l'action) ; `askConfirm({ title, text, danger })` pour un usage direct. Ne pas appeler `confirm()` natif.
 - IA : `aiBox(titre, texte, actionsHtml)` pour toute fonction d'IA (toujours marquée « simulé »).
 - Mobile : `phone(html, titre)` dessine un cadre de téléphone.
 - Formats : `money(n)` (FCFA), `fd("2026-11-26")` → 26/11, `fdLong`, `addDays`, `nights`, `pct`, `uid(préfixe)`.

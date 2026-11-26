@@ -18,9 +18,9 @@ const assert = (cond, msg) => { if (!cond) throw new Error("ÉCHEC : " + msg); c
   const go = async (h) => { await p.evaluate((x) => (location.hash = x), h); await p.waitForTimeout(120) }
   const ev = (fn, arg) => p.evaluate(fn, arg)
   await p.goto(url)
-  await p.evaluate(() => localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })))
+  await p.evaluate(() => { localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })); localStorage.setItem("hms-autoconfirm", "1") })
   await p.reload()
-  await ev(() => { localStorage.clear(); localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })) })
+  await ev(() => { localStorage.clear(); localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })); localStorage.setItem("hms-autoconfirm", "1") })
   await p.reload()
 
   // 1. Réservation (Réservations)
@@ -28,7 +28,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error("ÉCHEC : " + msg); c
   await p.selectOption("#f-guest", "G3")
   await p.selectOption("#f-type", "STD")
   await p.fill("#f-from", "2026-11-26")
-  await p.fill("#f-to", "2026-11-28")
+  await p.fill("#f-to", "2026-11-27")
   await p.selectOption("#f-guar", "Carte bancaire")
   await p.click("text=Créer la réservation")
   await p.waitForTimeout(150)
