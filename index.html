@@ -9,8 +9,8 @@
     Prototype du framework : une page HTML autonome, données factices dans data.js, aucune base.
     Règles : sobre, peu de couleurs (un seul accent), clair/sombre, lisible sur mobile, aucun chiffre ni
     témoignage inventé présenté comme réel (les données sont marquées « exemple »).
-    Les actions (réservation, check-in, check-out, statut des chambres, fiche client) modifient l'état en mémoire :
-    recharger la page revient aux données de data.js.
+    Structure : core.js (utilitaires, registre, navigation) + un fichier par module dans modules/.
+    Les actions modifient l'état en mémoire : recharger la page revient aux données d'exemple.
   -->
   <style>
     :root{--bg:#F6F5EE;--surface:#fff;--ink:#0B0C0A;--ink2:#4B4E43;--line:#DFDED2;--accent:#C6F24E;--accent-ink:#0B0C0A;
@@ -18,13 +18,31 @@
     @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0E0F0C;--surface:#171913;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22}}
     :root[data-theme=dark]{--bg:#0E0F0C;--surface:#171913;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font)}
-    .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+    .wrap{max-width:1400px;margin:0 auto;padding:0 20px}
     header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
     .brand{font-weight:700;font-size:18px;letter-spacing:-.01em}.badge{font-size:12px;color:var(--ink2);border:1px solid var(--line);border-radius:99px;padding:2px 10px}
-    nav,.chips{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0}
-    nav button,.chips button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
-    nav button[aria-pressed=true],.chips button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-    .chips{margin:0 0 14px}.chips button{padding:4px 10px;font-size:13px}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+    .chips button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer}
+    .chips button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+    .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:28px}
+    #tabs{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;padding:16px 0 30px}
+    .navgroup{margin-bottom:14px}.navtitle{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin:0 0 4px 10px}
+    #tabs button{display:block;width:100%;text-align:left;font:inherit;font-size:14px;border:0;background:none;color:var(--ink);border-radius:7px;padding:5px 10px;cursor:pointer}
+    #tabs button:hover{background:var(--surface)}#tabs button[aria-current=true]{background:var(--ink);color:var(--bg)}
+    #menu{display:none}
+    @media (max-width:900px){.layout{grid-template-columns:1fr}#menu{display:inline-block}#tabs{display:none;position:static;max-height:none}
+      body.menu-open #tabs{display:block}body.menu-open main,body.menu-open footer{display:none}#ctx{display:none}}
+    .bars{display:flex;flex-direction:column;gap:6px}.barrow{display:grid;grid-template-columns:minmax(90px,30%) 1fr auto;gap:10px;align-items:center;font-size:14px}
+    .track{height:10px;background:var(--line);border-radius:99px;overflow:hidden}.track i{display:block;height:100%;background:var(--ink)}
+    .cols-chart{display:flex;gap:6px;align-items:flex-end;height:180px;padding-top:18px}
+    .cols-chart .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;min-width:0}
+    .cols-chart .col i{display:block;width:100%;max-width:38px;background:var(--ink);border-radius:4px 4px 0 0;min-height:2px}
+    .cols-chart .col .num{font-size:11px;color:var(--ink2)}.cols-chart .col .muted{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    .card.ai{border-style:dashed;border-color:var(--ink2)}
+    .phone{width:300px;max-width:100%;border:10px solid var(--ink);border-radius:34px;background:var(--bg);overflow:hidden}
+    .phone-bar{background:var(--ink);color:var(--bg);font-size:12px;text-align:center;padding:2px 0 8px}
+    .phone-body{padding:14px;height:540px;overflow-y:auto;font-size:14px}
+    .stack>*+*{margin-top:14px}
     h1{font-size:clamp(24px,4vw,34px);letter-spacing:-.02em;margin:24px 0 6px}.lead{color:var(--ink2);max-width:65ch;margin:0 0 20px}
     h2{font-size:17px;margin:28px 0 10px;letter-spacing:-.01em}h3{font-size:14px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2)}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
@@ -77,417 +95,29 @@
 <body>
   <div class="wrap">
     <header>
-      <span class="brand">HMS</span>
+      <span class="row" style="gap:12px">
+        <button class="btn ghost sm" id="menu" aria-label="Menu">Menu</button>
+        <span class="brand">HMS</span>
+        <span class="muted" id="ctx">Hôtel Exemple · date hôtelière : 26/11/2026</span>
+      </span>
       <span style="display:flex;gap:8px;align-items:center">
         <span class="badge">Prototype · données d'exemple</span>
         <button class="btn" id="theme" aria-label="Thème">◐</button>
       </span>
     </header>
-    <nav id="tabs" aria-label="Écrans"></nav>
-    <main id="app"></main>
-    <footer>Prototype non fonctionnel : aucune donnée réelle n'est enregistrée. Les actions sont simulées en mémoire et disparaissent au rechargement.</footer>
+    <div class="layout">
+      <nav id="tabs" aria-label="Modules"></nav>
+      <div>
+        <main id="app"></main>
+        <footer>Prototype non fonctionnel : aucune donnée réelle n'est enregistrée. Les actions sont simulées en mémoire et disparaissent au rechargement.</footer>
+      </div>
+    </div>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="data.js"></script>
-  <script>
-    const D = window.PROTOTYPE_DATA
-    const $ = (s) => document.querySelector(s)
-    $("#theme").onclick = () => {
-      const r = document.documentElement
-      r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"
-    }
-    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
-    const q = (s) => `'${esc(s)}'` // argument chaîne dans un onclick
-
-    // ---------- Dates et montants ----------
-    const day = (s) => new Date(s + "T00:00:00")
-    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-    const addDays = (s, n) => { const d = day(s); d.setDate(d.getDate() + n); return iso(d) }
-    const nights = (a, b) => Math.round((day(b) - day(a)) / 864e5)
-    const fd = (s) => s.slice(8, 10) + "/" + s.slice(5, 7)
-    const fdLong = (s) => day(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
-    const wd = (s) => day(s).toLocaleDateString("fr-FR", { weekday: "short" })
-    const money = (n) => Math.round(n).toLocaleString("fr-FR") + " " + D.currency
-    const today = D.today
-
-    // ---------- Accès aux données ----------
-    const G = (id) => D.guests.find((g) => g.id === id)
-    const T = (c) => D.roomTypes.find((t) => t.code === c)
-    const R = (id) => D.reservations.find((r) => r.id === id)
-    const inHouse = () => D.reservations.filter((r) => r.status === "arrivee")
-    const arrivals = () => D.reservations.filter((r) => r.from === today && ["confirmee", "arrivee"].includes(r.status))
-    const departures = () => D.reservations.filter((r) => r.to === today && ["arrivee", "partie"].includes(r.status))
-    const occupant = (no) => inHouse().find((r) => r.room === no)
-    const readyRooms = () => D.rooms.filter((r) => r.hk === "propre" && !occupant(r.no))
-    const available = (type, date, exceptId) =>
-      D.rooms.filter((r) => r.type === type && r.hk !== "hs").length -
-      D.reservations.filter((r) => r.id !== exceptId && r.type === type && ["confirmee", "arrivee"].includes(r.status) && r.from <= date && date < r.to).length
-    const folio = (r) => {
-      const n = nights(r.from, r.to)
-      const lines = [{ label: `Hébergement ${T(r.type).label} — ${n} nuit${n > 1 ? "s" : ""} × ${money(r.rate)}`, amount: n * r.rate }, ...(D.extras[r.id] || [])]
-      const total = lines.reduce((s, l) => s + l.amount, 0)
-      const paid = D.payments[r.id] || 0
-      return { lines, total, paid, balance: total - paid }
-    }
-
-    const STATUS = { confirmee: ["Confirmée", ""], arrivee: ["En séjour", "on"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"] }
-    const HK = { propre: ["Propre", "on"], sale: ["Sale", ""], inspection: ["En inspection", "outline"], hs: ["Hors service", "dark"] }
-    const pill = (map, k) => `<span class="pill ${map[k][1]}">${esc(map[k][0])}</span>`
-    const vip = (g) => (g.vip ? ` <span class="pill on">VIP</span>` : "")
-    const guestLink = (id) => `<button class="link" onclick="go('clients/${esc(id)}')">${esc(G(id).name)}</button>`
-    const kpi = (label, value, hint) => `<div class="card"><div class="muted">${esc(label)}</div><div class="kpi">${esc(value)}</div><div class="muted">${esc(hint)}</div></div>`
-    const tbl = (cols, rows, empty = "Rien à afficher.", foot = "") => rows.length
-      ? `<div class="tablewrap"><table><thead><tr>${cols.map((c) => `<th class="${c.startsWith("#") ? "num" : ""}">${esc(c.replace(/^#/, ""))}</th>`).join("")}</tr></thead>
-         <tbody>${rows.map((r) => `<tr>${r.map((v, i) => `<td class="${cols[i].startsWith("#") ? "num" : ""}">${v}</td>`).join("")}</tr>`).join("")}</tbody>${foot}</table></div>`
-      : `<p class="muted">${esc(empty)}</p>`
-
-    // État d'interface (non métier)
-    const ui = { resFilter: "actives", hkFilter: "toutes", done: null, encoding: null, invoiceSeq: 1041, resSeq: 2062 }
-
-    let toastT
-    const toast = (msg) => { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600) }
-    const go = (h) => { if (location.hash === "#" + h) render(); else location.hash = h }
-
-    // ---------- Écrans ----------
-    const views = {
-      // #1 Tableau de bord de la réception
-      accueil() {
-        const arr = arrivals(), pend = arr.filter((r) => r.status === "confirmee"), dep = departures(), ih = inHouse()
-        const sellable = D.rooms.filter((r) => r.hk !== "hs").length
-        const free = D.rooms.filter((r) => r.hk !== "hs" && !occupant(r.no)).length
-        const special = [...ih, ...pend].filter((r) => G(r.guest).vip || r.request)
-        return `<h1>Réception — ${esc(fdLong(today))}</h1><p class="lead">${esc(D.hotel)} · vue du jour (exemple).</p>
-          <div class="grid">
-            ${kpi("Arrivées", arr.length, `${pend.length} à enregistrer`)}
-            ${kpi("Départs", dep.length, `${dep.filter((r) => r.status === "arrivee").length} à facturer`)}
-            ${kpi("Clients présents", ih.length, `occupation ${Math.round((ih.length / sellable) * 100)} %`)}
-            ${kpi("Chambres prêtes", readyRooms().length, `sur ${free} libres`)}
-          </div>
-          <div class="cols">
-            <section><h2>Arrivées du jour</h2>${tbl(["Client", "Type", "#Nuits", ""], arr.map((r) => [
-              guestLink(r.guest) + vip(G(r.guest)), esc(T(r.type).label), nights(r.from, r.to),
-              r.status === "arrivee" ? `<span class="pill on">Ch. ${esc(r.room)}</span>` : `<button class="btn sm" onclick="go('checkin/${esc(r.id)}')">Check-in</button>`,
-            ]), "Aucune arrivée prévue.")}</section>
-            <section><h2>Départs du jour</h2>${tbl(["Client", "Chambre", "#Solde", ""], dep.map((r) => [
-              guestLink(r.guest) + vip(G(r.guest)), esc(r.room), r.status === "partie" ? "—" : money(folio(r).balance),
-              r.status === "partie" ? pill(STATUS, "partie") : `<button class="btn sm" onclick="go('checkout/${esc(r.id)}')">Check-out</button>`,
-            ]), "Aucun départ prévu.")}</section>
-          </div>
-          <h2>VIP et demandes spéciales</h2>
-          ${special.length ? `<div class="grid">${special.map((r) => `<div class="card">
-              <div class="row between"><strong>${guestLink(r.guest)}</strong>${vip(G(r.guest))}</div>
-              <div class="muted">${r.status === "arrivee" ? `En séjour · ch. ${esc(r.room)}` : `Arrive aujourd'hui · ${esc(T(r.type).label)}`}</div>
-              ${r.request ? `<p style="margin:8px 0 0">${esc(r.request)}</p>` : ""}
-              ${G(r.guest).prefs.length ? `<p class="muted" style="margin:6px 0 0">Préférences : ${esc(G(r.guest).prefs.join(", "))}</p>` : ""}
-            </div>`).join("")}</div>` : `<p class="muted">Rien de particulier aujourd'hui.</p>`}`
-      },
-
-      // #2 Réservations
-      reservations(p) {
-        const editing = p[0] === "new" ? {} : p[0] === "edit" ? R(p[1]) : null
-        const filters = { actives: ["confirmee", "arrivee"], toutes: Object.keys(STATUS), annulee: ["annulee"] }
-        const list = D.reservations.filter((r) => filters[ui.resFilter].includes(r.status)).sort((a, b) => a.from.localeCompare(b.from))
-        const days = Array.from({ length: 14 }, (_, i) => addDays(today, i))
-        return `<div class="row between"><h1>Réservations</h1>${editing ? "" : `<button class="btn" onclick="go('reservations/new')">Nouvelle réservation</button>`}</div>
-          <p class="lead">Créer, modifier ou annuler une réservation. La saisie est bloquée si le type de chambre est complet sur une des nuits.</p>
-          ${editing ? resForm(editing) : ""}
-          <div class="chips">${Object.entries({ actives: "À venir et en séjour", toutes: "Toutes", annulee: "Annulées" }).map(([k, l]) =>
-            `<button aria-pressed="${ui.resFilter === k}" onclick="ui.resFilter='${k}';render()">${l}</button>`).join("")}</div>
-          ${tbl(["Réf.", "Client", "Arrivée", "Départ", "#Nuits", "Type", "#Tarif/nuit", "Garantie", "Statut", ""], list.map((r) => [
-            esc(r.id), guestLink(r.guest) + vip(G(r.guest)), fd(r.from), fd(r.to), nights(r.from, r.to), esc(T(r.type).label), money(r.rate), esc(r.guarantee), pill(STATUS, r.status),
-            ["confirmee", "arrivee"].includes(r.status) ? `<span class="row" style="flex-wrap:nowrap">
-              <button class="btn ghost sm" onclick="go('reservations/edit/${esc(r.id)}')">Modifier</button>
-              ${r.status === "confirmee" ? `<button class="btn ghost sm" onclick="A.cancelRes(${q(r.id)})">Annuler</button>` : ""}</span>` : "",
-          ]), "Aucune réservation.")}
-          <h2>Planning des disponibilités — 14 jours</h2>
-          <p class="muted">Chambres libres par type et par nuit (hors chambres hors service).</p>
-          <div class="tablewrap"><table><thead><tr><th>Type</th>${days.map((d) => `<th class="num">${esc(wd(d))}<br>${fd(d)}</th>`).join("")}</tr></thead>
-            <tbody>${D.roomTypes.map((t) => `<tr><td>${esc(t.label)}</td>${days.map((d) => { const n = available(t.code, d); return `<td class="num ${n <= 0 ? "cell0" : ""}">${n <= 0 ? "Complet" : n}</td>` }).join("")}</tr>`).join("")}</tbody></table></div>`
-      },
-
-      // #3 Check-in avec émission de clé
-      checkin(p) {
-        const pend = D.reservations.filter((r) => r.from === today && r.status === "confirmee")
-        const r = p[0] ? R(p[0]) : pend[0]
-        return `<h1>Check-in</h1><p class="lead">Attribuer une chambre, vérifier l'identité, encoder la carte : une seule action (encodeur simulé).</p>
-          <div class="split">
-            <div><h3>Arrivées à enregistrer</h3><div class="list">${pend.map((x) => `<button aria-current="${x === r}" onclick="go('checkin/${esc(x.id)}')">
-              <strong>${esc(G(x.guest).name)}</strong>${vip(G(x.guest))}<div class="muted">${esc(x.id)} · ${esc(T(x.type).label)} · ${nights(x.from, x.to)} nuit(s)</div></button>`).join("") || `<p class="muted">Toutes les arrivées du jour sont enregistrées.</p>`}</div></div>
-            <div>${r ? checkinPanel(r) : ""}</div>
-          </div>`
-      },
-
-      // #4 Check-out et facture
-      checkout(p) {
-        const list = inHouse().sort((a, b) => a.to.localeCompare(b.to))
-        const r = p[0] ? R(p[0]) : list[0]
-        return `<h1>Check-out</h1><p class="lead">Contrôler le folio, encaisser, éditer la facture et révoquer la clé du client.</p>
-          <div class="split">
-            <div><h3>Clients en séjour</h3><div class="list">${list.map((x) => `<button aria-current="${x === r}" onclick="go('checkout/${esc(x.id)}')">
-              <strong>Ch. ${esc(x.room)} · ${esc(G(x.guest).name)}</strong>
-              <div class="muted">${x.to === today ? "Départ aujourd'hui" : `Départ prévu le ${fd(x.to)}`} · solde ${money(folio(x).balance)}</div></button>`).join("") || `<p class="muted">Aucun client en séjour.</p>`}</div></div>
-            <div>${r && r.status === "arrivee" ? checkoutPanel(r) : ""}</div>
-          </div>`
-      },
-      facture(p) {
-        const r = R(p[0]), f = folio(r), g = G(r.guest)
-        return `<div class="row between noprint"><h1>Facture ${esc(r.invoice)}</h1>
-            <span class="row"><button class="btn ghost" onclick="go('checkout')">Check-out suivant</button><button class="btn" onclick="print()">Imprimer</button></span></div>
-          <p class="lead noprint">Séjour clôturé. <span class="pill on">Clé révoquée</span> La carte de la chambre ${esc(r.room)} n'ouvre plus la porte (simulation). Chambre passée en « sale ».</p>
-          <div class="card invoice">
-            <div class="row between"><div><div class="big">${esc(D.hotel)}</div><div class="muted">Facture n° ${esc(r.invoice)} · ${fd(today)}/${today.slice(0, 4)} · document d'exemple</div></div>
-              <div style="text-align:right"><strong>${esc(g.name)}</strong><div class="muted">${esc(g.email)}</div></div></div>
-            <p class="muted">Réservation ${esc(r.id)} · chambre ${esc(r.room)} · du ${fd(r.from)} au ${fd(r.to)}</p>
-            ${tbl(["Désignation", "#Montant"], f.lines.map((l) => [esc(l.label), money(l.amount)]), "", `<tfoot><tr><td>Total TTC</td><td class="num">${money(f.total)}</td></tr>
-              <tr><td class="muted" style="font-weight:400">Réglé (${esc(r.payMode)})</td><td class="num" style="font-weight:400">${money(f.paid)}</td></tr></tfoot>`)}
-          </div>`
-      },
-
-      // #5 Statut des chambres (housekeeping)
-      chambres() {
-        const counts = Object.fromEntries(Object.keys(HK).map((k) => [k, D.rooms.filter((r) => r.hk === k).length]))
-        const rooms = D.rooms.filter((r) => ui.hkFilter === "toutes" || r.hk === ui.hkFilter)
-        return `<div class="row between"><h1>Chambres</h1><button class="btn" onclick="A.autoAssign()">Répartir les chambres sales</button></div>
-          <p class="lead">État de chaque chambre et répartition des tâches entre les femmes de chambre.</p>
-          <div class="grid">${D.housekeepers.map((h) => { const nos = D.rooms.filter((r) => D.assignments[r.no] === h).map((r) => r.no)
-            return `<div class="card"><div class="muted">${esc(h)}</div><div class="kpi">${nos.length}</div><div class="muted">${nos.length ? "Chambres " + esc(nos.join(", ")) : "Aucune chambre attribuée"}</div></div>` }).join("")}</div>
-          <h2>État des chambres</h2>
-          <div class="chips"><button aria-pressed="${ui.hkFilter === "toutes"}" onclick="ui.hkFilter='toutes';render()">Toutes (${D.rooms.length})</button>
-            ${Object.entries(HK).map(([k, [l]]) => `<button aria-pressed="${ui.hkFilter === k}" onclick="ui.hkFilter='${k}';render()">${l} (${counts[k]})</button>`).join("")}</div>
-          <div class="grid">${rooms.map((r) => { const o = occupant(r.no)
-            return `<div class="card">
-              <div class="row between"><span class="roomno">${esc(r.no)}</span>${pill(HK, r.hk)}</div>
-              <div class="muted">${esc(T(r.type).label)} · étage ${r.floor}</div>
-              <div style="margin:6px 0 10px;font-size:14px">${o ? `Occupée · ${o.to === today ? "<strong>départ aujourd'hui</strong>" : "départ " + fd(o.to)}` : "Libre"}${r.note ? `<div class="muted">${esc(r.note)}</div>` : ""}</div>
-              <label for="hk-${esc(r.no)}">Statut</label>
-              <select id="hk-${esc(r.no)}" onchange="A.setHk(${q(r.no)}, this.value)">${Object.entries(HK).map(([k, [l]]) => `<option value="${k}" ${r.hk === k ? "selected" : ""}>${l}</option>`).join("")}</select>
-              <label for="as-${esc(r.no)}" style="margin-top:8px">Attribuée à</label>
-              <select id="as-${esc(r.no)}" onchange="A.assign(${q(r.no)}, this.value)"><option value="">— personne —</option>
-                ${D.housekeepers.map((h) => `<option ${D.assignments[r.no] === h ? "selected" : ""}>${esc(h)}</option>`).join("")}</select>
-            </div>` }).join("") || `<p class="muted">Aucune chambre dans cet état.</p>`}</div>`
-      },
-
-      // #6 Fiche client
-      clients(p) {
-        const g = G(p[0]) || D.guests[0]
-        const stays = D.reservations.filter((r) => r.guest === g.id).sort((a, b) => b.from.localeCompare(a.from))
-        const done = stays.filter((r) => r.status === "partie")
-        return `<h1>Clients</h1><p class="lead">Coordonnées, historique des séjours et préférences.</p>
-          <div class="split">
-            <div><input placeholder="Rechercher un client" aria-label="Rechercher un client" oninput="A.filterGuests(this.value)" style="margin-bottom:10px">
-              <div class="list" id="glist">${D.guests.map((x) => `<button data-name="${esc(x.name.toLowerCase())}" aria-current="${x === g}" onclick="go('clients/${esc(x.id)}')">
-                <strong>${esc(x.name)}</strong>${vip(x)}<div class="muted">${esc(x.phone)}</div></button>`).join("")}</div></div>
-            <div class="card">
-              <div class="row between"><span class="big">${esc(g.name)}</span>${vip(g)}</div>
-              <div class="grid" style="margin:14px 0">${kpi("Séjours effectués", done.length, "historique")}${kpi("Nuitées", done.reduce((s, r) => s + nights(r.from, r.to), 0), "séjours effectués")}${kpi("Dépense hébergement", money(done.reduce((s, r) => s + nights(r.from, r.to) * r.rate, 0)), "exemple")}</div>
-              <h3>Coordonnées</h3>
-              <div class="form">
-                <div><label for="c-name">Nom</label><input id="c-name" value="${esc(g.name)}"></div>
-                <div><label for="c-phone">Téléphone</label><input id="c-phone" value="${esc(g.phone)}"></div>
-                <div><label for="c-email">E-mail</label><input id="c-email" type="email" value="${esc(g.email)}"></div>
-                <div><label for="c-nat">Nationalité</label><input id="c-nat" value="${esc(g.nationality)}"></div>
-                <div><label>Pièce d'identité</label><input value="${esc(g.idDoc)}" disabled></div>
-                <div style="align-self:end"><label class="row" style="color:var(--ink)"><input type="checkbox" id="c-vip" ${g.vip ? "checked" : ""}> Client VIP</label></div>
-              </div>
-              <h3>Préférences</h3>
-              <div class="tags">${g.prefs.map((pr, i) => `<span class="pill">${esc(pr)}<button aria-label="Retirer" onclick="A.delPref(${q(g.id)}, ${i})">×</button></span>`).join("") || `<span class="muted">Aucune préférence notée.</span>`}</div>
-              <div class="row" style="margin-top:10px;flex-wrap:nowrap"><input id="c-pref" placeholder="Ajouter une préférence (ex. étage élevé)" onkeydown="if(event.key==='Enter')A.addPref(${q(g.id)})"><button class="btn ghost" onclick="A.addPref(${q(g.id)})">Ajouter</button></div>
-              <div class="row" style="margin-top:16px"><button class="btn" onclick="A.saveGuest(${q(g.id)})">Enregistrer</button><button class="btn ghost" onclick="go('reservations/new');setTimeout(()=>{$('#f-guest').value=${q(g.id)}})">Nouvelle réservation</button></div>
-              <h3>Historique des séjours</h3>
-              ${tbl(["Réf.", "Dates", "Type", "Chambre", "#Hébergement", "Statut"], stays.map((r) => [esc(r.id), `${fd(r.from)}/${r.from.slice(2, 4)} → ${fd(r.to)}`, esc(T(r.type).label), esc(r.room || "—"), money(nights(r.from, r.to) * r.rate), pill(STATUS, r.status)]), "Aucun séjour.")}
-            </div>
-          </div>`
-      },
-    }
-
-    function resForm(r) {
-      const isNew = !r.id, locked = r.status === "arrivee"
-      const t = r.type || "STD"
-      return `<div class="card" style="margin-bottom:20px"><h2 style="margin-top:0">${isNew ? "Nouvelle réservation" : `Modifier ${esc(r.id)}`}</h2>
-        <div class="form">
-          <div><label for="f-guest">Client</label><select id="f-guest">${D.guests.map((g) => `<option value="${esc(g.id)}" ${r.guest === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></div>
-          ${isNew ? `<div><label for="f-newname">ou nouveau client (nom)</label><input id="f-newname" placeholder="Laisser vide si client existant"></div>` : ""}
-          <div><label for="f-from">Arrivée</label><input id="f-from" type="date" value="${esc(r.from || today)}" ${locked ? "disabled" : ""}></div>
-          <div><label for="f-to">Départ</label><input id="f-to" type="date" value="${esc(r.to || addDays(today, 1))}"></div>
-          <div><label for="f-type">Type de chambre</label><select id="f-type" ${locked ? "disabled" : ""} onchange="$('#f-rate').value=D.roomTypes.find(x=>x.code===this.value).rate">${D.roomTypes.map((x) => `<option value="${x.code}" ${t === x.code ? "selected" : ""}>${esc(x.label)} — ${money(x.rate)}</option>`).join("")}</select></div>
-          <div><label for="f-rate">Tarif par nuit (${D.currency})</label><input id="f-rate" type="number" min="0" step="500" value="${r.rate ?? T(t).rate}"></div>
-          <div><label for="f-guar">Garantie</label><select id="f-guar">${["Carte bancaire", "Acompte", "Aucune"].map((x) => `<option ${r.guarantee === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
-          <div class="full"><label for="f-req">Demande spéciale</label><input id="f-req" value="${esc(r.request || "")}" placeholder="Ex. arrivée tardive, lit bébé…"></div>
-          <div class="full" id="f-err"></div>
-          <div class="full row"><button class="btn" onclick="A.saveRes(${isNew ? "null" : q(r.id)})">${isNew ? "Créer la réservation" : "Enregistrer"}</button><button class="btn ghost" onclick="go('reservations')">Fermer</button></div>
-        </div></div>`
-    }
-
-    function checkinPanel(r) {
-      const g = G(r.guest)
-      if (ui.done && ui.done.id === r.id) return `<div class="card"><span class="pill on">Clé encodée</span>
-        <div class="big" style="margin:10px 0 4px">Chambre ${esc(r.room)} — ${esc(g.name)}</div>
-        <p class="muted">Carte ${esc(ui.done.card)} valable jusqu'au ${fd(r.to)} à 12 h (simulation). Séjour ouvert, folio créé.</p>
-        <div class="row"><button class="btn" onclick="ui.done=null;go('checkin')">Arrivée suivante</button><button class="btn ghost" onclick="go('accueil')">Tableau de bord</button></div></div>`
-      if (r.status !== "confirmee") return `<div class="card"><p>${esc(r.id)} n'est pas une arrivée à enregistrer (${esc(STATUS[r.status][0])}).</p></div>`
-      const candidates = D.rooms.filter((x) => x.type === r.type && !occupant(x.no))
-      const enc = ui.encoding === r.id
-      return `<div class="card">
-        <div class="row between"><span class="big">${esc(g.name)}</span>${vip(g)}</div>
-        <div class="muted">${esc(r.id)} · ${esc(T(r.type).label)} · du ${fd(r.from)} au ${fd(r.to)} · ${nights(r.from, r.to)} nuit(s) · ${money(r.rate)}/nuit · garantie : ${esc(r.guarantee)}</div>
-        ${r.request ? `<p style="margin:8px 0 0"><strong>Demande :</strong> ${esc(r.request)}</p>` : ""}
-        ${g.prefs.length ? `<p class="muted" style="margin:4px 0 0">Préférences : ${esc(g.prefs.join(", "))}</p>` : ""}
-        <div class="step"><b class="n">1</b><div><strong>Chambre</strong><p class="muted" style="margin:2px 0 8px">Seules les chambres propres et libres peuvent être attribuées.</p>
-          <div class="rooms">${candidates.map((x) => `<label class="${x.hk !== "propre" ? "dis" : ""}"><input type="radio" name="room" value="${esc(x.no)}" ${x.hk !== "propre" || enc ? "disabled" : ""} onchange="A.ckReady()">
-            <span><strong>${esc(x.no)}</strong><br>${pill(HK, x.hk)}</span></label>`).join("") || `<p class="muted">Aucune chambre libre de ce type.</p>`}</div></div></div>
-        <div class="step"><b class="n">2</b><div><strong>Identité</strong><p class="muted" style="margin:2px 0 8px">Pièce enregistrée : ${esc(g.idDoc)} · ${esc(g.nationality)}</p>
-          <label class="row" style="color:var(--ink)"><input type="checkbox" id="id-ok" onchange="A.ckReady()" ${enc ? "disabled checked" : ""}> Pièce d'identité présentée et conforme</label></div></div>
-        <div class="step"><b class="n">3</b><div><strong>Clé d'accès</strong><p class="muted" style="margin:2px 0 8px">Posez une carte vierge sur l'encodeur puis validez.</p>
-          ${enc ? `<div>Encodage de la carte en cours…</div><div class="bar"><i></i></div>` : `<button class="btn accent" id="enc" disabled onclick="A.encode(${q(r.id)})">Attribuer la chambre et encoder la clé</button>`}</div></div>
-      </div>`
-    }
-
-    function checkoutPanel(r) {
-      const g = G(r.guest), early = r.to > today
-      // départ anticipé : le folio est calculé sur les nuits réellement passées
-      const f = folio(early ? { ...r, to: nights(r.from, today) > 0 ? today : addDays(r.from, 1) } : r)
-      return `<div class="card">
-        <div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(g.name)}</span>${vip(g)}</div>
-        <div class="muted">${esc(r.id)} · du ${fd(r.from)} au ${fd(r.to)} · clé active</div>
-        ${early ? `<p class="err">Départ anticipé : le séjour sera écourté au ${fd(today)} et les nuits restantes ne seront pas facturées.</p>` : ""}
-        <h3>Folio</h3>
-        ${tbl(["Désignation", "#Montant"], f.lines.map((l) => [esc(l.label), money(l.amount)]))}
-        <div class="row" style="margin-top:10px;flex-wrap:nowrap"><input id="x-label" placeholder="Prestation (ex. minibar)"><input id="x-amount" type="number" min="0" step="500" placeholder="Montant" style="max-width:140px"><button class="btn ghost" onclick="A.addExtra(${q(r.id)})">Ajouter</button></div>
-        <table style="margin-top:14px"><tbody><tr><td>Total</td><td class="num">${money(f.total)}</td></tr><tr><td>Déjà réglé</td><td class="num">${money(f.paid)}</td></tr>
-            <tr><td><strong>Reste à encaisser</strong></td><td class="num"><strong>${money(Math.max(0, f.balance))}</strong></td></tr></tbody></table>
-          <div class="form" style="margin-top:14px"><div><label for="pay">Mode de paiement</label><select id="pay">${["Espèces", "Carte bancaire", "Mobile Money", "Virement"].map((m) => `<option>${m}</option>`).join("")}</select></div>
-            <div style="align-self:end"><button class="btn accent" style="width:100%" onclick="A.checkout(${q(r.id)})">Encaisser ${money(Math.max(0, f.balance))}, facturer et révoquer la clé</button></div></div>
-      </div>`
-    }
-
-    // ---------- Actions ----------
-    const A = {
-      saveRes(id) {
-        const v = (s) => $(s)?.value.trim()
-        const err = (m) => ($("#f-err").innerHTML = `<div class="err">${esc(m)}</div>`)
-        const r = id ? R(id) : null
-        const from = r && r.status === "arrivee" ? r.from : v("#f-from"), to = v("#f-to"), type = r && r.status === "arrivee" ? r.type : v("#f-type")
-        const rate = Number(v("#f-rate"))
-        if (!from || !to) return err("Indiquez les dates d'arrivée et de départ.")
-        if (to <= from) return err("La date de départ doit être après la date d'arrivée.")
-        if (!r && from < today) return err("La date d'arrivée ne peut pas être dans le passé.")
-        if (!(rate > 0)) return err("Indiquez un tarif par nuit.")
-        for (let d = from; d < to; d = addDays(d, 1))
-          if (available(type, d, id) < 1) return err(`Aucune chambre ${T(type).label} disponible la nuit du ${fd(d)} : la réservation créerait une surréservation. Changez les dates ou le type.`)
-        let guest = v("#f-guest")
-        const newName = v("#f-newname")
-        if (newName) {
-          guest = "G" + (D.guests.length + 1)
-          D.guests.push({ id: guest, name: newName, phone: "", email: "", nationality: "", idDoc: "À vérifier au check-in", vip: false, prefs: [] })
-        }
-        const fields = { guest, from, to, type, rate, guarantee: v("#f-guar"), request: v("#f-req") }
-        if (r) Object.assign(r, fields)
-        else D.reservations.push({ id: "R-" + ui.resSeq++, status: "confirmee", ...fields })
-        toast(r ? `Réservation ${r.id} modifiée` : "Réservation créée")
-        go("reservations")
-      },
-      cancelRes(id) {
-        if (!confirm(`Annuler la réservation ${id} ?`)) return
-        R(id).status = "annulee"
-        toast(`Réservation ${id} annulée`)
-        render()
-      },
-      ckReady() {
-        const b = $("#enc")
-        if (b) b.disabled = !(document.querySelector("input[name=room]:checked") && $("#id-ok").checked)
-      },
-      encode(id) {
-        const room = document.querySelector("input[name=room]:checked").value
-        ui.encoding = id
-        render()
-        document.querySelectorAll(`input[name=room][value="${room}"]`).forEach((i) => (i.checked = true))
-        setTimeout(() => {
-          Object.assign(R(id), { status: "arrivee", room, key: "active" })
-          D.extras[id] = D.extras[id] || []
-          ui.encoding = null
-          ui.done = { id, card: "K-" + String(Math.floor(Math.random() * 9000) + 1000) }
-          toast(`Check-in terminé — chambre ${room}`)
-          render()
-        }, 1400)
-      },
-      addExtra(id) {
-        const label = $("#x-label").value.trim(), amount = Number($("#x-amount").value)
-        if (!label || !(amount > 0)) return toast("Indiquez la prestation et son montant")
-        ;(D.extras[id] = D.extras[id] || []).push({ label, amount })
-        render()
-      },
-      checkout(id) {
-        const r = R(id)
-        if (r.to > today) r.to = nights(r.from, today) > 0 ? today : addDays(r.from, 1)
-        r.payMode = $("#pay").value
-        D.payments[id] = folio(r).total
-        Object.assign(r, { status: "partie", key: "revoquee", invoice: "F-" + ui.invoiceSeq++ })
-        D.rooms.find((x) => x.no === r.room).hk = "sale"
-        toast(`Clé de la chambre ${r.room} révoquée`)
-        go(`facture/${id}`)
-      },
-      setHk(no, v) {
-        D.rooms.find((x) => x.no === no).hk = v
-        toast(`Chambre ${no} : ${HK[v][0].toLowerCase()}`)
-        render()
-      },
-      assign(no, h) {
-        if (h) D.assignments[no] = h
-        else delete D.assignments[no]
-        render()
-      },
-      autoAssign() {
-        const todo = D.rooms.filter((r) => r.hk === "sale" && !D.assignments[r.no])
-        if (!todo.length) return toast("Toutes les chambres sales sont déjà attribuées")
-        const load = (h) => Object.values(D.assignments).filter((x) => x === h).length
-        todo.forEach((r) => (D.assignments[r.no] = [...D.housekeepers].sort((a, b) => load(a) - load(b))[0]))
-        toast(`${todo.length} chambre(s) attribuée(s)`)
-        render()
-      },
-      filterGuests(s) {
-        s = s.toLowerCase()
-        document.querySelectorAll("#glist button").forEach((b) => (b.style.display = b.dataset.name.includes(s) ? "" : "none"))
-      },
-      saveGuest(id, silent) {
-        const g = G(id)
-        const name = $("#c-name").value.trim()
-        if (!name) return toast("Le nom est obligatoire")
-        Object.assign(g, { name, phone: $("#c-phone").value.trim(), email: $("#c-email").value.trim(), nationality: $("#c-nat").value.trim(), vip: $("#c-vip").checked })
-        if (!silent) toast("Fiche client enregistrée")
-        render()
-      },
-      addPref(id) {
-        const v = $("#c-pref").value.trim()
-        if (!v) return
-        G(id).prefs.push(v)
-        A.saveGuest(id, true)
-      },
-      delPref(id, i) {
-        G(id).prefs.splice(i, 1)
-        A.saveGuest(id, true)
-      },
-    }
-
-    // ---------- Navigation ----------
-    const TABS = [["accueil", "Tableau de bord"], ["reservations", "Réservations"], ["checkin", "Check-in"], ["checkout", "Check-out"], ["chambres", "Chambres"], ["clients", "Clients"]]
-    const tabs = $("#tabs")
-    TABS.forEach(([id, label]) => {
-      const b = document.createElement("button")
-      b.textContent = label
-      b.dataset.id = id
-      b.onclick = () => go(id)
-      tabs.appendChild(b)
-    })
-    function render() {
-      let [name, ...params] = location.hash.slice(1).split("/")
-      if (!views[name]) name = "accueil"
-      if (name === "facture" && !(R(params[0]) || {}).invoice) (name = "checkout"), (params = [])
-      const tab = name === "facture" ? "checkout" : name
-      tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === tab)))
-      $("#app").innerHTML = views[name](params)
-    }
-    window.onhashchange = () => { render(); scrollTo(0, 0) }
-    render()
-  </script>
+  <script src="core.js"></script>
+  <!-- Modules : un fichier par module de la spec (voir docs/MAQUETTE.md) -->
+  <script src="modules/reception.js"></script>
+  <script>startApp()</script>
 </body>
 </html>
