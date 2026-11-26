@@ -1,84 +1,63 @@
-// Données d'exemple du prototype (chargées par index.html, y compris ouvert directement depuis le disque). Chaque écran a un type : dashboard, table ou cards. Remplacer par les écrans de l'idée.
+// Données d'exemple du prototype HMS (chargées par index.html, y compris ouvert directement depuis le disque).
+// Tout est fictif : noms, numéros, montants. Dépôt public : jamais de vraie donnée.
+// L'état est modifié en mémoire par les écrans (rechargement de la page = retour à ces données).
 window.PROTOTYPE_DATA = {
-  "screens": [
-    {
-      "id": "accueil",
-      "label": "Tableau de bord",
-      "type": "dashboard",
-      "title": "HMS",
-      "lead": "Un logiciel de gestion hôtelière en ligne pour gérer les réservations, la réception, les chambres et les clés d'accès d'un hôtel.",
-      "kpis": [
-        {
-          "label": "Demandes du mois",
-          "value": "128",
-          "hint": "exemple"
-        },
-        {
-          "label": "Traitées",
-          "value": "112",
-          "hint": "exemple"
-        },
-        {
-          "label": "Temps moyen",
-          "value": "2 h 10",
-          "hint": "exemple"
-        }
-      ]
-    },
-    {
-      "id": "liste",
-      "label": "Liste",
-      "type": "table",
-      "status": "Terminé",
-      "title": "Dossiers",
-      "lead": "Liste type, avec un statut par ligne.",
-      "columns": [
-        "Référence",
-        "Client",
-        "Date",
-        "Statut"
-      ],
-      "rows": [
-        [
-          "D-1042",
-          "Client A",
-          "24/11",
-          "En cours"
-        ],
-        [
-          "D-1041",
-          "Client B",
-          "23/11",
-          "Terminé"
-        ],
-        [
-          "D-1040",
-          "Client C",
-          "22/11",
-          "Terminé"
-        ]
-      ]
-    },
-    {
-      "id": "offre",
-      "label": "Fonctionnement",
-      "type": "cards",
-      "title": "Comment ça marche",
-      "lead": "Trois étapes, à adapter.",
-      "items": [
-        {
-          "title": "1. Connecter",
-          "text": "L'utilisateur relie ses outils en quelques minutes."
-        },
-        {
-          "title": "2. Configurer",
-          "text": "Il choisit ses règles, sans code."
-        },
-        {
-          "title": "3. Suivre",
-          "text": "Il voit l'activité et valide ce qui doit l'être."
-        }
-      ]
-    }
-  ]
+  hotel: "Hôtel Exemple",
+  today: "2026-11-26",
+  currency: "FCFA",
+  roomTypes: [
+    { code: "STD", label: "Standard", rate: 45000 },
+    { code: "SUP", label: "Supérieure", rate: 60000 },
+    { code: "SUI", label: "Suite", rate: 110000 },
+  ],
+  // statut housekeeping : propre | sale | inspection | hs (hors service)
+  rooms: [
+    { no: "101", type: "STD", floor: 1, hk: "propre" },
+    { no: "102", type: "STD", floor: 1, hk: "sale" },
+    { no: "103", type: "STD", floor: 1, hk: "propre" },
+    { no: "104", type: "SUP", floor: 1, hk: "inspection" },
+    { no: "105", type: "SUP", floor: 1, hk: "propre" },
+    { no: "201", type: "STD", floor: 2, hk: "sale" },
+    { no: "202", type: "STD", floor: 2, hk: "propre" },
+    { no: "203", type: "SUP", floor: 2, hk: "propre" },
+    { no: "204", type: "SUP", floor: 2, hk: "hs", note: "Climatisation en panne" },
+    { no: "205", type: "SUP", floor: 2, hk: "sale" },
+    { no: "301", type: "STD", floor: 3, hk: "propre" },
+    { no: "302", type: "SUP", floor: 3, hk: "propre" },
+    { no: "303", type: "SUI", floor: 3, hk: "propre" },
+    { no: "304", type: "SUI", floor: 3, hk: "inspection" },
+  ],
+  housekeepers: ["Femme de chambre A", "Femme de chambre B", "Femme de chambre C"],
+  assignments: { "102": "Femme de chambre A", "201": "Femme de chambre B", "205": "Femme de chambre B" },
+  guests: [
+    { id: "G1", name: "Client Exemple 1", phone: "+225 00 00 00 01", email: "client1@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••01", vip: true, prefs: ["Étage élevé", "Oreillers fermes"] },
+    { id: "G2", name: "Client Exemple 2", phone: "+225 00 00 00 02", email: "client2@exemple.test", nationality: "Sénégal", idDoc: "Passeport ••••02", vip: false, prefs: ["Lit bébé"] },
+    { id: "G3", name: "Client Exemple 3", phone: "+225 00 00 00 03", email: "client3@exemple.test", nationality: "France", idDoc: "Passeport ••••03", vip: false, prefs: [] },
+    { id: "G4", name: "Client Exemple 4", phone: "+225 00 00 00 04", email: "client4@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••04", vip: true, prefs: ["Arrivée tardive", "Non-fumeur"] },
+    { id: "G5", name: "Client Exemple 5", phone: "+225 00 00 00 05", email: "client5@exemple.test", nationality: "Ghana", idDoc: "Passeport ••••05", vip: false, prefs: [] },
+    { id: "G6", name: "Client Exemple 6", phone: "+225 00 00 00 06", email: "client6@exemple.test", nationality: "Mali", idDoc: "Passeport ••••06", vip: false, prefs: ["Chambre calme"] },
+    { id: "G7", name: "Client Exemple 7", phone: "+225 00 00 00 07", email: "client7@exemple.test", nationality: "Côte d'Ivoire", idDoc: "CNI ••••07", vip: false, prefs: [] },
+  ],
+  // statut : confirmee | arrivee (client présent) | partie | annulee
+  reservations: [
+    { id: "R-2051", guest: "G1", type: "SUI", from: "2026-11-26", to: "2026-11-29", rate: 110000, guarantee: "Carte bancaire", status: "confirmee", request: "Bouquet de fleurs à l'arrivée" },
+    { id: "R-2052", guest: "G2", type: "SUP", from: "2026-11-26", to: "2026-11-28", rate: 60000, guarantee: "Acompte", status: "confirmee", request: "Lit bébé" },
+    { id: "R-2053", guest: "G3", type: "STD", from: "2026-11-26", to: "2026-11-27", rate: 45000, guarantee: "Aucune", status: "confirmee" },
+    { id: "R-2044", guest: "G4", type: "SUP", from: "2026-11-23", to: "2026-11-26", rate: 60000, guarantee: "Carte bancaire", status: "arrivee", room: "203", key: "active", request: "Taxi pour l'aéroport à 14 h" },
+    { id: "R-2046", guest: "G5", type: "STD", from: "2026-11-24", to: "2026-11-26", rate: 45000, guarantee: "Acompte", status: "arrivee", room: "101", key: "active" },
+    { id: "R-2047", guest: "G6", type: "STD", from: "2026-11-25", to: "2026-11-28", rate: 45000, guarantee: "Carte bancaire", status: "arrivee", room: "202", key: "active" },
+    { id: "R-2048", guest: "G7", type: "SUP", from: "2026-11-25", to: "2026-11-30", rate: 60000, guarantee: "Carte bancaire", status: "arrivee", room: "302", key: "active" },
+    { id: "R-2060", guest: "G2", type: "STD", from: "2026-11-28", to: "2026-12-01", rate: 45000, guarantee: "Aucune", status: "confirmee" },
+    { id: "R-2061", guest: "G3", type: "SUP", from: "2026-11-29", to: "2026-12-02", rate: 60000, guarantee: "Carte bancaire", status: "confirmee" },
+    { id: "R-2012", guest: "G1", type: "SUI", from: "2026-09-10", to: "2026-09-13", rate: 110000, guarantee: "Carte bancaire", status: "partie", room: "303" },
+    { id: "R-1980", guest: "G4", type: "SUP", from: "2026-07-02", to: "2026-07-05", rate: 60000, guarantee: "Carte bancaire", status: "partie", room: "203" },
+  ],
+  // extras du folio par réservation (hors nuitées, calculées)
+  extras: {
+    "R-2044": [{ label: "Restaurant", amount: 18500 }, { label: "Minibar", amount: 6000 }, { label: "Blanchisserie", amount: 4500 }],
+    "R-2046": [{ label: "Petit-déjeuner", amount: 10000 }],
+    "R-2047": [{ label: "Restaurant", amount: 12000 }],
+    "R-2048": [],
+  },
+  payments: { "R-2044": 60000, "R-2046": 45000 },
 }
