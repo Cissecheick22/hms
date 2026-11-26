@@ -17,7 +17,9 @@ const assert = (cond, msg) => { if (!cond) throw new Error("ÉCHEC : " + msg); c
   const go = async (h) => { await p.evaluate((x) => (location.hash = x), h); await p.waitForTimeout(120) }
   const ev = (fn, arg) => p.evaluate(fn, arg)
   await p.goto(url)
-  await ev(() => localStorage.clear())
+  await p.evaluate(() => localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })))
+  await p.reload()
+  await ev(() => { localStorage.clear(); localStorage.setItem("hms-session", JSON.stringify({ email: "direction@hotel-exemple.test" })) })
   await p.reload()
 
   // Bloc GRP-01 : 4 STD + 2 SUP du 03/12 au 05/12, 3 noms déjà dans la rooming list

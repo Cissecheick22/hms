@@ -7,11 +7,15 @@ But : une maquette cliquable qui représente **tous les modules** de la spécifi
 
 | Fichier | Rôle |
 |---|---|
-| `index.html` | Coquille : styles, en-tête, menu latéral, liste des `<script>` des modules |
+| `index.html` | Coque : charte (celle de l'agent SAV), écran de connexion, menu latéral repliable, en-tête, liste des `<script>` des modules |
 | `data.js` | Données d'exemple du cœur hôtelier (chambres, clients, réservations, folios) |
 | `core.js` | Utilitaires partagés, composants d'interface, registre des modules, routeur |
 | `modules/<module>.js` | Un fichier par module de la spec : ses données d'exemple, ses écrans, ses actions |
 | `tests/smoke.cjs` | Test de fumée : visite chaque écran et sous-onglet, échoue sur erreur JS ou écran vide |
+
+## Connexion et rôles
+
+Comptes de démonstration dans `core.js` (`USERS`, mot de passe `demo1234`) : direction et administrateur voient tout, réception, gouvernante et comptabilité voient leurs groupes du menu (+ `extra`). Un écran hors périmètre affiche « Accès refusé ». Icône d'un écran : `SCREEN_ICON[id]` dans `core.js`.
 
 ## Écrire un module
 
