@@ -17,9 +17,10 @@
     /* Charte de l'agent SAV (Max, TechRise) : encre #16180F, crème #F6F6F0, citron #C6F24E rare (repère actif, logo,
        focus), jamais sur un bouton ; une seule police (Inter) ; textes secondaires au-dessus de 4,5:1. */
     :root{--bg:#F6F6F0;--surface:#fff;--ink:#16180F;--ink2:#55574E;--line:#E5E5DC;--soft:#EFEFE7;--accent:#C6F24E;--accent-ink:#16180F;--ring:#8DB31F;
+          --ok-bg:#E3F0E8;--ok-fg:#2E6B4E;--warn-bg:#FBF1D6;--warn-fg:#7A5400;--bad-bg:#FBE4E2;--bad-fg:#A3302A;--info-bg:#E4F0F7;--info-fg:#1E5E85;
           --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0E0F0C;--surface:#16180F;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22;--soft:#1F2219}}
-    :root[data-theme=dark]{--bg:#0E0F0C;--surface:#16180F;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22;--soft:#1F2219}
+    @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0E0F0C;--surface:#16180F;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22;--soft:#1F2219;--ok-bg:#17291F;--ok-fg:#7BD3A4;--warn-bg:#2E2611;--warn-fg:#E8B54A;--bad-bg:#33191A;--bad-fg:#FF8A80;--info-bg:#142636;--info-fg:#7CC0E8}}
+    :root[data-theme=dark]{--bg:#0E0F0C;--surface:#16180F;--ink:#F1F2E9;--ink2:#B6B9AA;--line:#2A2E22;--soft:#1F2219;--ok-bg:#17291F;--ok-fg:#7BD3A4;--warn-bg:#2E2611;--warn-fg:#E8B54A;--bad-bg:#33191A;--bad-fg:#FF8A80;--info-bg:#142636;--info-fg:#7CC0E8}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font)}
     .badge{font-size:12px;color:var(--ink2);border:1px solid var(--line);border-radius:99px;padding:2px 10px;white-space:nowrap}
     :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
@@ -118,12 +119,14 @@
     th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2)}tr:last-child td{border-bottom:0}
     td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}tfoot td{font-weight:700}
     .pill{display:inline-block;border-radius:99px;padding:2px 9px;font-size:12px;background:var(--line);white-space:nowrap}
-    .pill.on{background:var(--accent);color:var(--accent-ink)}.pill.dark{background:var(--ink);color:var(--bg)}
+    /* Pastilles d'état de la charte SAV : fond pastel + texte foncé de la même teinte. Le citron n'est pas utilisé ici. */
+    .pill.on,.pill.ok{background:var(--ok-bg);color:var(--ok-fg)}.pill.dark,.pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
+    .pill.warn{background:var(--warn-bg);color:var(--warn-fg)}.pill.info{background:var(--info-bg);color:var(--info-fg)}
     .pill.outline{background:transparent;border:1px solid var(--ink2)}
     .tablewrap{overflow-x:auto}footer{margin:40px 28px 24px;color:var(--ink2);font-size:12px}
     .btn{font:inherit;border:1px solid var(--ink);border-radius:8px;padding:8px 14px;background:var(--ink);color:var(--bg);cursor:pointer;white-space:nowrap}
     .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}.btn.sm{padding:4px 10px;font-size:13px}
-    .btn.accent{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+    .btn.accent{font-weight:600} /* bouton principal mis en avant : reste en encre (charte SAV : jamais de citron sur un bouton) */
     .btn:disabled{opacity:.4;cursor:not-allowed}
     @media (max-width:600px){.btn{white-space:normal}}
     .link{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;cursor:pointer}

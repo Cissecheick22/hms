@@ -48,8 +48,8 @@ const folio = (r) => {
   return { lines, total, paid, balance: total - paid }
 }
 
-const STATUS = { confirmee: ["Confirmée", ""], arrivee: ["En séjour", "on"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"], noshow: ["No-show", "dark"], deloge: ["Délogé", "outline"] }
-const HK = { propre: ["Propre", "on"], sale: ["Sale", ""], inspection: ["En inspection", "outline"], hs: ["Hors commande", "dark"] } // hs = hors commande : retirée de la vente (RG-ORG-02). Le « hors service » vendable est un statut d'exploitation (org-chambres)
+const STATUS = { confirmee: ["Confirmée", "info"], arrivee: ["En séjour", "ok"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"], noshow: ["No-show", "dark"], deloge: ["Délogé", "outline"] }
+const HK = { propre: ["Propre", "ok"], sale: ["Sale", "warn"], inspection: ["En inspection", "info"], hs: ["Hors commande", "dark"] } // hs = hors commande : retirée de la vente (RG-ORG-02). Le « hors service » vendable est un statut d'exploitation (org-chambres)
 const pill = (map, k) => `<span class="pill ${map[k][1]}">${esc(map[k][0])}</span>`
 const vip = (g) => (g.vip ? ` <span class="pill on">VIP</span>` : "")
 const guestLink = (id) => `<button class="link" onclick="go('clients/${esc(id)}')">${esc(G(id).name)}</button>`
@@ -68,7 +68,7 @@ const go = (h) => { if (location.hash === "#" + h) render(); else location.hash 
 
 // ---------- Composants d'interface génériques ----------
 // Tous renvoient du HTML (chaîne). Les textes venant des données passent par esc().
-const badge = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>` // kind : "" | on | dark | outline
+const badge = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>` // kind : "" | on (=ok) | ok | warn | dark (=bad) | bad | info | outline
 const pageHead = (title, lead = "", actions = "") =>
   `<div class="row between"><h1>${esc(title)}</h1>${actions ? `<span class="row">${actions}</span>` : ""}</div>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}`
 const btn = (label, onclick, kind = "") => `<button class="btn ${kind}" onclick="${onclick}">${esc(label)}</button>` // kind : "" | ghost | accent | sm | "ghost sm"
@@ -237,8 +237,8 @@ const USERS = [
   { email: "direction@hotel-exemple.test", name: "Kouadio Brou", role: "Directeur général", groups: "*" },
   { email: "reception@hotel-exemple.test", name: "Aya Koffi", role: "Réceptionniste", groups: ["Réception & séjour", "Ventes & clients", "Services"], extra: ["chambres", "acc-cles", "fol-folios", "fol-paiements", "fol-caisse", "mob-apps"] },
   { email: "gouvernante@hotel-exemple.test", name: "Amenan Yao", role: "Gouvernante générale", groups: ["Opérations"], extra: ["accueil", "sej-rack", "bi-dash"] },
-  { email: "compta@hotel-exemple.test", name: "Adjoua Koné", role: "Chef comptable", groups: ["Finance", "Personnel"], extra: ["bi-dash", "bi-rapports", "prc-achats"] },
-  { email: "admin@hotel-exemple.test", name: "Serge Ouattara", role: "Administrateur plateforme", groups: "*" },
+  { email: "compta@hotel-exemple.test", name: "Adjoua Koné", role: "Comptable", groups: ["Finance", "Personnel"], extra: ["bi-dash", "bi-rapports", "prc-achats"] },
+  { email: "admin@hotel-exemple.test", name: "Kouadio Yapi", role: "Administrateur plateforme", groups: "*" },
 ]
 const SESSION = "hms-session"
 const currentUser = () => { try { const s = JSON.parse(localStorage.getItem(SESSION) || "null"); return s && USERS.find((u) => u.email === s.email) } catch (e) { return null } }
