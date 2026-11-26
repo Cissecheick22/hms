@@ -83,10 +83,34 @@
       { id: "CN-3", name: "Export lakehouse (Parquet, simulé)", state: "actif", lastSync: "il y a 9 min", rls: "Données personnelles pseudonymisées" },
     ],
     views: [],
+    // Alimentation du lakehouse par CDC et événements (EF-BIR-004) : retard en minutes, objectif < 15 min
+    lake: [
+      { id: "LK-1", name: "Réservations", type: "CDC", obj: "reservations", lag: 3, rows: 0, ok: true },
+      { id: "LK-2", name: "Folios et encaissements", type: "CDC", obj: "payments", lag: 6, rows: 0, ok: true },
+      { id: "LK-3", name: "Chambres et statuts", type: "CDC", obj: "rooms", lag: 2, rows: 0, ok: true },
+      { id: "LK-4", name: "Écritures comptables", type: "Événements", obj: "fin", lag: 9, rows: 0, ok: true },
+      { id: "LK-5", name: "Événements métier (bus)", type: "Événements", obj: "events", lag: 1, rows: 0, ok: true },
+    ],
+    lakeRuns: [],
   }
   const B = D.bir
   ui.biPer = ui.biPer || "mtd"
   const REP = (id) => B.reports.find((r) => r.id === id)
+  const LAG_MAX = 15
+  const lakeCount = (o) => ({ reservations: D.reservations.length, payments: Object.keys(D.payments || {}).length, rooms: D.rooms.length,
+    fin: D.fin ? D.fin.entries.length : 0, events: (D.sej?.payLog?.length || 0) + (D.sej?.log?.length || 0) + (D.aip?.log?.length || 0) }[o] || 0)
+  // Prévision fin de mois (EF-BIR-002) : réalisé jusqu'à la veille + portefeuille et pick-up attendu jusqu'à la fin du mois
+  const monthForecast = () => {
+    const m = agg(hist.filter((h) => h.d.slice(0, 7) === today.slice(0, 7)))
+    const end = addDays(today.slice(0, 8) + "01", 32).slice(0, 8) + "01"
+    let sold = m.sold, avail = m.avail, room = m.room, i = 0
+    for (let d = today; d < end; d = addDays(d, 1), i++) {
+      const n = sellable(), o = otb(d), pu = Math.round((n - o.length) * (i < 2 ? 0.3 : 0.5)), s = Math.min(n, o.length + pu)
+      const adr = o.length ? o.reduce((t, r) => t + r.rate, 0) / o.length : m.adr
+      sold += s; avail += n; room += s * adr
+    }
+    return { occ: (sold / avail) * 100, adr: room / sold, revpar: room / avail, goppar: (room / avail) * (m.goppar / m.revpar) }
+  }
 
   // ---------- Écrans ----------
   const views = {
@@ -118,19 +142,22 @@
         kpi("ADR ce soir", money(t.adr), "tarifs des réservations en portefeuille"),
         kpi("RevPAR ce soir", money(t.revpar), "revenu hébergement ÷ chambres vendables"),
         kpi("Arrivées / départs", `${arrivals().length} / ${departures().length}`, "jour hôtelier")]
-    const ref = a || m
+    const ref = a || m, fc = monthForecast()
     return `${chips("biPer", { jour: "Ce soir", "7j": "7 derniers jours", mtd: "Mois en cours" })}
       <div class="grid">${tiles.join("")}</div>
+      <h2>Prévision de fin de mois</h2>
+      <div class="grid">${kpi("Occupation prévue", pct(fc.occ), `budget ${B.budget.occ} % · ${sign(fc.occ - B.budget.occ)} pts`)}${kpi("ADR prévu", money(fc.adr), `budget ${k(B.budget.adr)}`)}${kpi("RevPAR prévu", money(fc.revpar), `budget ${k(B.budget.revpar)} · ${sign(((fc.revpar - B.budget.revpar) / B.budget.revpar) * 100)}`)}${kpi("GOPPAR prévu", money(fc.goppar), `budget ${k(B.budget.goppar)}`)}</div>
+      <p class="muted">Réalisé jusqu'à la veille + réservations en portefeuille et pick-up attendu jusqu'au dernier jour du mois. <span style="font-size:12px">EF-BIR-002</span></p>
       ${aiBox("Commentaire automatique des écarts", `Sur le mois, le RevPAR est à ${money(m.revpar)} (${sign(((m.revpar - B.budget.revpar) / B.budget.revpar) * 100)} vs budget). L'écart vient surtout de l'occupation (${pct(m.occ)} contre ${B.budget.occ} % prévus) ; l'ADR tient le budget grâce au segment Affaires. Le segment Groupes recule de 18 nuitées par rapport à N-1.`,
         btn("Demander au copilote", "go('aip-ia/copilote')", "ghost sm"))}
       <div class="cols">
         <section><h2>Comparaison budget et N-1 — ${per === "7j" ? "7 jours" : "mois en cours"}</h2>
-          ${tbl(["Indicateur", "#Réalisé", "#Budget", "#N-1", "#Écart budget"], [
-            ["Occupation", pct(ref.occ), B.budget.occ + " %", pct(ref.lyOcc), sign(ref.occ - B.budget.occ) + " pts"],
-            ["ADR", money(ref.adr), money(B.budget.adr), money(ref.lyAdr), sign(((ref.adr - B.budget.adr) / B.budget.adr) * 100)],
-            ["RevPAR", money(ref.revpar), money(B.budget.revpar), money(ref.lyRevpar), sign(((ref.revpar - B.budget.revpar) / B.budget.revpar) * 100)],
-            ["TRevPAR", money(ref.trevpar), money(B.budget.trevpar), "—", sign(((ref.trevpar - B.budget.trevpar) / B.budget.trevpar) * 100)],
-            ["GOPPAR", money(ref.goppar), money(B.budget.goppar), "—", sign(((ref.goppar - B.budget.goppar) / B.budget.goppar) * 100)],
+          ${tbl(["Indicateur", "#Réalisé", "#Budget", "#N-1", "#Prévision fin de mois", "#Écart budget"], [
+            ["Occupation", pct(ref.occ), B.budget.occ + " %", pct(ref.lyOcc), pct(fc.occ), sign(ref.occ - B.budget.occ) + " pts"],
+            ["ADR", money(ref.adr), money(B.budget.adr), money(ref.lyAdr), money(fc.adr), sign(((ref.adr - B.budget.adr) / B.budget.adr) * 100)],
+            ["RevPAR", money(ref.revpar), money(B.budget.revpar), money(ref.lyRevpar), money(fc.revpar), sign(((ref.revpar - B.budget.revpar) / B.budget.revpar) * 100)],
+            ["TRevPAR", money(ref.trevpar), money(B.budget.trevpar), "—", "—", sign(((ref.trevpar - B.budget.trevpar) / B.budget.trevpar) * 100)],
+            ["GOPPAR", money(ref.goppar), money(B.budget.goppar), "—", money(fc.goppar), sign(((ref.goppar - B.budget.goppar) / B.budget.goppar) * 100)],
           ])}</section>
         <section><h2>Revenus — ${per === "7j" ? "7 jours" : "mois en cours"}</h2>
           ${bars([{ label: "Hébergement", value: ref.room }, { label: "Restauration", value: hist.filter((h) => per === "7j" ? hist.slice(-7).includes(h) : h.d.slice(0, 7) === today.slice(0, 7)).reduce((s, h) => s + h.fnb, 0) },
@@ -244,16 +271,29 @@
       <h2>Construire une vue</h2>
       <div class="card">${form([
         field("bi-v-m", "Indicateur", select("bi-v-m", [["rn", "Nuitées"], ["rev", "Revenu hébergement"], ["adr", "ADR"]], v?.m || "rev")),
-        field("bi-v-d", "Dimension", select("bi-v-d", [["segment", "Segment"], ["canal", "Canal"], ["semaine", "Semaine"]], v?.d || "segment")),
+        field("bi-v-d", "Dimension", select("bi-v-d", [["segment", "Segment"], ["canal", "Canal"], ["semaine", "Semaine"], ["type", "Type de chambre (réservations réelles)"]], v?.d || "segment")),
+        field("bi-v-g", "Visualisation", select("bi-v-g", [["barres", "Barres"], ["colonnes", "Colonnes"], ["tableau", "Tableau"]], v?.g || "barres")),
+        field("bi-v-s", "Tri", select("bi-v-s", [["desc", "Décroissant"], ["asc", "Croissant"], ["aucun", "Ordre naturel"]], v?.s || "desc")),
         field("bi-v-n", "Nom de la vue", input("bi-v-n", v?.name || "", `placeholder="Ex. Revenu par segment"`)),
         `<div style="align-self:end">${btn("Afficher", "A.bir.buildView()")}</div>`])}
-        ${v ? `<div style="margin-top:14px">${bars(viewData(v), v.m === "rn" ? (x) => x + " n." : money)}</div>
-          <div class="row" style="margin-top:10px">${btn("Enregistrer la vue", "A.bir.saveView()", "ghost sm")}</div>` : ""}
+        ${v ? `<div style="margin-top:14px">${renderView(v)}</div>
+          <div class="row" style="margin-top:10px">${btn("Enregistrer la vue", "A.bir.saveView()", "ghost sm")}<label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="bi-v-share" ${v.shared ? "checked" : ""}> Partager avec l'équipe de direction</label></div>` : ""}
+        <p class="muted">Vues personnelles construites sur les indicateurs de la couche sémantique, sans écrire de requête. <span style="font-size:12px">EF-BIR-009</span></p>
       </div>
-      ${B.views.length ? `<h3>Mes vues enregistrées</h3>${tbl(["Vue", "Indicateur", "Dimension", ""], B.views.map((x, i) => [esc(x.name), esc(x.m), esc(x.d), btn("Ouvrir", `A.bir.openView(${i})`, "ghost sm")]))}` : ""}
+      ${B.views.length ? `<h3>Mes vues enregistrées</h3>${tbl(["Vue", "Indicateur", "Dimension", "Visualisation", "Partage", ""], B.views.map((x, i) => [esc(x.name), esc({ rn: "Nuitées", rev: "Revenu hébergement", adr: "ADR" }[x.m]), esc(x.d), esc(x.g || "barres"), x.shared ? badge("Direction", "outline") : "Privée",
+        `<span class="row" style="flex-wrap:nowrap;gap:4px">${btn("Ouvrir", `A.bir.openView(${i})`, "ghost sm")}${btn("Supprimer", `A.bir.delView(${i})`, "ghost sm")}</span>`]))}` : ""}
       ${aiBox("Requête en langage naturel", "« Quel segment a le meilleur ADR ce mois ? » → Affaires individuels, 61 500 FCFA (requête : metric=adr · dimension=segment · période=MTD).", btn("Poser une question au copilote", "go('aip-ia/copilote')", "ghost sm"))}`
   }
+  function renderView(v) {
+    let d = viewData(v)
+    if (v.s === "desc") d = d.sort((a, b) => b.value - a.value); else if (v.s === "asc") d = d.sort((a, b) => a.value - b.value)
+    const fmt = v.m === "rn" ? (x) => x + " n." : money
+    if (!d.length) return `<p class="muted">Aucune donnée.</p>`
+    return v.g === "colonnes" ? columns(d.map((x) => x.label), d.map((x) => x.value), v.m === "rn" ? (x) => x : k) : v.g === "tableau" ? tbl([v.d, "#Valeur"], d.map((x) => [esc(x.label), fmt(x.value)])) : bars(d, fmt)
+  }
   function viewData(v) {
+    if (v.d === "type") return D.roomTypes.map((t) => { const rs = D.reservations.filter((r) => r.type === t.code && !["annulee", "noshow"].includes(r.status)), rn = rs.reduce((s, r) => s + nights(r.from, r.to), 0), rev = rs.reduce((s, r) => s + nights(r.from, r.to) * r.rate, 0)
+      return { label: t.label, value: Math.round(v.m === "rn" ? rn : v.m === "adr" ? (rn ? rev / rn : 0) : rev) } })
     if (v.d === "semaine") {
       const weeks = [0, 1, 2, 3].map((w) => hist.slice(w * 7 + 2, w * 7 + 9))
       return weeks.map((rows, i) => { const a = agg(rows); return { label: `Semaine ${i + 1}`, value: Math.round(v.m === "rn" ? a.sold : v.m === "adr" ? a.adr : a.room) } })
@@ -263,11 +303,18 @@
   }
 
   function connecteurs() {
+    const worst = Math.max(...B.lake.map((x) => x.lag)), late = B.lake.filter((x) => x.lag >= LAG_MAX)
     return `<div class="grid">
-        ${kpi("Fraîcheur des données", "9 min", "dernière alimentation du lakehouse (cible < 15 min)")}
-        ${kpi("Événements intégrés (24 h)", "18 420", "CDC et événements métier (simulé)")}
+        ${kpi("Fraîcheur des données", worst + " min", "retard maximal du lakehouse (cible < 15 min)")}
+        ${kpi("Lignes intégrées", B.lake.reduce((t, x) => t + x.rows, 0).toLocaleString("fr-FR"), "depuis l'ouverture de la maquette (CDC + événements)")}
         ${kpi("Temps du tableau de bord", "0,8 s", "p95 simulé (cible < 3 s)")}
       </div>
+      <h2>Alimentation du lakehouse <span class="muted" style="font-size:12px">EF-BIR-004</span></h2>
+      ${late.length ? `<p class="err">Retard au-delà de ${LAG_MAX} min sur : ${esc(late.map((x) => x.name).join(", "))}. Les tableaux de bord affichent « données anciennes » pour ces sources.</p>` : ""}
+      ${tbl(["Flux", "Type", "#Objets dans le système source", "#Lignes intégrées", "Retard", "État", ""], B.lake.map((x) => [esc(x.name), badge(x.type, "outline"), lakeCount(x.obj), x.rows, x.lag >= LAG_MAX ? badge(x.lag + " min", "dark") : x.lag + " min",
+        x.ok ? badge("Actif", "on") : badge("Interrompu", "dark"), x.ok ? btn("Simuler une panne", `A.bir.lakeFail(${q(x.id)})`, "ghost sm") : btn("Relancer le flux", `A.bir.lakeFix(${q(x.id)})`, "sm")]))}
+      <div class="row" style="margin-top:10px">${btn("Lancer un cycle d'alimentation", "A.bir.lakeSync()")}<span class="muted">Capture des changements (CDC) sur les tables opérationnelles et consommation des événements du bus ; données personnelles pseudonymisées.</span></div>
+      ${B.lakeRuns.length ? `<p class="muted">Derniers cycles : ${esc(B.lakeRuns.slice(0, 3).join(" · "))}</p>` : ""}
       <h2>Connecteurs BI tiers</h2>
       ${tbl(["Connecteur", "État", "Dernière synchro", "Filtre de sécurité (ligne)", ""], B.connectors.map((c) => [esc(c.name), c.state === "actif" ? badge("Actif", "on") : badge("Inactif", "outline"), esc(c.lastSync), esc(c.rls),
         `<span class="row" style="flex-wrap:nowrap">${btn(c.state === "actif" ? "Désactiver" : "Activer", `A.bir.toggleConn(${q(c.id)})`, "ghost sm")}${c.state === "actif" ? btn("Générer un jeton", `A.bir.token(${q(c.id)})`, "ghost sm") : ""}</span>`]))}
@@ -298,8 +345,21 @@
       ui.biPrefill = null
       toast("Envoi planifié"); render()
     },
-    buildView() { ui.biView = { m: val("bi-v-m"), d: val("bi-v-d"), name: val("bi-v-n") || "Vue sans nom" }; render() },
-    saveView() { B.views.push({ ...ui.biView }); toast(`Vue « ${ui.biView.name} » enregistrée`); render() },
+    buildView() { ui.biView = { m: val("bi-v-m"), d: val("bi-v-d"), g: val("bi-v-g"), s: val("bi-v-s"), name: val("bi-v-n") || "Vue sans nom" }; render() },
+    saveView() {
+      const v = { ...ui.biView, shared: !!document.getElementById("bi-v-share")?.checked }
+      const i = B.views.findIndex((x) => x.name === v.name)
+      if (i >= 0) B.views[i] = v; else B.views.push(v)
+      toast(`Vue « ${v.name} » ${i >= 0 ? "mise à jour" : "enregistrée"}${v.shared ? " et partagée" : ""}`); render()
+    },
+    delView(i) { const v = B.views.splice(i, 1)[0]; toast(`Vue « ${v.name} » supprimée`); render() },
+    lakeSync() {
+      B.lake.filter((x) => x.ok).forEach((x, i) => { x.rows += lakeCount(x.obj); x.lag = 1 + Math.round(rnd(B.lakeRuns.length + i) * 3) })
+      B.lakeRuns.unshift(`${fd(today)} ${new Date().toTimeString().slice(0, 5)} : ${B.lake.filter((x) => x.ok).length} flux`)
+      toast("Cycle d'alimentation terminé (simulé)"); render()
+    },
+    lakeFail(id) { const x = B.lake.find((y) => y.id === id); x.ok = false; x.lag = 22; toast(`${x.name} : flux interrompu, retard 22 min (alerte)`); render() },
+    lakeFix(id) { const x = B.lake.find((y) => y.id === id); x.ok = true; x.rows += lakeCount(x.obj); x.lag = 1; toast(`${x.name} : rattrapage effectué`); render() },
     openView(i) { ui.biView = { ...B.views[i] }; render() },
     toggleConn(id) { const c = B.connectors.find((x) => x.id === id); c.state = c.state === "actif" ? "inactif" : "actif"; c.lastSync = c.state === "actif" ? "à l'instant" : "—"; c.rls = c.state === "actif" ? "Établissement : Hôtel Exemple" : "—"; if (c.state !== "actif") ui.biToken = null; toast(`${c.name} : ${c.state}`); render() },
     token(id) { ui.biToken = "exemple_" + id.toLowerCase() + "_" + Math.random().toString(36).slice(2, 10); toast("Jeton fictif généré"); render() },
