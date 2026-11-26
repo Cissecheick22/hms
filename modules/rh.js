@@ -22,7 +22,8 @@
   const ACCESS = { DIR: "Permanent (direction)", SEC: "Permanent (sécurité)", HK: "Étages + lingerie, sur poste ± 30 min", FNB: "Cuisine + salle, sur poste ± 30 min", HEB: "Réception + bagagerie, sur poste ± 30 min", TEC: "Locaux techniques + étages, sur poste ± 30 min", ADM: "Bureaux administratifs, sur poste ± 30 min" }
 
   const mail = (n) => n.normalize("NFD").replace(/[\u0300-\u036f']/g, "").toLowerCase().split(" ").join(".") + "@exemple.test"
-  const emp = (id, name, dept, job, cat, contract, start, base, o = {}) => ({ id, mat: "HE-" + id.slice(1).padStart(4, "0"), name, dept, job, cat, contract, start, end: null, base, sursal: 0, transport: 30000, logement: 0, panier: 0, aenLog: 0, parts: 1, family: "Célibataire", manager: "E01", pay: { mode: "Virement", ref: "" }, pts: 0, status: "actif", cpAcq: 13.2, cpPris: 4, email: mail(name), phone: `+225 07 00 00 00 ${id.slice(1).padStart(2, "0")}`, history: [], ...o })
+  const emp = (id, name, dept, job, cat, contract, start, base, o = {}) => ({ id, mat: "HE-" + id.slice(1).padStart(4, "0"), name, dept, job, cat, contract, start, end: null, base, sursal: 0, transport: 30000, logement: 0, panier: 0, aenLog: 0, parts: 1, family: "Célibataire", manager: "E01", pay: { mode: "Virement", ref: "" }, pts: 0, status: "actif", cpAcq: 13.2, cpPris: 4, email: mail(name), phone: `+225 07 00 00 00 ${id.slice(1).padStart(2, "0")}`, history: [],
+    entity: "ENT1", prop: "Hôtel Exemple (Abidjan Plateau)", hours: 40, aenNour: 0, addr: "Abidjan, Cocody (exemple)", idDoc: "CNI C00" + id.slice(1).padStart(7, "0") + " (fictive)", access: "actif", ...o })
 
   D.hrm = {
     emps: [
@@ -37,11 +38,11 @@
       emp("E08", "Amenan Kouamé", "HK", "Gouvernante générale", "AM1", "CDI", "2016-08-01", 270000, { parts: 4, family: "Mariée, 4 enfants", pay: { mode: "Virement", ref: "Banque Akwaba Exemple ••••2290" }, pts: 2, cpPris: 3 }),
       emp("E09", "Akissi N'Guessan", "HK", "Femme de chambre", "E1", "CDI", "2018-05-02", 95000, { transport: 25000, parts: 3, family: "Mariée, 2 enfants", manager: "E08", pay: { mode: "Mobile Money", ref: "Mobile Money ••••0909" }, pts: 1 }),
       emp("E10", "Mariam Bamba", "HK", "Femme de chambre", "E1", "CDI", "2023-01-09", 92000, { transport: 25000, parts: 2, family: "Célibataire, 2 enfants", manager: "E08", pay: { mode: "Mobile Money", ref: "Mobile Money ••••1010" }, payPending: { mode: "Mobile Money", ref: "Mobile Money ••••5566", on: "2026-11-24", src: "Demande via l'app mobile personnel" }, pts: 1 }),
-      emp("E11", "Affoué Aka", "HK", "Femme de chambre", "E1", "Saisonnier", "2026-11-03", 90000, { end: "2027-01-31", transport: 25000, manager: "E08", pay: { mode: "Mobile Money", ref: "Mobile Money ••••1111" }, pts: 1, cpAcq: 0, cpPris: 0 }),
-      emp("E12", "Konan Tanoh", "FNB", "Chef de cuisine", "AM2", "CDI", "2019-11-04", 480000, { parts: 3, family: "Marié, 2 enfants", pay: { mode: "Virement", ref: "Banque Lagune Exemple ••••5120" }, pts: 4 }),
-      emp("E13", "Moussa Doumbia", "FNB", "Commis de cuisine", "E2", "CDI", "2024-07-01", 120000, { transport: 25000, panier: 15000, manager: "E12", pay: { mode: "Mobile Money", ref: "Mobile Money ••••1313" }, pts: 2 }),
+      emp("E11", "Affoué Aka", "HK", "Femme de chambre", "E1", "Saisonnier", "2026-11-03", 90000, { end: "2027-01-31", addr: "Grand-Bassam (exemple)", prop: "Hôtel Exemple Grand-Bassam (exemple)", transport: 25000, manager: "E08", pay: { mode: "Mobile Money", ref: "Mobile Money ••••1111" }, pts: 1, cpAcq: 0, cpPris: 0 }),
+      emp("E12", "Konan Tanoh", "FNB", "Chef de cuisine", "AM2", "CDI", "2019-11-04", 480000, { aenNour: 20000, addr: "Abidjan, Marcory (exemple)", parts: 3, family: "Marié, 2 enfants", pay: { mode: "Virement", ref: "Banque Lagune Exemple ••••5120" }, pts: 4 }),
+      emp("E13", "Moussa Doumbia", "FNB", "Commis de cuisine", "E2", "CDI", "2024-07-01", 120000, { aenNour: 15000, addr: "Abidjan, Yopougon (exemple)", transport: 25000, panier: 15000, manager: "E12", pay: { mode: "Mobile Money", ref: "Mobile Money ••••1313" }, pts: 2 }),
       emp("E14", "Christelle Séka", "FNB", "Serveur", "E2", "CDD", "2026-05-01", 110000, { end: "2026-12-31", transport: 25000, panier: 15000, parts: 2.5, family: "Marié, 1 enfant", manager: "E12", pay: { mode: "Mobile Money", ref: "" }, pts: 3, cpAcq: 13.2, cpPris: 0 }),
-      emp("E15", "Arsène Zadi", "TEC", "Technicien de maintenance", "AM1", "CDI", "2020-10-12", 215000, { parts: 3.5, family: "Marié, 3 enfants", pay: { mode: "Virement", ref: "Banque Akwaba Exemple ••••1515" } }),
+      emp("E15", "Arsène Zadi", "TEC", "Technicien de maintenance", "AM1", "CDI", "2020-10-12", 215000, { addr: "Abidjan, Treichville (exemple)", parts: 3.5, family: "Marié, 3 enfants", pay: { mode: "Virement", ref: "Banque Akwaba Exemple ••••1515" } }),
       emp("E16", "Ibrahim Fofana", "SEC", "Agent de sécurité", "E2", "CDI", "2021-03-15", 135000, { transport: 25000, panier: 15000, parts: 2.5, family: "Marié, 1 enfant", pay: { mode: "Virement", ref: "Banque Lagune Exemple ••••1616" }, cpAcq: 13.2, cpPris: 1 }),
     ],
     certs: [
@@ -110,12 +111,28 @@
     ],
     budget: 0, nuitees: 312,
     anoState: {}, regul: [], audit: [], disa: null, pool: "",
+    // EF-HRM-009 / 010 : événements publiés vers ACC et profils d'accès par poste (surcharges)
+    events: [
+      { at: "26/11 06:01", type: "hrm.shift.started", emp: "E13", detail: "Badge activé · Cuisine + salle, sur poste ± 30 min" },
+      { at: "26/11 07:58", type: "hrm.shift.started", emp: "E05", detail: "Badge activé · Réception + bagagerie, sur poste ± 30 min" },
+    ],
+    jobProfile: {},
+    // EF-HRM-026 : entités juridiques, établissements et devises (taux de conversion d'exemple vers XOF)
+    entities: [
+      { id: "ENT1", name: "Hôtel Exemple SARL", country: "Côte d'Ivoire", cur: "XOF", rate: 1, pack: "Pack CI v2026.1 (exemple)", props: ["Hôtel Exemple (Abidjan Plateau)", "Hôtel Exemple Grand-Bassam (exemple)"] },
+      { id: "ENT2", name: "Hôtel Exemple Dakar SARL (exemple)", country: "Sénégal", cur: "XOF", rate: 1, pack: "Modèle Sénégal v2026.1 (exemple)", props: ["Hôtel Exemple Dakar"], n: 22, brut: 6150000, status: "Calculée" },
+      { id: "ENT3", name: "Hôtel Exemple Douala SA (exemple)", country: "Cameroun", cur: "XAF", rate: 1, pack: "Modèle Cameroun v2026.1 (exemple)", props: ["Hôtel Exemple Douala"], n: 18, brut: 5420000, status: "Ouverte" },
+      { id: "ENT4", name: "Hôtel Exemple Accra Ltd (exemple)", country: "Ghana (hors OHADA)", cur: "GHS", rate: 38, pack: "Pack à paramétrer (exemple)", props: ["Hôtel Exemple Accra"], n: 12, brut: 118000, status: "Ouverte" },
+    ],
+    // EF-HRM-028 : demandes faites depuis l'app mobile du personnel
+    attest: [{ id: "AT-01", emp: "E09", type: "Attestation de travail", date: "2026-11-18", status: "Générée" }],
+    attSeq: 1, rappSeq: 0,
   }
   const H = D.hrm
-  const newPeriod = (month) => ({ month, step: 1, calc: null, validated: null, paid: null, journal: null, decl: {}, editors: [], closed: null, stale: "" })
+  const newPeriod = (month) => ({ month, step: 1, calc: null, validated: null, paid: null, journal: null, decl: {}, editors: [], closed: null, stale: "", recon: {} })
   H.period = newPeriod("2026-11")
   H.period.editors = ["PAIE"] // l'augmentation de E06 a été saisie par le gestionnaire de paie
-  Object.assign(ui, { hrDept: ui.hrDept || "all", hrLeave: ui.hrLeave || "attente", hrShow: null, hrSim: null, hrStc: null, hrLoan: null, hrForecast: "ia", hrRef: null })
+  Object.assign(ui, { hrDept: ui.hrDept || "all", hrLeave: ui.hrLeave || "attente", hrShow: null, hrSim: null, hrStc: null, hrLoan: null, hrForecast: "ia", hrRef: null, hrMe: ui.hrMe || "E09" })
 
   // ---------- Utilitaires locaux ----------
   const r0 = Math.round
@@ -140,6 +157,26 @@
   const muted = (t) => `<span class="muted">${esc(t)}</span>`
   const certOk = (c, at = today) => c.expires >= at
   const soon = (c) => certOk(c) && c.expires <= addDays(today, 60)
+  // Contrats : minimum catégoriel au prorata du temps de travail (RG-HRM-05, EF-HRM-002)
+  const minFor = (cat, hours = 40) => r0((Math.max(CATS[cat], PACK.smig) * hours) / 40)
+  const monthH = (e) => (Math.round(173.33 * (e.hours || 40) / 40 * 100) / 100)
+  const TERM = ["CDD", "Saisonnier", "Journalier", "Intérim", "Stage"]
+  // Entités et établissements (EF-HRM-026)
+  const ENT = (id) => H.entities.find((x) => x.id === id) || H.entities[0]
+  const fx = (n, cur) => `${Math.round(n).toLocaleString("fr-FR").replace(/\u202f/g, " ")} ${cur}`
+  // Profils d'accès physique par poste et événements vers ACC (EF-HRM-009, EF-HRM-010, RG-HRM-02)
+  const profileOf = (e) => H.jobProfile[e.job] || ACCESS[e.dept]
+  const permanent = (e) => /^Permanent/.test(profileOf(e))
+  const accPush = (e, type, detail) => {
+    H.events.unshift({ at: fd(today) + " " + now(), type, emp: e.id, detail })
+    if (!D.acc || !Array.isArray(D.acc.staff)) return
+    const bid = "B-H" + e.id.slice(1)
+    let b = D.acc.staff.find((x) => x.hrm === e.id)
+    if (!b) { b = { id: bid, name: e.name, role: e.job, zone: profileOf(e).split(",")[0], shift: "selon planning RH", status: "suspendu (hors poste)", last: today, hrm: e.id }; D.acc.staff.push(b) }
+    b.zone = profileOf(e).split(",")[0]
+    b.status = type === "hrm.shift.started" || type === "hrm.employee.hired" && permanent(e) ? "actif" : type === "hrm.employee.terminated" ? "révoqué" : type === "hrm.shift.ended" ? (permanent(e) ? "actif" : "suspendu (hors poste)") : b.status
+    if (type === "hrm.shift.started") b.last = today
+  }
 
   // Congés et absences
   const monthLeaves = (id, m) => H.leaves.filter((l) => l.emp === id && l.status === "Validée")
@@ -165,16 +202,17 @@
     const ms = m + "-01", me = monthEnd(m)
     const pro = e.start > ms && e.start <= me ? (nights(e.start, me) + 1) / 30 : 1
     const base = r0(e.base * pro)
-    add("base", "1000", "Salaire de base catégoriel" + (pro < 1 ? " (entrée en cours de mois, prorata)" : ""), { base: pro < 1 ? `${r0(pro * 30)} j / 30` : "173,33 h", rate: e.cat, gain: base, imp: true })
+    add("base", "1000", "Salaire de base catégoriel" + (pro < 1 ? " (entrée en cours de mois, prorata)" : ""), { base: pro < 1 ? `${r0(pro * 30)} j / 30` : fh(monthH(e)), rate: e.cat, gain: base, imp: true })
     if (e.sursal) add("base", "1010", "Sursalaire", { gain: r0(e.sursal * pro), imp: true })
     const y = years(e.start, me), ap = y >= 2 ? Math.min(25, y) : 0
     if (ap) add("base", "1020", `Prime d'ancienneté (${y} ans)`, { base: money(base), rate: ap + " %", gain: r0((base * ap) / 100), imp: true })
     const abs = opts.noAbs ? 0 : absDays(e.id, m)
     if (abs) add("base", "1090", "Absence non rémunérée (déduite du brut)", { base: abs + " j", rate: money(r0(e.base / 26)), gain: -r0((e.base / 26) * abs), imp: true })
-    const th = e.base / 173.33
+    const th = e.base / monthH(e)
     ;[["h15", "1100", "Heures supplémentaires +15 %", 1.15], ["h50", "1110", "Heures supplémentaires / nuit +50 %", 1.5], ["h75", "1120", "Heures dimanche et férié +75 %", 1.75]]
       .forEach(([k, c, l, f]) => v[k] && add("var", c, l, { base: fh(v[k]), rate: money(r0(th * f)), gain: r0(th * f * v[k]), imp: true }))
     if (v.prime) add("var", "1150", "Prime de rendement", { gain: v.prime, imp: true })
+    if (v.rappel) add("var", "1400", "Rappel sur périodes antérieures (régularisation)", { base: v.rappelInfo || "", gain: v.rappel, imp: true })
     const tr = !opts.noTronc && (H.tronc.integrated || opts.tronc) ? (troncShares(m)[e.id] || {}).share : 0
     if (tr) add("var", "1160", "Service et pourboires (tronc commun)", { base: (troncShares(m)[e.id].pres) + " j × " + e.pts + " pt", gain: tr, imp: true })
     if (e.transport) {
@@ -185,6 +223,7 @@
     if (e.logement) add("ind", "1210", "Indemnité de logement", { gain: e.logement, imp: true })
     if (e.panier) add("ind", "1220", "Prime de panier (non imposable)", { base: "plafond d'exemple", gain: e.panier })
     if (e.aenLog) add("aen", "1300", "Avantage en nature — logement", { base: "évaluation forfaitaire", gain: e.aenLog, imp: true })
+    if (e.aenNour) add("aen", "1310", "Avantage en nature — nourriture (repas du personnel)", { base: "forfait d'exemple", gain: e.aenNour, imp: true })
     const brut = sum(L, (l) => l.gain), brutImp = sum(L.filter((l) => l.imp), (l) => l.gain)
     const bR = Math.min(brutImp, P.capRet), bF = Math.min(brutImp, P.capPF)
     add("cot", "2000", "CNPS — retraite", { base: money(bR), rate: `${pc(P.retS)} / ${pc(P.retP)}`, ret: r0(bR * P.retS), pat: r0(bR * P.retP) })
@@ -197,8 +236,9 @@
     add("tax", "3110", "Taxe d'apprentissage (FDFP)", { base: money(brutImp), rate: pc(P.ta), pat: r0(brutImp * P.ta) })
     add("tax", "3120", "Formation professionnelle continue (FDFP)", { base: money(brutImp), rate: pc(P.fpc), pat: r0(brutImp * P.fpc) })
     const salCot = sum(L.filter((l) => l.cat === "cot"), (l) => l.ret), patSoc = sum(L.filter((l) => l.cat === "cot"), (l) => l.pat), patTax = sum(L.filter((l) => l.cat === "tax"), (l) => l.pat)
-    if (e.aenLog) add("ret", "4000", "Reprise de l'avantage en nature (non versé)", { ret: e.aenLog })
-    const netAvant = brut - salCot - its - e.aenLog
+    const aen = (e.aenLog || 0) + (e.aenNour || 0)
+    if (aen) add("ret", "4000", "Reprise des avantages en nature (non versés)", { ret: aen })
+    const netAvant = brut - salCot - its - aen
     const due = opts.noLoans ? 0 : loanDue(e.id), conso = v.conso || 0
     const quot = Math.max(0, Math.floor(netAvant * P.quotite))
     const loanApp = Math.min(due, quot), consoApp = Math.min(conso, quot - loanApp), reliquat = due + conso - loanApp - consoApp
@@ -208,7 +248,7 @@
     add("info", "9000", "Coût employeur", { base: money(cost) })
     add("info", "9010", "Congés payés acquis ce mois", { base: "2,2 j" })
     if (reliquat) add("info", "9020", "Reliquat de retenues reporté (quotité saisissable)", { base: money(reliquat) })
-    return { id: e.id, lines: L, brut, brutImp, salCot, its, patSoc, patTax, aen: e.aenLog, loanApp, consoApp, net, cost, reliquat, version: P.version }
+    return { id: e.id, lines: L, brut, brutImp, salCot, its, patSoc, patTax, loanApp, consoApp, net, cost, reliquat, version: P.version, aen }
   }
   const calcAll = (o) => Object.fromEntries(active().map((e) => [e.id, slip(e, cur().month, o)]))
   // Aperçu provisoire avant calcul : pourboires du mois inclus par anticipation
@@ -315,10 +355,11 @@
       const tab = p[0] || "cycle", per = cur()
       return pageHead(`Paie — ${monthLabel(per.month)}`, `Cycle mensuel de paie de l'entité Hôtel Exemple (FCFA). Moteur et paramètres : ${PACK.version}, taux d'exemple à faire valider.`,
         badge(per.closed ? "Clôturée" : `Étape ${Math.min(per.step + 1, 9)} / 9`, per.closed ? "dark" : "on"))
-        + subtabs("hr-paie", [["cycle", "Cycle"], ["variables", "Variables"], ["controle", "Contrôle"], ["bulletins", "Bulletins et livre de paie"], ["virements", "Virements"], ["pourboires", "Pourboires"], ["prets", "Prêts et avances"], ["parametres", "Paramètres et rubriques"]], tab)
-        + ({ cycle, variables, controle, bulletins, virements, pourboires, prets, parametres }[tab] || cycle)()
+        + subtabs("hr-paie", [["cycle", "Cycle"], ["variables", "Variables"], ["controle", "Contrôle"], ["bulletins", "Bulletins et livre de paie"], ["virements", "Virements"], ["pourboires", "Pourboires"], ["prets", "Prêts et avances"], ["entites", "Multi-entités"], ["parametres", "Paramètres et rubriques"]], tab)
+        + ({ cycle, variables, controle, bulletins, virements, pourboires, prets, entites, parametres }[tab] || cycle)()
     },
     "hr-bulletin"(p) { return bulletin(p[0]) },
+    "hr-portail"() { return portail() },
     "hr-declarations"(p) {
       const tab = p[0] || "periodiques"
       return pageHead("Déclarations sociales et fiscales", `Période ${monthLabel(cur().month)}. Fichiers et télédéclarations SIMULÉS (aucun envoi réel à la CNPS ni à l'administration fiscale).`)
@@ -336,19 +377,29 @@
   // ----- Personnel : dossiers -----
   function dossiers(id) {
     const e = E(id) || H.emps[0]
-    const items = H.emps.map((x) => ({ id: x.id, title: x.name, sub: `${x.job} · ${DEPTS[x.dept]}`, badge: x.status === "sorti" ? " " + badge("Sorti", "dark") : x.contract !== "CDI" ? " " + badge(x.contract, "outline") : "" }))
+    const items = H.emps.map((x) => ({ id: x.id, title: x.name, sub: `${x.job} · ${DEPTS[x.dept]}`, badge: x.status !== "actif" ? " " + badge(x.status === "sorti" ? "Sorti" : "Muté", "dark") : x.contract !== "CDI" ? " " + badge(x.contract, "outline") : "" }))
     const shown = ui.hrShow === e.id, c = H.certs.filter((x) => x.emp === e.id)
     const s = e.status === "actif" ? slip(e) : null
     const minCat = CATS[e.cat]
     return split(listItems(items, e.id, "hr-personnel/dossiers"), `<div class="card">
-      <div class="row between"><span class="big">${esc(e.name)}</span><span class="row">${badge(e.contract, "outline")}${badge(e.status === "actif" ? "Actif" : "Sorti", e.status === "actif" ? "on" : "dark")}</span></div>
-      <div class="muted">${esc(e.mat)} · ${esc(e.job)}${e.alias ? ` (${esc(e.alias)})` : ""} · ${esc(DEPTS[e.dept])} · Hôtel Exemple</div>
+      <div class="row between"><span class="big">${esc(e.name)}</span><span class="row">${badge(e.contract, "outline")}${badge(e.status === "actif" ? "Actif" : e.status === "sorti" ? "Sorti" : "Muté (autre entité)", e.status === "actif" ? "on" : "dark")}</span></div>
+      <div class="muted">${esc(e.mat)} · ${esc(e.job)}${e.alias ? ` (${esc(e.alias)})` : ""} · ${esc(DEPTS[e.dept])} · ${esc(e.prop)} <span class="muted">· EF-HRM-001</span></div>
       <div class="grid" style="margin:14px 0">${kpi("Ancienneté", years(e.start, today) + " an(s)", "entrée le " + fd(e.start) + "/" + e.start.slice(0, 4))}${kpi("Solde congés payés", fj(cpSolde(e)), "2,2 j acquis par mois")}${kpi("Coût employeur mensuel", shown && s ? money(s.cost) : "••••", shown ? "exemple" : "masqué")}</div>
-      <h3>Identité et situation</h3>
-      ${kv([["Situation familiale (paie)", esc(e.family) + ` · ${String(e.parts).replace(".", ",")} part(s) ITS`], ["Coordonnées", `${esc(e.email)} · ${esc(e.phone)}`], ["Manager", e.manager ? elink(e.manager) : "—"], ["Entité employeuse", "Hôtel Exemple SARL (exemple)"], ["Profil d'accès physique", esc(ACCESS[e.dept]) + " " + badge("ACC simulé", "outline")]])}
-      <h3>Contrat et rémunération</h3>
-      ${kv([["Contrat", `${esc(e.contract)} depuis le ${fd(e.start)}/${e.start.slice(0, 4)}${e.end ? ` jusqu'au ${fd(e.end)}/${e.end.slice(0, 4)}` : ""}`], ["Catégorie (convention collective, exemple)", `${esc(e.cat)} · minimum ${money(minCat)}`], ["Temps de travail", "40 h / semaine · 173,33 h / mois"],
-        ["Salaire de base", shown ? money(e.base) : `•••• ${btn("Afficher (accès journalisé)", `A.hrm.showSal(${q(e.id)})`, "ghost sm")}`], ["Indemnités", shown ? `transport ${money(e.transport)} · logement ${money(e.logement)} · panier ${money(e.panier)}${e.aenLog ? ` · logement en nature ${money(e.aenLog)}` : ""}` : "••••"]])}
+      <h3>Identité et situation <span class="muted" style="font-weight:400">EF-HRM-001</span></h3>
+      ${kv([["Pièce d'identité", esc(e.idDoc)], ["Adresse", esc(e.addr)], ["Situation familiale (paie)", esc(e.family) + ` · ${String(e.parts).replace(".", ",")} part(s) ITS`], ["Coordonnées", `${esc(e.email)} · ${esc(e.phone)}`], ["Manager", e.manager ? elink(e.manager) : "—"],
+        ["Entité employeuse", `${esc(ENT(e.entity).name)} · ${esc(ENT(e.entity).country)} · devise ${esc(ENT(e.entity).cur)}`], ["Établissement", esc(e.prop)], ["Date d'entrée · ancienneté", `${fd(e.start)}/${e.start.slice(0, 4)} · ${years(e.start, today)} an(s)`],
+        ["Profil d'accès physique", esc(profileOf(e)) + " " + badge(e.access === "actif" ? "ACC simulé" : e.access, e.access === "actif" ? "outline" : "dark") + ` <span class="muted">EF-HRM-010</span>`]])}
+      ${e.status === "actif" ? `<details style="margin-top:8px"><summary class="muted">Modifier l'identité et la situation</summary><div class="form" style="margin-top:8px">
+        ${field("hr-iaddr", "Adresse", input("hr-iaddr", e.addr))}${field("hr-iphone", "Téléphone", input("hr-iphone", e.phone))}${field("hr-imail", "E-mail", input("hr-imail", e.email))}
+        ${field("hr-ifam", "Situation familiale", input("hr-ifam", e.family))}${field("hr-iparts", "Parts ITS", select("hr-iparts", Object.keys(PACK.reduc), String(e.parts)))}
+        ${field("hr-imgr", "Manager", select("hr-imgr", [["", "—"], ...active().filter((x) => x.id !== e.id).map((x) => [x.id, x.name])], e.manager || ""))}
+        <div class="full" id="hr-ierr"></div><div class="full">${btn("Enregistrer", `A.hrm.editId(${q(e.id)})`, "ghost")}</div></div></details>` : ""}
+      <h3>Contrat et rémunération <span class="muted" style="font-weight:400">EF-HRM-002</span></h3>
+      ${kv([["Contrat", `${esc(e.contract)} depuis le ${fd(e.start)}/${e.start.slice(0, 4)}${e.end ? ` jusqu'au ${fd(e.end)}/${e.end.slice(0, 4)}` : ""}`], ["Catégorie (convention collective, exemple)", `${esc(e.cat)} · minimum ${money(minFor(e.cat, e.hours))}${e.hours < 40 ? " (prorata temps partiel)" : ""}`], ["Temps de travail", `${e.hours} h / semaine · ${fh(monthH(e))} / mois${e.hours < 40 ? " · temps partiel" : ""}`],
+        ["Salaire de base", shown ? money(e.base) : `•••• ${btn("Afficher (accès journalisé)", `A.hrm.showSal(${q(e.id)})`, "ghost sm")}`], ["Éléments de rémunération", shown ? `sursalaire ${money(e.sursal)} · transport ${money(e.transport)} · logement ${money(e.logement)} · panier ${money(e.panier)}${e.aenLog ? ` · logement en nature ${money(e.aenLog)}` : ""}${e.aenNour ? ` · nourriture en nature ${money(e.aenNour)}` : ""}` : "••••"]])}
+      ${e.status === "actif" && shown ? `<details style="margin-top:8px"><summary class="muted">Modifier les éléments de rémunération (EF-HRM-014)</summary><div class="form" style="margin-top:8px">
+        ${[["sursal", "Sursalaire"], ["transport", "Indemnité de transport"], ["logement", "Indemnité de logement"], ["panier", "Prime de panier"], ["aenLog", "Avantage en nature logement"], ["aenNour", "Avantage en nature nourriture"]].map(([k, l]) => field("hr-r" + k, l, input("hr-r" + k, e[k] || 0, 'type="number" step="1000" min="0"'))).join("")}
+        ${field("hr-rby", "Saisi par", userSel("hr-rby", "PAIE"))}<div class="full">${btn("Enregistrer", `A.hrm.editPay(${q(e.id)})`, "ghost")}</div></div></details>` : ""}
       <h3>Coordonnées de paiement</h3>
       <p class="muted" style="margin:0 0 8px">Chiffrées au niveau du champ ; tout changement est soumis à validation (RG-HRM-07).</p>
       ${kv([["Mode", esc(e.pay.mode)], ["Compte", e.pay.ref ? esc(e.pay.ref) : badge("À compléter", "dark")]])}
@@ -359,7 +410,7 @@
       ${e.status === "actif" ? `<h3>Avenant, promotion ou mutation <span class="muted" style="font-weight:400">EF-HRM-003</span></h3>
       <div class="form">${field("hr-atype", "Type", select("hr-atype", ["Augmentation", "Promotion", "Mutation", "Passage en CDI"], "Augmentation"))}${field("hr-adate", "Date d'effet", input("hr-adate", "2026-11-01", 'type="date"'))}
         ${field("hr-abase", "Nouveau salaire de base", input("hr-abase", e.base, 'type="number" step="1000"'))}${field("hr-acat", "Catégorie", select("hr-acat", Object.keys(CATS), e.cat))}
-        ${field("hr-aprop", "Établissement", select("hr-aprop", ["Hôtel Exemple", "Hôtel Exemple Assinie (groupe, exemple)"], "Hôtel Exemple"))}${field("hr-aby", "Saisi par", userSel("hr-aby", "PAIE"))}
+        ${field("hr-aprop", "Établissement (mutation)", select("hr-aprop", H.entities.flatMap((x) => x.props.map((pp) => [x.id + "|" + pp, `${pp} — ${x.name}`])), e.entity + "|" + e.prop))}${field("hr-aby", "Saisi par", userSel("hr-aby", "PAIE"))}
         <div class="full" id="hr-aerr"></div><div class="full">${btn("Enregistrer l'avenant", `A.hrm.amend(${q(e.id)})`)}</div></div>` : ""}
       <h3>Historique du contrat</h3>
       ${tbl(["Date", "Type", "Détail", "Saisi par"], e.history.map((h) => [fd(h.date) + "/" + h.date.slice(2, 4), esc(h.type), esc(h.detail), esc(USERS[h.by] || h.by)]), "Aucun avenant.")}
@@ -380,8 +431,14 @@
         return `<div class="card"><div class="muted">${esc(DEPTS[d])}</div><div style="margin:4px 0 8px">${mgr ? `<strong>${elink(mgr.id)}</strong><div class="muted">${esc(mgr.job)}</div>` : ""}</div>
           ${ms.filter((e) => e !== mgr).map((e) => `<div>└ ${elink(e.id)} <span class="muted">${esc(e.alias || e.job)}</span></div>`).join("")}
           <div class="muted" style="margin-top:8px">${ms.length} personne(s)</div></div>`
-      }).join("")}</div>`
+      }).join("")}</div>
+      <h2>Postes et profils d'accès physique <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-010</span></h2>
+      <p class="muted">Chaque poste porte un profil d'accès par défaut, attribué à l'embauche et révoqué au départ. Modifier un profil le réapplique aux titulaires (ACC simulé).</p>
+      ${tbl(["Poste", "Service", "Titulaires", "Certification requise", "Profil d'accès par défaut", ""], jobsList().map((j, i) => [esc(j.job), esc(DEPTS[j.dept]), j.n, j.cert ? esc(j.cert) : muted("—"),
+        select("hr-jp" + i, PROFILES, j.profile), btn("Appliquer", `A.hrm.setProfile(${i})`, "ghost sm")]))}`
   }
+  const PROFILES = [...new Set([...Object.values(ACCESS), "Aucun accès physique"])]
+  const jobsList = () => { const m = {}; active().forEach((e) => { m[e.job] = m[e.job] || { job: e.job, dept: e.dept, n: 0, cert: REQ[e.job], profile: profileOf(e) }; m[e.job].n++ }); return Object.values(m).sort((a, b) => a.dept.localeCompare(b.dept) || a.job.localeCompare(b.job)) }
 
   function certifs() {
     const withReq = active().filter((e) => REQ[e.job])
@@ -402,9 +459,10 @@
         ${field("hr-nname", "Nom", input("hr-nname", "Awa Koné"))}${field("hr-njob", "Poste", input("hr-njob", "Femme de chambre"))}
         ${field("hr-ndept", "Service", select("hr-ndept", Object.entries(DEPTS), "HK"))}${field("hr-nctr", "Contrat", select("hr-nctr", ["CDI", "CDD", "Saisonnier", "Journalier", "Intérim", "Stage"], "CDD"))}
         ${field("hr-ncat", "Catégorie", select("hr-ncat", Object.keys(CATS), "E1"))}${field("hr-nbase", "Salaire de base", input("hr-nbase", "90000", 'type="number" step="1000"'))}
-        ${field("hr-nstart", "Date d'entrée", input("hr-nstart", addDays(today, 5), 'type="date"'))}
+        ${field("hr-nstart", "Date d'entrée", input("hr-nstart", addDays(today, 5), 'type="date"'))}${field("hr-nend", "Fin de contrat (hors CDI)", input("hr-nend", addDays(today, 95), 'type="date"'))}
+        ${field("hr-nhours", "Temps de travail", select("hr-nhours", [["40", "Temps plein 40 h"], ["30", "Temps partiel 30 h"], ["20", "Temps partiel 20 h"]], "40"))}
         <div class="full" id="hr-nerr"></div><div class="full">${btn("Créer le dossier et activer le badge", "A.hrm.hire()")}</div></div>
-        <p class="muted" style="margin:10px 0 0">Contrôle du minimum catégoriel (RG-HRM-05, minimum légal d'exemple ${money(PACK.smig)}). Événement hrm.employee.hired → ACC et comptes (simulé).</p></div></section>
+        <p class="muted" style="margin:10px 0 0">Contrats CDI, CDD, saisonnier, journalier, intérim, stage (EF-HRM-002) ; contrôle du minimum catégoriel au prorata du temps de travail (RG-HRM-05, minimum légal d'exemple ${money(PACK.smig)}). Profil d'accès par défaut du poste attribué (EF-HRM-010). Événement hrm.employee.hired → ACC et comptes (simulé).</p></div></section>
       <section><h2>Départ et solde de tout compte</h2><div class="card"><div class="form">
         ${field("hr-semp", "Employé", select("hr-semp", active().map((e) => [e.id, `${e.name} — ${e.job}`]), st ? st.emp : "E14"))}
         ${field("hr-smot", "Motif", select("hr-smot", ["Fin de CDD", "Démission", "Licenciement", "Rupture d'un commun accord"], st ? st.motif : "Fin de CDD"))}
@@ -430,7 +488,7 @@
   function stcPanel(st) {
     const { e, L, total } = stcCalc(st)
     if (st.done) return `<div style="margin-top:12px">${badge("Départ enregistré", "dark")} <strong>${esc(e.name)}</strong>
-      <p>Accès physiques et comptes révoqués en 4 s (événement hrm.employee.terminated → ACC, PLT · simulé). Solde de tout compte : <strong>${money(total)}</strong>.</p>
+      <p>Accès physiques et comptes révoqués en 4 s (événement hrm.employee.terminated → ACC, PLT · simulé) <span class="muted">EF-HRM-010</span> : ${(st.revoked || []).map(esc).join(" · ")}. Solde de tout compte : <strong>${money(total)}</strong>.</p>
       <div class="card"><strong>Certificat de travail (aperçu)</strong><p class="muted" style="margin:6px 0 0">Hôtel Exemple certifie que ${esc(e.name)} a été employé(e) en qualité de ${esc(e.job)} du ${fd(e.start)}/${e.start.slice(0, 4)} au ${fd(st.date)}/${st.date.slice(0, 4)}. Document d'exemple, avec reçu pour solde de tout compte.</p></div></div>`
     return `<div style="margin-top:12px">${tbl(["Élément", "Calcul", "#Montant"], L.map(([l, m, c]) => [esc(l), muted(c), money(m)]), "", `<tfoot><tr><td>Solde de tout compte</td><td></td><td class="num">${money(total)}</td></tr></tfoot>`)}
       <div class="row" style="margin-top:10px">${btn("Confirmer le départ et révoquer les accès", "A.hrm.terminate()", "accent")}</div></div>`
@@ -464,9 +522,12 @@
       <h2>Pointages du ${fd(addDays(today, -1))} et du ${fd(today)} <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-006</span></h2>
       ${tbl(["Date", "Employé", "Poste planifié", "Entrée", "Sortie", "Source", "Anomalies", ""], issues.map(({ k, code, issues: is }) => [fd(k.date), elink(k.emp), SH[code] ? esc(SH[code].l) : "Congé", esc(k.in), k.out ? esc(k.out) : k.date === today ? muted("en poste") : "—", esc(k.src) + (k.src !== "Badge" ? " " + badge("simulé", "outline") : ""),
         is.length ? is.map((x) => badge(x, "dark")).join(" ") : badge("Conforme", "on"),
-        k.ok ? badge("Validé", "outline") : `<span class="row" style="flex-wrap:nowrap">${!k.out && k.date < today ? btn("Corriger la sortie", `A.hrm.fixOut(${q(k.id)})`, "ghost sm") : ""}${btn("Valider", `A.hrm.clockOk(${q(k.id)})`, "sm")}</span>`]))}
+        k.ok ? badge("Validé", "outline") : `<span class="row" style="flex-wrap:nowrap">${!k.out && k.date < today ? btn("Corriger la sortie", `A.hrm.fixOut(${q(k.id)})`, "ghost sm") : ""}${!k.out && k.date === today ? btn("Pointer la sortie", `A.hrm.clockOut(${q(k.id)})`, "ghost sm") : ""}${btn("Valider", `A.hrm.clockOk(${q(k.id)})`, "sm")}</span>`]))}
       <div class="row" style="margin:12px 0">${plannedToday.length ? `<label for="hr-cemp" style="margin:0">Simuler un badge</label>${select("hr-cemp", plannedToday.map((e) => [e.id, `${e.name} (${SH[cell(e.id, 3)].l})`]), plannedToday[0].id)}${btn("Pointer l'entrée", "A.hrm.clockIn()", "ghost")}` : muted("Tous les employés planifiés aujourd'hui ont pointé.")}</div>
-      <p class="muted">Le début de poste publie hrm.shift.started : le badge du salarié s'active sur la plage du poste ± 30 min (RG-HRM-02, ACC simulé).</p>
+      <p class="muted">Le début de poste publie hrm.shift.started : le badge du salarié s'active sur la plage du poste ± 30 min ; la fin de poste publie hrm.shift.ended et le suspend, sauf profil permanent (RG-HRM-02, ACC simulé).</p>
+      <h2>Événements publiés vers le contrôle d'accès <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-009</span></h2>
+      ${tbl(["Quand", "Événement", "Employé", "Effet côté ACC (simulé)"], H.events.slice(0, 10).map((x) => [esc(x.at), badge(x.type, x.type === "hrm.employee.terminated" ? "dark" : "outline"), ename(x.emp), esc(x.detail)]), "Aucun événement.")}
+      <p class="muted">Les badges correspondants apparaissent dans Clés et identifiants › Passes et personnel.</p>
       <h2>Heures majorées du mois <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-007</span></h2>
       ${tbl(["Employé", "#+15 %", "#+50 % / nuit", "#Dim. / férié +75 %", "#Montant estimé"], ot.map((e) => { const v = H.vars[e.id], th = e.base / 173.33
         return [elink(e.id), fh(v.h15 || 0), fh(v.h50 || 0), fh(v.h75 || 0), money(r0(th * (1.15 * (v.h15 || 0) + 1.5 * (v.h50 || 0) + 1.75 * (v.h75 || 0))))] }))}
@@ -547,7 +608,7 @@
       ${STEPS.map(([n, d, who], i) => `<div class="step"><b class="n">${i + 1}</b><div><div class="row between"><strong>${esc(n)}</strong>${p.step > i ? badge("Fait", "on") : p.step === i ? badge("En cours", "outline") : muted("à venir")}</div>
         <div class="muted">${esc(d)} · ${esc(who)}${i === 2 && p.calc ? ` · calculé à ${esc(p.calc.at)} avec ${esc(p.calc.version)}` : ""}${i === 4 && p.validated ? ` · ${esc(USERS[p.validated.v1])} et ${esc(USERS[p.validated.v2])}` : ""}</div>
         ${p.step === i && !p.closed ? `<div style="margin-top:8px">${stepAction(i)}</div>` : ""}</div></div>`).join("")}
-      ${H.regul.length ? `<h2>Régularisations reportées</h2>${tbl(["Date", "Motif", "Période d'imputation"], H.regul.map((x) => [fd(x.date), esc(x.why), esc(x.to)]))}` : ""}
+      ${H.regul.length ? `<h2>Régularisations reportées</h2>${tbl(["Date", "Motif", "Période d'imputation", "#Montant"], H.regul.map((x) => [fd(x.date), esc(x.why), esc(x.to), x.amount ? money(x.amount) : muted("—")]))}` : ""}
       <h2>Périodes précédentes</h2>
       ${tbl(["Période", "#Masse brute", "#Coût employeur", "#Délai de clôture", "Statut"], H.history.slice().reverse().map((h) => [esc(monthLabel(h.month)), money(h.brut), money(h.cost), h.delay + " j", badge("Clôturée", "outline")]))}`
   }
@@ -559,7 +620,13 @@
         return [elink(e.id), fh(v.h15 || 0), fh(v.h50 || 0), fh(v.h75 || 0), absDays(e.id, cur().month) + " j", leaveDaysMonth(e.id, cur().month) + " j", money(v.prime || 0), H.tronc.integrated && tr[e.id] ? money(tr[e.id].share) : "—", money(v.conso || 0), money(loanDue(e.id))] }))}
       <h2>Saisie d'une prime</h2>
       <div class="card"><div class="form">${field("hr-vemp", "Employé", select("hr-vemp", active().map((e) => [e.id, e.name]), "E05"))}${field("hr-vamt", "Prime de rendement", input("hr-vamt", "25000", 'type="number" step="1000"'))}
-        <div style="align-self:end">${btn("Enregistrer", "A.hrm.prime()", "ghost")}</div></div></div>`
+        <div style="align-self:end">${btn("Enregistrer", "A.hrm.prime()", "ghost")}</div></div></div>
+      <h2>Rappel et régularisation rétroactive <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-019</span></h2>
+      <div class="card"><p class="muted" style="margin-top:0">Augmentation avec effet antérieur : les périodes clôturées sont recalculées avec le nouveau salaire, l'écart de brut est reporté en rubrique 1400 sur la période ouverte (RG-HRM-03 : aucune période clôturée n'est modifiée).</p>
+        <div class="form">${field("hr-remp", "Employé", select("hr-remp", active().map((e) => [e.id, e.name]), "E13"))}${field("hr-rfrom", "Effet à partir de", select("hr-rfrom", H.history.map((h) => [h.month, monthLabel(h.month)]), H.history[Math.max(0, H.history.length - 2)].month))}
+        ${field("hr-rbase", "Nouveau salaire de base", input("hr-rbase", "130000", 'type="number" step="1000"'))}${field("hr-rrby", "Saisi par", userSel("hr-rrby", "PAIE"))}
+        <div class="full" id="hr-rerr"></div><div class="full">${btn("Recalculer et reporter l'écart", "A.hrm.rappel()")}</div></div>
+        ${H.regul.some((x) => x.detail) ? tbl(["Employé", "Période recalculée", "#Ancien brut", "#Nouveau brut", "#Écart"], H.regul.filter((x) => x.detail).flatMap((x) => x.detail.map((d) => [esc(x.name), esc(monthLabel(d.m)), money(d.old), money(d.neu), money(d.neu - d.old)]))) : ""}</div>`
   }
 
   function controle() {
@@ -588,9 +655,9 @@
     const ret = s.aen + s.loanApp + s.consoApp
     const expl = `Votre brut est de ${money(s.brut)} : salaire de base, ancienneté${s.lines.some((l) => l.cat === "var") ? ", heures et primes du mois" : ""} et indemnités. La CNPS retient ${pc(PACK.retS)} pour la retraite et la CMU ${money(PACK.cmuS)}, soit ${money(s.salCot)}. L'ITS est calculé sur ${money(s.brutImp)} (brut imposable, hors indemnités non imposables) selon le barème, diminué de la réduction pour ${String(e.parts).replace(".", ",")} part(s) : ${money(s.its)}. ${ret ? `Sont ensuite retenus ${money(ret)} (avantage en nature non versé, prêts, consommations). ` : ""}Il vous reste ${money(s.net)} net à payer. L'hôtel paie en plus ${money(s.patSoc + s.patTax)} de charges patronales.`
     return `<div class="row between noprint"><h1>Bulletin de paie</h1><span class="row">${btn("Retour aux bulletins", "go('hr-paie/bulletins')", "ghost")}<button class="btn" onclick="print()">Imprimer</button></span></div>
-      <p class="lead noprint">${p.closed ? "Publié" : p.calc ? "Calculé, non publié" : "Provisoire"} · ${esc(s.version)} · calcul historisé et reproductible (EF-HRM-025). Taux et barèmes d'exemple.</p>
+      <p class="lead noprint">${p.closed ? "Publié" : p.calc ? "Calculé, non publié" : "Provisoire"} · ${esc(s.version)} · calcul historisé et reproductible (EF-HRM-025). Du brut au net : base, sursalaire, primes, avantages en nature, indemnités plafonnées, cotisations, ITS, retenues (EF-HRM-014). Taux et barèmes d'exemple.</p>
       <div class="card invoice">
-        <div class="row between"><div><div class="big">${esc(D.hotel)}</div><div class="muted">Hôtel Exemple SARL · n° employeur CNPS 0000000 (fictif) · période ${esc(monthLabel(p.month))}</div></div>
+        <div class="row between"><div><div class="big">${esc(D.hotel)}</div><div class="muted">${esc(ENT(e.entity).name)} · ${esc(e.prop)} · n° employeur CNPS 0000000 (fictif) · période ${esc(monthLabel(p.month))} · devise ${esc(ENT(e.entity).cur)}</div></div>
           <div style="text-align:right"><strong>${esc(e.name)}</strong><div class="muted">${esc(e.mat)} · ${esc(e.job)} · ${esc(e.cat)} · ${esc(e.contract)}</div><div class="muted">${esc(e.family)} · entrée le ${fd(e.start)}/${e.start.slice(0, 4)}</div></div></div>
         <div class="tablewrap"><table style="margin-top:12px"><thead><tr><th>Code</th><th>Rubrique</th><th>Base</th><th>Taux</th><th class="num">Gain</th><th class="num">Retenue</th><th class="num">Part patronale</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -609,8 +676,17 @@
     const okL = lines.filter((x) => x.e.pay.ref && !x.e.payPending), ko = lines.filter((x) => !x.e.pay.ref || x.e.payPending)
     const grp = (mode) => okL.filter((x) => x.e.pay.mode === mode)
     const block = (mode, file) => { const g = grp(mode); return card(`${mode} — ${g.length} paiement(s) · ${money(sum(g, (x) => x.s.net))}`, `<p class="muted" style="margin-top:0">${esc(file)}</p>${tbl(["Employé", "Compte", "#Net"], g.map((x) => [ename(x.e.id), esc(x.e.pay.ref), money(x.s.net)]))}`) }
-    return `${p.paid ? `<div class="card">${badge("Exécuté (simulé)", "on")} Lots validés par ${esc(USERS[p.paid.v1])} et ${esc(USERS[p.paid.v2])}. Confirmation fin.payment.executed reçue, paiements rapprochés (simulé).</div>` : ""}
+    const R = p.recon || {}, nR = okL.filter((x) => /^Rapproché/.test(R[x.e.id] || "")).length
+    const file = okL.filter((x) => x.e.pay.mode === "Virement").slice(0, 3).map((x) => `VIR;${x.e.mat};${x.e.pay.ref};${x.s.net};XOF;SALAIRE ${p.month}`).join("\n")
+    const recon = p.paid ? `<h2>Rapprochement des paiements <span class="muted" style="font-size:14px;font-weight:400">EF-HRM-021</span></h2>
+      ${cards([kpi("Paiements rapprochés", `${nR}/${okL.length}`, "relevé bancaire + état de l'agrégateur (simulés)"), kpi("Montant rapproché", money(sum(okL.filter((x) => /^Rapproché/.test(R[x.e.id] || "")), (x) => x.s.net)), "sur " + money(sum(okL, (x) => x.s.net))), kpi("Rejets", okL.filter((x) => /^Rejeté/.test(R[x.e.id] || "")).length, "à relancer")])}
+      <div class="row" style="margin:12px 0">${btn(Object.keys(R).length ? "Réimporter les relevés" : "Importer le relevé bancaire et l'état mobile money (simulé)", "A.hrm.recon()", "ghost")}</div>
+      ${Object.keys(R).length ? tbl(["Employé", "Mode", "Compte", "#Net", "Statut", ""], okL.map((x) => { const st = R[x.e.id] || "Non trouvé"
+        return [ename(x.e.id), esc(x.e.pay.mode), esc(x.e.pay.ref), money(x.s.net), badge(st, /^Rapproché/.test(st) ? "on" : "dark"), /^Rejeté|Non trouvé/.test(st) ? btn("Relancer le paiement", `A.hrm.retryPay(${q(x.e.id)})`, "ghost sm") : ""] })) : ""}` : ""
+    return `${p.paid ? `<div class="card">${badge("Exécuté (simulé)", "on")} Lots validés par ${esc(USERS[p.paid.v1])} et ${esc(USERS[p.paid.v2])}. Confirmation fin.payment.executed reçue (simulé).</div>` : ""}
       <div class="cols" style="margin-top:14px">${block("Virement", "Fichier BANQUE-LAGUNE-EXEMPLE-" + p.month.replace("-", "") + ".txt (format bancaire simulé)")}${block("Mobile Money", "Lot transmis à l'agrégateur mobile money (simulé)")}</div>
+      <details style="margin-top:10px"><summary class="muted">Aperçu du fichier de virement (format simulé) · EF-HRM-021</summary><pre style="white-space:pre-wrap;font-size:12px">${esc(file)}\n…</pre></details>
+      ${recon}
       ${ko.length ? `<div class="err" style="margin-top:14px">Exclus du lot : ${ko.map((x) => esc(x.e.name) + (x.e.payPending ? " (changement non validé)" : " (coordonnées manquantes)")).join(", ")}. Paiement à régulariser après correction du dossier.</div>` : ""}
       ${p.paid ? "" : `<h2>Double validation des paiements</h2><div class="card"><div class="form">${field("hr-pv1", "Trésorerie", userSel("hr-pv1", "TRE"))}${field("hr-pv2", "Seconde validation", userSel("hr-pv2", "DAF"))}<div style="align-self:end">${btn("Valider et transmettre", "A.hrm.pay()", "accent")}</div></div>
         <p class="muted" style="margin:8px 0 0">Deux personnes distinctes ; celui qui a modifié un salaire ce mois ne peut pas valider le paiement (RG-HRM-04).</p></div>`}`
@@ -631,18 +707,64 @@
     const l = H.loans.find((x) => x.id === ui.hrLoan) || H.loans[0]
     const sched = []
     if (l) { let rem = l.remaining, m = cur().month; while (rem > 0 && sched.length < 24) { const pay = Math.min(l.monthly, rem); rem -= pay; sched.push([esc(monthLabel(m)), money(pay), money(rem)]); m = nextMonth(m) } }
-    return `${tbl(["Réf.", "Employé", "Type", "#Montant", "#Échéance", "#Restant dû", ""], H.loans.map((x) => [esc(x.id), elink(x.emp), esc(x.type), money(x.amount), money(x.monthly), x.remaining ? money(x.remaining) : badge("Soldé", "on"), btn("Échéancier", `ui.hrLoan=${q(x.id)};render()`, "ghost sm")]))}
+    return `<p class="muted">Acomptes, avances et prêts au personnel, remboursés par retenue sur salaire selon l'échéancier (EF-HRM-016). Retenue effective à la clôture de chaque période.</p>
+      ${tbl(["Réf.", "Employé", "Type", "#Montant", "#Échéance", "#Restant dû", ""], H.loans.map((x) => [esc(x.id), elink(x.emp), esc(x.type), money(x.amount), money(x.monthly), x.remaining ? money(x.remaining) : badge("Soldé", "on"), `<span class="row" style="flex-wrap:nowrap">${btn("Échéancier", `ui.hrLoan=${q(x.id)};render()`, "ghost sm")}${x.remaining ? btn("Remboursement anticipé", `A.hrm.repay(${q(x.id)})`, "ghost sm") : ""}</span>`]))}
       ${l ? `<h2>Échéancier ${esc(l.id)} — ${ename(l.emp)}</h2>${tbl(["Mois", "#Retenue", "#Restant après"], sched, "Soldé.")}` : ""}
       <h2>Nouvelle avance ou nouveau prêt</h2>
-      <div class="card"><div class="form">${field("hr-lnemp", "Employé", select("hr-lnemp", active().map((e) => [e.id, e.name]), "E14"))}${field("hr-lntype", "Type", select("hr-lntype", ["Avance sur salaire", "Prêt"], "Avance sur salaire"))}
+      <div class="card"><div class="form">${field("hr-lnemp", "Employé", select("hr-lnemp", active().map((e) => [e.id, e.name]), "E14"))}${field("hr-lntype", "Type", select("hr-lntype", ["Acompte (mois en cours)", "Avance sur salaire", "Prêt"], "Avance sur salaire"))}
         ${field("hr-lnamt", "Montant", input("hr-lnamt", "50000", 'type="number" step="1000"'))}${field("hr-lnn", "Nombre d'échéances", input("hr-lnn", "2", 'type="number" min="1" max="24"'))}
         <div class="full" id="hr-lnerr"></div><div class="full">${btn("Accorder", "A.hrm.loan()")}</div></div>
         <p class="muted" style="margin:8px 0 0">L'échéance ne peut pas dépasser la quotité saisissable (exemple : 1/3 du net) ; le net ne peut jamais être négatif (RG-HRM-06).</p></div>`
   }
 
+  // ----- Portail self-service employé (app mobile personnel, EF-HRM-028) -----
+  function portail() {
+    const e = E(ui.hrMe) && E(ui.hrMe).status === "actif" ? E(ui.hrMe) : E("E09"), p = cur(), s = slips()[e.id]
+    const mine = H.leaves.filter((l) => l.emp === e.id).slice(-4).reverse(), att = H.attest.filter((a) => a.emp === e.id).slice().reverse()
+    const plan = WEEK.map((d, i) => { const c = cell(e.id, i); return `<div class="row between"><span>${esc(wd(d))} ${fd(d)}</span>${c === "C" ? badge("Congé", "outline") : c === "R" ? muted("Repos") : `<strong>${esc(SH[c].l)}</strong>`}</div>` }).join("")
+    const slipsL = [...(p.closed ? [[p.month, true]] : [[p.month, false]]), ...H.history.slice(-2).reverse().map((h) => [h.month, true])]
+    const app = `<p class="muted" style="margin:0">${esc(e.name)} · ${esc(e.mat)}</p>
+      <h3>Mon planning ${H.planPublished ? badge("publié", "on") : badge("provisoire", "outline")}</h3>${plan}
+      <h3>Mes bulletins</h3>${slipsL.map(([m, pub]) => `<div class="row between"><span>${esc(monthLabel(m))}</span>${pub ? (m === p.month ? btn("Ouvrir", `go('hr-bulletin/${esc(e.id)}')`, "ghost sm") : badge("Coffre-fort", "outline")) : muted("en cours · " + (s ? money(s.net) + " estimé" : "—"))}</div>`).join("")}
+      <h3>Mes congés · solde ${fj(cpSolde(e))}</h3>
+      ${field("hr-mfrom", "Du", input("hr-mfrom", addDays(today, 14), 'type="date"'))}${field("hr-mto", "Au", input("hr-mto", addDays(today, 15), 'type="date"'))}
+      <div id="hr-merr"></div>${btn("Demander un congé", "A.hrm.meLeave()", "sm")}
+      ${mine.map((l) => `<div class="row between"><span>${esc(l.type)} ${fd(l.from)}–${fd(l.to)}</span>${badge(l.status, l.status === "Validée" ? "on" : l.status === "Refusée" ? "dark" : "outline")}</div>`).join("")}
+      <h3>Attestations</h3><div class="row">${btn("Attestation de travail", "A.hrm.meAttest('Attestation de travail')", "ghost sm")}${btn("Attestation de salaire", "A.hrm.meAttest('Attestation de salaire')", "ghost sm")}</div>
+      ${att.map((a) => `<div class="row between"><span>${esc(a.id)} · ${esc(a.type)} · ${fd(a.date)}</span>${badge(a.status, "on")}</div>`).join("")}
+      <h3>Mes coordonnées de paiement</h3><p class="muted" style="margin:0">${esc(e.pay.ref || "à compléter")}</p>
+      ${e.payPending ? badge("Changement en attente de validation RH", "outline") : `${field("hr-mref", "Nouveau compte", input("hr-mref", "", 'placeholder="Mobile Money ••••0000"'))}${btn("Demander le changement", "A.hrm.mePay()", "ghost sm")}`}`
+    const last = att[0]
+    return pageHead("Portail employé", "Application mobile du personnel (simulée) : planning, bulletins, attestations et demandes. Données fictives.")
+      + `<div class="row" style="margin-bottom:12px"><label for="hr-me" style="margin:0">Connecté en tant que</label>${select("hr-me", active().map((x) => [x.id, x.name]), e.id, `onchange="ui.hrMe=this.value;render()"`)}<span class="muted">EF-HRM-028</span></div>
+      <div class="cols"><section>${phone(app, "HMS Personnel")}</section><section>
+        ${last ? card(`${last.type} — aperçu`, `<p style="margin-top:0">${esc(ENT(e.entity).name)} atteste que ${esc(e.name)}, matricule ${esc(e.mat)}, est employé(e) en qualité de ${esc(e.job)} (${esc(e.contract)}) depuis le ${fd(e.start)}/${e.start.slice(0, 4)}${last.type === "Attestation de salaire" && s ? `, pour un salaire brut mensuel de ${money(s.brut)}` : ""}.</p><p class="muted">Document d'exemple généré le ${fd(last.date)}, déposé dans le coffre-fort électronique (simulé).</p>`) : ""}
+        ${card("Circuit des demandes", `<p class="muted" style="margin-top:0">Congés : chef de service puis RH (Plannings et temps › Congés). Coordonnées de paiement : validation RH et alerte anti-fraude (RG-HRM-07). Bulletins publiés à la clôture de la paie.</p>${btn("Voir les demandes de congés", "go('hr-temps/conges')", "ghost sm")}`)}
+      </section></div>`
+  }
+
+  // ----- Multi-entités, multi-établissements, multi-devises (EF-HRM-026) -----
+  const entRows = () => H.entities.map((x) => {
+    if (x.id === "ENT1") { const t = totals(slips()), p = cur(); return { x, n: t.n, brut: t.brut, cost: t.cost, status: p.closed ? "Clôturée" : p.step >= 3 ? "Calculée" : "Ouverte", live: true } }
+    const mut = H.emps.filter((e) => e.status === "muté" && e.entity === x.id).map((e) => slip({ ...e, status: "actif" }, cur().month, { vars: {}, noTronc: true, noAbs: true, noLoans: true }))
+    const brut = x.brut + r0(sum(mut, (m) => m.brut) / x.rate)
+    return { x, n: x.n + mut.length, brut, cost: r0(brut * 1.21), status: x.status, mut: mut.length }
+  })
+  function entites() {
+    const rows = entRows(), cons = sum(rows, (r) => r.cost * r.x.rate)
+    const props = ENT("ENT1").props.map((pp) => { const ids = active().filter((e) => e.prop === pp).map((e) => e.id), S = slips(); return [esc(pp), ids.length, money(sum(ids, (i) => (S[i] || { brut: 0 }).brut)), money(sum(ids, (i) => (S[i] || { cost: 0 }).cost))] })
+    return `<p class="muted">Chaque entité juridique a sa période de paie, son pack légal et sa devise ; la consolidation groupe se fait en XOF au taux d'exemple (EF-HRM-026). Entités hors Hôtel Exemple SARL : effectifs et montants d'exemple.</p>
+      ${cards([kpi("Entités juridiques", H.entities.length, `${new Set(H.entities.map((x) => x.cur)).size} devises`), kpi("Effectif groupe", sum(rows, (r) => r.n), "toutes entités"), kpi("Coût employeur consolidé", money(cons), "contre-valeur XOF · exemple")])}
+      ${tbl(["Entité", "Pays · pack", "Devise", "#Effectif", "#Masse brute (devise)", "#Coût employeur (devise)", "#Contre-valeur XOF", "Période", ""], rows.map((r) => [esc(r.x.name) + (r.mut ? `<div class="muted">dont ${r.mut} muté(s) depuis Hôtel Exemple SARL</div>` : ""), `${esc(r.x.country)}<div class="muted">${esc(r.x.pack)}</div>`, esc(r.x.cur) + (r.x.rate !== 1 ? `<div class="muted">1 ${esc(r.x.cur)} = ${r.x.rate} XOF</div>` : ""), r.n, fx(r.brut, r.x.cur), fx(r.cost, r.x.cur), money(r.cost * r.x.rate),
+        badge(r.status, r.status === "Clôturée" ? "outline" : r.status === "Calculée" ? "on" : ""), r.live ? btn("Ouvrir le cycle", "go('hr-paie/cycle')", "ghost sm") : r.status !== "Clôturée" ? btn(r.status === "Ouverte" ? "Calculer" : "Clôturer", `A.hrm.entStep(${q(r.x.id)})`, "ghost sm") : ""]), "", `<tfoot><tr><td>Consolidé groupe</td><td></td><td>XOF</td><td class="num">${sum(rows, (r) => r.n)}</td><td></td><td></td><td class="num">${money(cons)}</td><td></td><td></td></tr></tfoot>`)}
+      <h2>Établissements de Hôtel Exemple SARL</h2>
+      ${tbl(["Établissement", "#Effectif", "#Masse brute", "#Coût employeur"], props)}
+      <p class="muted">Une mutation (Dossier › Avenant, promotion ou mutation) vers un autre établissement de la même entité garde la paie ; vers une autre entité, l'employé sort de cette paie et rejoint celle de l'entité cible, dans sa devise.</p>`
+  }
+
   function parametres() {
     const P = PACK
-    const rub = [["Gains de base", "1000 Salaire de base · 1010 Sursalaire · 1020 Ancienneté (2 % à 2 ans puis +1 %/an, plafond 25 %)"], ["Gains variables", "1100–1120 Heures majorées · 1150 Prime de rendement · 1160 Service et pourboires"], ["Indemnités", "1200 Transport (non imposable ≤ plafond) · 1210 Logement · 1220 Panier"], ["Avantages en nature", "1300 Logement (nourriture, véhicule paramétrables)"],
+    const rub = [["Gains de base", "1000 Salaire de base · 1010 Sursalaire · 1020 Ancienneté (2 % à 2 ans puis +1 %/an, plafond 25 %)"], ["Gains variables", "1100–1120 Heures majorées · 1150 Prime de rendement · 1160 Service et pourboires · 1400 Rappel sur périodes antérieures"], ["Indemnités", "1200 Transport (non imposable ≤ plafond) · 1210 Logement · 1220 Panier"], ["Avantages en nature", "1300 Logement · 1310 Nourriture (véhicule paramétrable)"],
       ["Cotisations sociales", "2000 Retraite · 2010 Prestations familiales · 2020 Accidents du travail · 2030 CMU"], ["Impôts sur salaires", "3000 ITS selon barème et parts"], ["Taxes patronales", "3100 Contribution employeur · 3110 Taxe d'apprentissage · 3120 FPC"], ["Retenues", "4000 Reprise avantage en nature · 4010 Prêts et avances · 4020 Consommations · absences"], ["Informatives", "9000 Coût employeur · 9010 Congés acquis · 9020 Reliquat reporté"]]
     return `<p class="muted">${esc(P.version)} · date d'effet ${fd(P.effect)}/${P.effect.slice(0, 4)} · ${badge("Taux d'exemple", "outline")} à faire valider par un expert local avant tout usage (EF-HRM-011, EF-HRM-012).</p>
       <div class="cols"><section><h2>Taux et plafonds</h2>
@@ -732,6 +854,73 @@
   // ---------- Actions ----------
   const err = (id, m) => { const el = document.getElementById(id); if (el) el.innerHTML = `<div class="err">${esc(m)}</div>`; return false }
   const actions = {
+    editId(id) {
+      const e = E(id), parts = Number(val("hr-iparts")), mail = val("hr-imail")
+      if (mail && !/^[^@\s]+@[^@\s]+$/.test(mail)) return err("hr-ierr", "E-mail invalide.")
+      const t = parts !== e.parts ? touch(`parts ITS de ${e.name}`) : ""
+      Object.assign(e, { addr: val("hr-iaddr"), phone: val("hr-iphone"), email: mail, family: val("hr-ifam"), parts, manager: val("hr-imgr") || null })
+      e.history.unshift({ date: today, type: "Dossier", detail: "Identité / situation mise à jour", by: "DRH" })
+      say("Dossier mis à jour", t); render()
+    },
+    editPay(id) {
+      const e = E(id), by = val("hr-rby"), ks = ["sursal", "transport", "logement", "panier", "aenLog", "aenNour"]
+      const nv = Object.fromEntries(ks.map((k) => [k, Math.max(0, Number(val("hr-r" + k)) || 0)]))
+      const ch = ks.filter((k) => nv[k] !== (e[k] || 0))
+      if (!ch.length) return toast("Aucun changement")
+      Object.assign(e, nv)
+      e.history.unshift({ date: today, type: "Rémunération", detail: ch.join(", ") + " modifié(s)", by })
+      if (!cur().editors.includes(by)) cur().editors.push(by)
+      say("Éléments de rémunération enregistrés", touch(`rémunération de ${e.name}`)); render()
+    },
+    rappel() {
+      const p = cur(), e = E(val("hr-remp")), from = val("hr-rfrom"), base = Number(val("hr-rbase")), by = val("hr-rrby")
+      if (p.closed) return err("hr-rerr", "La période courante est clôturée : ouvrez la période suivante pour y reporter le rappel (RG-HRM-03).")
+      if (!(base > e.base)) return err("hr-rerr", `Le nouveau salaire doit dépasser le salaire actuel (${money(e.base)}).`)
+      if (base < minFor(e.cat, e.hours)) return err("hr-rerr", `Inférieur au minimum de la catégorie ${e.cat} (RG-HRM-05).`)
+      const months = H.history.map((h) => h.month).filter((m) => m >= from && m >= e.start.slice(0, 7))
+      const o = { vars: {}, noTronc: true, noAbs: true, noLoans: true }
+      const detail = months.map((m) => ({ m, old: slip(e, m, o).brut, neu: slip({ ...e, base }, m, o).brut }))
+      const amount = sum(detail, (d) => d.neu - d.old)
+      const v = (H.vars[e.id] = { ...(H.vars[e.id] || {}) })
+      v.rappel = (v.rappel || 0) + amount; v.rappelInfo = `${months.length} mois (${months.map((m) => monthLabel(m).split(" ")[0]).join(", ")})`
+      const old = e.base; e.base = base
+      e.history.unshift({ date: today, type: "Augmentation rétroactive", detail: `${money(old)} → ${money(base)} effet ${monthLabel(from)}`, by })
+      if (!cur().editors.includes(by)) cur().editors.push(by)
+      H.regul.push({ date: today, why: `Rappel de salaire ${e.name} (${months.length} mois recalculés)`, to: monthLabel(p.month), amount, name: e.name, detail })
+      say(`Rappel de ${money(amount)} reporté sur ${monthLabel(p.month)}`, touch(`rappel de ${e.name}`)); render()
+    },
+    repay(lid) {
+      const l = H.loans.find((x) => x.id === lid), amt = l.remaining
+      l.remaining = 0; l.early = today
+      say(`${lid} soldé par remboursement anticipé de ${money(amt)}`, touch("remboursement anticipé")); render()
+    },
+    recon() {
+      const p = cur(), S = slips(); p.recon = {}
+      Object.values(S).forEach((s) => { const e = E(s.id); if (s.net > 0 && e.pay.ref && !e.payPending) p.recon[e.id] = e.id === "E13" ? "Rejeté : numéro mobile money inactif (simulé)" : "Rapproché" })
+      toast("Relevés importés · paiements rapprochés automatiquement (simulé)"); render()
+    },
+    retryPay(id) { cur().recon[id] = "Rapproché (relance)"; toast(`Paiement de ${E(id).name} relancé et rapproché (simulé)`); render() },
+    entStep(id) { const x = ENT(id); x.status = x.status === "Ouverte" ? "Calculée" : "Clôturée"; toast(`${x.name} : paie ${x.status.toLowerCase()} (${x.pack})`); render() },
+    meLeave() {
+      const e = E(ui.hrMe) || E("E09"), from = val("hr-mfrom"), to = val("hr-mto")
+      if (!from || !to || to < from) return err("hr-merr", "Dates incorrectes.")
+      if (workDays(from, to) > cpSolde(e)) return err("hr-merr", `Solde insuffisant : ${fj(cpSolde(e))}.`)
+      H.leaves.push({ id: "L-" + String(H.leaves.length + 1).padStart(2, "0"), emp: e.id, type: "Congés payés", from, to, status: "Demandée", note: "Demande via l'app mobile" })
+      toast("Demande envoyée au chef de service"); render()
+    },
+    meAttest(type) {
+      const e = E(ui.hrMe) || E("E09")
+      H.attSeq = (H.attSeq || 1) + 1
+      H.attest.push({ id: "AT-" + String(H.attSeq).padStart(2, "0"), emp: e.id, type, date: today, status: "Générée" })
+      toast(`${type} générée et déposée dans le coffre-fort (simulé)`); render()
+    },
+    mePay() {
+      const e = E(ui.hrMe) || E("E09"), ref = val("hr-mref")
+      if (!ref) return toast("Indiquez le nouveau compte")
+      e.payPending = { mode: /mobile/i.test(ref) ? "Mobile Money" : "Virement", ref, on: today, src: "Demande via l'app mobile personnel" }
+      audit(`Demande de changement de coordonnées (app mobile) pour ${e.name}`)
+      say("Demande transmise aux RH · alerte anti-fraude émise (RG-HRM-07)", touch("coordonnées de paiement modifiées")); render()
+    },
     showSal(id) { ui.hrShow = id; audit(`Affichage du salaire de ${E(id).name} (Responsable RH)`); render() },
     payRequest(id) {
       const ref = val("hr-pref")
@@ -748,10 +937,24 @@
       toast(ok ? "Coordonnées validées" : "Changement refusé"); render()
     },
     amend(id) {
-      const e = E(id), base = Number(val("hr-abase")), cat = val("hr-acat"), type = val("hr-atype"), date = val("hr-adate"), by = val("hr-aby"), prop = val("hr-aprop")
+      const e = E(id), base = Number(val("hr-abase")), cat = val("hr-acat"), type = val("hr-atype"), date = val("hr-adate"), by = val("hr-aby"), [entId, prop] = val("hr-aprop").split("|")
       if (!(base > 0) || !date) return err("hr-aerr", "Indiquez la date d'effet et le salaire.")
-      if (base < Math.max(CATS[cat], PACK.smig)) return err("hr-aerr", `Salaire inférieur au minimum de la catégorie ${cat} (${money(CATS[cat])}, paramètre daté) : refusé (RG-HRM-05).`)
-      const detail = [e.base !== base ? `${money(e.base)} → ${money(base)}` : "", e.cat !== cat ? `catégorie ${e.cat} → ${cat}` : "", type === "Passage en CDI" ? `${e.contract} → CDI` : "", type === "Mutation" ? `vers ${prop}` : ""].filter(Boolean).join(" · ") || "sans changement de rémunération"
+      if (base < minFor(cat, e.hours)) return err("hr-aerr", `Salaire inférieur au minimum de la catégorie ${cat} (${money(minFor(cat, e.hours))}, paramètre daté) : refusé (RG-HRM-05).`)
+      if (type === "Mutation" && prop === e.prop) return err("hr-aerr", "Choisissez un autre établissement pour une mutation.")
+      const detail = [e.base !== base ? `${money(e.base)} → ${money(base)}` : "", e.cat !== cat ? `catégorie ${e.cat} → ${cat}` : "", type === "Passage en CDI" ? `${e.contract} → CDI` : "", type === "Mutation" ? `vers ${prop}${entId !== e.entity ? ` (${ENT(entId).name})` : ""}` : ""].filter(Boolean).join(" · ") || "sans changement de rémunération"
+      if (type === "Mutation") {
+        const inter = entId !== e.entity
+        e.history.unshift({ date, type: inter ? "Mutation inter-entités" : "Mutation", detail, by }); e.prop = prop
+        H.moves.unshift({ date, name: e.name, type: "Avenant", detail: `Mutation : ${detail}` })
+        if (inter) {
+          e.entity = entId; e.status = "muté"; e.base = base; e.cat = cat; e.access = "révoqué"
+          accPush(e, "hrm.employee.terminated", `Mutation vers ${ENT(entId).name} : accès de l'établissement révoqués`)
+          return say(`Mutation enregistrée · ${e.name} rejoint ${ENT(entId).name} (paie en ${ENT(entId).cur})`, touch(`mutation de ${e.name}`)), render()
+        }
+        const t0 = e.base !== base ? touch(`mutation de ${e.name}`) : ""
+        e.base = base; e.cat = cat
+        return say(`Mutation vers ${prop} enregistrée (même entité, même paie)`, t0), render()
+      }
       e.history.unshift({ date, type, detail, by })
       H.moves.unshift({ date, name: e.name, type: "Avenant", detail: `${type} : ${detail}` })
       const t = e.base !== base ? touch(`avenant de ${e.name}`) : ""
@@ -767,20 +970,28 @@
       t.inscrits.push(...add); toast(add.length ? `${add.length} inscription(s)` : "Aucun employé à inscrire"); render()
     },
     hire() {
-      const base = Number(val("hr-nbase")), cat = val("hr-ncat"), name = val("hr-nname"), ctr = val("hr-nctr")
+      const base = Number(val("hr-nbase")), cat = val("hr-ncat"), name = val("hr-nname"), ctr = val("hr-nctr"), hours = Number(val("hr-nhours")) || 40, start = val("hr-nstart"), end = val("hr-nend")
       if (!name) return err("hr-nerr", "Indiquez un nom.")
-      if (ctr !== "Stage" && base < Math.max(CATS[cat], PACK.smig)) return err("hr-nerr", `Salaire inférieur au minimum de la catégorie ${cat} (${money(CATS[cat])}) : refusé (RG-HRM-05).`)
+      if (!start) return err("hr-nerr", "Indiquez la date d'entrée.")
+      if (TERM.includes(ctr) && (!end || end <= start)) return err("hr-nerr", `Un contrat ${ctr} exige une date de fin postérieure à l'entrée (EF-HRM-002).`)
+      if (ctr === "Stage" && base < r0(PACK.smig * 0.3)) return err("hr-nerr", `Gratification de stage inférieure au minimum d'exemple (${money(r0(PACK.smig * 0.3))}).`)
+      if (ctr !== "Stage" && base < minFor(cat, hours)) return err("hr-nerr", `Salaire inférieur au minimum de la catégorie ${cat} pour ${hours} h (${money(minFor(cat, hours))}) : refusé (RG-HRM-05).`)
       const id = "E" + String(H.emps.length + 1).padStart(2, "0"), dept = val("hr-ndept")
-      H.emps.push(emp(id, name, dept, val("hr-njob") || "Employé", cat, ctr, val("hr-nstart"), base, { transport: 25000, pay: { mode: "Mobile Money", ref: "" }, pts: ["FNB", "HEB", "HK"].includes(dept) ? 1 : 0, cpAcq: 0, cpPris: 0, noClock: false }))
+      const ne = emp(id, name, dept, val("hr-njob") || "Employé", cat, ctr, start, base, { end: ctr === "CDI" ? null : end, hours, transport: 25000, pay: { mode: "Mobile Money", ref: "" }, pts: ["FNB", "HEB", "HK"].includes(dept) ? 1 : 0, cpAcq: 0, cpPris: 0, noClock: false })
+      H.emps.push(ne)
       H.plan[id] = "RRRRRRR"
-      H.moves.unshift({ date: val("hr-nstart"), name, type: "Entrée", detail: `${ctr} · badge activé à la date d'entrée (ACC simulé) · prorata en paie` })
-      const t = val("hr-nstart") <= monthEnd(cur().month) ? touch(`embauche de ${name}`) : ""
+      accPush(ne, "hrm.employee.hired", `Badge créé · profil par défaut « ${profileOf(ne)} »`)
+      H.moves.unshift({ date: start, name, type: "Entrée", detail: `${ctr}${hours < 40 ? ` ${hours} h` : ""}${ctr !== "CDI" ? ` jusqu'au ${fd(end)}/${end.slice(0, 4)}` : ""} · profil d'accès « ${profileOf(ne)} » (ACC simulé) · prorata en paie` })
+      const t = start <= monthEnd(cur().month) ? touch(`embauche de ${name}`) : ""
       say(`Dossier ${id} créé · hrm.employee.hired publié`, t); go("hr-personnel/dossiers/" + id)
     },
     stc() { ui.hrStc = { emp: val("hr-semp"), motif: val("hr-smot"), date: val("hr-sdate") || today }; render() },
     terminate() {
       const st = ui.hrStc, e = E(st.emp), { total } = stcCalc(st)
-      e.status = "sorti"; e.end = st.date; st.done = true
+      e.status = "sorti"; e.end = st.date; st.done = true; e.access = "révoqué"
+      st.revoked = [`Badge ${"B-H" + e.id.slice(1)} (${profileOf(e)})`, "Compte applicatif HMS et app mobile personnel", ...((D.acc && D.acc.passes || []).filter((x) => x.holder.startsWith(e.name) && x.status === "active").map((x) => x.type))]
+      if (D.acc && D.acc.passes) D.acc.passes.filter((x) => x.holder.startsWith(e.name) && x.status === "active").forEach((x) => (x.status = "révoqué"))
+      accPush(e, "hrm.employee.terminated", `Départ (${st.motif}) : ${st.revoked.length} accès révoqués`)
       H.loans.filter((l) => l.emp === e.id).forEach((l) => (l.remaining = 0))
       H.moves.unshift({ date: st.date, name: e.name, type: "Sortie", detail: `${st.motif} · solde ${money(total)} · accès révoqués (ACC simulé) · certificat de travail généré` })
       say(`Départ de ${e.name} enregistré · accès révoqués`, touch(`départ de ${e.name}`)); render()
@@ -799,7 +1010,20 @@
     clockIn() {
       const id = val("hr-cemp"), s = SH[cell(id, 3)]
       H.clocks.push({ id: uid("P"), emp: id, date: today, in: String(s.s).padStart(2, "0") + ":03", out: "", src: "Badge", ok: false })
+      accPush(E(id), "hrm.shift.started", `Badge activé · ${profileOf(E(id))}`)
       toast(`Entrée pointée · hrm.shift.started → badge de ${E(id).name} actif (simulé)`); render()
+    },
+    clockOut(id) {
+      const k = H.clocks.find((x) => x.id === id), e = E(k.emp), s = SH[cell(k.emp, WEEK.indexOf(k.date))]
+      k.out = s && s.h ? String(s.e % 24).padStart(2, "0") + ":04" : now()
+      accPush(e, "hrm.shift.ended", permanent(e) ? "Profil permanent : badge maintenu (RG-HRM-02)" : "Badge suspendu hors poste (marge 30 min)")
+      toast(`Sortie pointée · hrm.shift.ended → ${permanent(e) ? "badge maintenu (profil permanent)" : "badge de " + e.name + " suspendu"} (simulé)`); render()
+    },
+    setProfile(i) {
+      const job = jobsList()[i].job, v = val("hr-jp" + i)
+      H.jobProfile[job] = v
+      active().filter((e) => e.job === job).forEach((e) => accPush(e, "hrm.access.profile.changed", `Profil « ${v} » appliqué au poste ${job}`))
+      toast(`Profil d'accès du poste ${job} mis à jour · ACC synchronisé (simulé)`); render()
     },
     leave(id, ok) {
       const l = H.leaves.find((x) => x.id === id), e = E(l.emp)
@@ -879,12 +1103,13 @@
     pool() { H.tronc.pool = Math.max(0, Number(val("hr-pool")) || 0); say("Montant du tronc mis à jour", H.tronc.integrated ? touch("tronc modifié") : ""); render() },
     troncIn() { H.tronc.integrated = true; say("Pourboires intégrés aux variables de paie", touch("pourboires intégrés")); render() },
     loan() {
-      const id = val("hr-lnemp"), amt = Number(val("hr-lnamt")), n = Math.max(1, Number(val("hr-lnn")) || 1), monthly = Math.ceil(amt / n)
+      const typ = val("hr-lntype"), id = val("hr-lnemp"), amt = Number(val("hr-lnamt")), n = typ.startsWith("Acompte") ? 1 : Math.max(1, Number(val("hr-lnn")) || 1), monthly = Math.ceil(amt / n)
+      if (cur().closed) return err("hr-lnerr", "Période clôturée : ouvrez la période suivante avant d'accorder une retenue.")
       if (!(amt > 0)) return err("hr-lnerr", "Indiquez un montant.")
       const s = slip(E(id)), quot = Math.floor((s.net + s.loanApp + s.consoApp) * PACK.quotite) - s.loanApp
       if (monthly > quot) return err("hr-lnerr", `Échéance ${money(monthly)} supérieure à la quotité disponible (${money(Math.max(0, quot))}) : allongez la durée.`)
-      const lid = (val("hr-lntype") === "Prêt" ? "PR-" : "AV-") + String(H.loans.length + 1).padStart(2, "0")
-      H.loans.push({ id: lid, emp: id, type: val("hr-lntype"), amount: amt, monthly, remaining: amt, start: cur().month })
+      const lid = (typ === "Prêt" ? "PR-" : typ.startsWith("Acompte") ? "AC-" : "AV-") + String(H.loans.length + 1).padStart(2, "0")
+      H.loans.push({ id: lid, emp: id, type: typ, amount: amt, monthly, remaining: amt, start: cur().month })
       ui.hrLoan = lid; say(`${lid} accordé · ${n} échéance(s) de ${money(monthly)}`, touch("nouvelle retenue")); render()
     },
     replay() {
@@ -907,6 +1132,7 @@
       { id: "hr-temps", label: "Plannings et temps", view: views["hr-temps"] },
       { id: "hr-paie", label: "Paie", view: views["hr-paie"] },
       { id: "hr-bulletin", hidden: true, navAs: "hr-paie", view: views["hr-bulletin"] },
+      { id: "hr-portail", label: "Portail employé (app)", view: views["hr-portail"], spec: "EF-HRM-028" },
       { id: "hr-declarations", label: "Déclarations sociales", view: views["hr-declarations"] },
       { id: "hr-pilotage", label: "Pilotage RH", view: views["hr-pilotage"] },
     ],
