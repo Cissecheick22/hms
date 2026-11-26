@@ -29,9 +29,15 @@ const arrivals = () => D.reservations.filter((r) => r.from === today && ["confir
 const departures = () => D.reservations.filter((r) => r.to === today && ["arrivee", "partie"].includes(r.status))
 const occupant = (no) => inHouse().find((r) => r.room === no)
 const readyRooms = () => D.rooms.filter((r) => r.hk === "propre" && !occupant(r.no))
+// Retenues de chambres sans réservation nominative (blocs de groupes, d'événements) : chaque module en déclare
+// via holdRooms((type, date) => nombre). ui.holdSkip permet à un module d'ignorer son propre bloc quand il le convertit.
+const HOLDS = []
+const holdRooms = (fn) => HOLDS.push(fn)
+const held = (type, date) => HOLDS.reduce((s, f) => s + (f(type, date) || 0), 0)
 const available = (type, date, exceptId) =>
   D.rooms.filter((r) => r.type === type && r.hk !== "hs").length -
-  D.reservations.filter((r) => r.id !== exceptId && r.type === type && ["confirmee", "arrivee"].includes(r.status) && r.from <= date && date < r.to).length
+  D.reservations.filter((r) => r.id !== exceptId && r.type === type && ["confirmee", "arrivee"].includes(r.status) && r.from <= date && date < r.to).length -
+  held(type, date)
 const folio = (r) => {
   const n = nights(r.from, r.to)
   const lines = [{ label: `Hébergement ${T(r.type).label} — ${n} nuit${n > 1 ? "s" : ""} × ${money(r.rate)}`, amount: n * r.rate }, ...(D.extras[r.id] || [])]
@@ -41,7 +47,7 @@ const folio = (r) => {
 }
 
 const STATUS = { confirmee: ["Confirmée", ""], arrivee: ["En séjour", "on"], partie: ["Partie", "outline"], annulee: ["Annulée", "dark"] }
-const HK = { propre: ["Propre", "on"], sale: ["Sale", ""], inspection: ["En inspection", "outline"], hs: ["Hors service", "dark"] }
+const HK = { propre: ["Propre", "on"], sale: ["Sale", ""], inspection: ["En inspection", "outline"], hs: ["Hors commande", "dark"] } // hs = hors commande : retirée de la vente (RG-ORG-02). Le « hors service » vendable est un statut d'exploitation (org-chambres)
 const pill = (map, k) => `<span class="pill ${map[k][1]}">${esc(map[k][0])}</span>`
 const vip = (g) => (g.vip ? ` <span class="pill on">VIP</span>` : "")
 const guestLink = (id) => `<button class="link" onclick="go('clients/${esc(id)}')">${esc(G(id).name)}</button>`
@@ -118,6 +124,39 @@ HMS.module = ({ code, group, title, phase, spec, screens, actions }) => {
   HMS.modules.push({ code, group, title, phase, spec, screens })
 }
 
+// ---------- Données factices persistées ----------
+// L'état (D + ui) est sauvegardé dans le navigateur après chaque rendu et rechargé au démarrage.
+// Si les données d'origine changent (nouvelle version de la maquette), l'ancienne sauvegarde est ignorée.
+const STORE = "hms-maquette"
+const hash = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return String(h) }
+let fingerprint = ""
+// Remplace le contenu de target par celui de src sans changer les références des objets (les modules gardent les leurs)
+const syncInPlace = (target, src) => {
+  Object.keys(target).forEach((k) => { if (!(k in src)) delete target[k] })
+  Object.entries(src).forEach(([k, v]) => {
+    const t = target[k]
+    if (Array.isArray(t) && Array.isArray(v)) t.splice(0, t.length, ...v)
+    else if (t && v && typeof t === "object" && typeof v === "object" && !Array.isArray(t) && !Array.isArray(v)) syncInPlace(t, v)
+    else target[k] = v
+  })
+}
+const saveState = () => { try { localStorage.setItem(STORE, JSON.stringify({ fp: fingerprint, D, ui })) } catch (e) {} }
+const loadState = () => {
+  fingerprint = hash(JSON.stringify(D))
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || "null")
+    if (!saved || saved.fp !== fingerprint) return
+    syncInPlace(D, saved.D)
+    Object.assign(ui, saved.ui, { encoding: null, done: null })
+  } catch (e) {}
+}
+const resetData = () => {
+  if (!confirm("Revenir aux données d'exemple d'origine ? Toutes les modifications faites dans la maquette seront effacées.")) return
+  localStorage.removeItem(STORE)
+  location.hash = ""
+  location.reload()
+}
+
 // ---------- Navigation ----------
 function render() {
   let [name, ...params] = location.hash.slice(1).split("/")
@@ -131,9 +170,12 @@ function render() {
   $("#app").innerHTML = s.view(params)
   s.after?.(params)
   document.body.classList.remove("menu-open")
+  saveState()
 }
 function startApp() {
+  loadState()
   $("#theme").onclick = toggleTheme
+  $("#reset").onclick = resetData
   $("#menu").onclick = () => document.body.classList.toggle("menu-open")
   $("#tabs").innerHTML = HMS.groups.filter((g) => g.items.length).map((g) =>
     `<div class="navgroup"><div class="navtitle">${esc(g.name)}</div>${g.items.map((s) => `<button data-id="${esc(s.id)}" onclick="go('${esc(s.id)}')">${esc(s.label)}</button>`).join("")}</div>`).join("")

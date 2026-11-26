@@ -53,7 +53,7 @@
             ${r.status === "confirmee" ? `<button class="btn ghost sm" onclick="A.fof.cancelRes(${q(r.id)})">Annuler</button>` : ""}</span>` : "",
         ]), "Aucune réservation.")}
         <h2>Planning des disponibilités — 14 jours</h2>
-        <p class="muted">Chambres libres par type et par nuit (hors chambres hors service).</p>
+        <p class="muted">Chambres libres par type et par nuit (hors chambres hors commande).</p>
         <div class="tablewrap"><table><thead><tr><th>Type</th>${days.map((d) => `<th class="num">${esc(wd(d))}<br>${fd(d)}</th>`).join("")}</tr></thead>
           <tbody>${D.roomTypes.map((t) => `<tr><td>${esc(t.label)}</td>${days.map((d) => { const n = available(t.code, d); return `<td class="num ${n <= 0 ? "cell0" : ""}">${n <= 0 ? "Complet" : n}</td>` }).join("")}</tr>`).join("")}</tbody></table></div>`
     },
@@ -323,10 +323,10 @@
 
   const common = { code: "fof", phase: "4-10", actions }
   HMS.module({ ...common, group: "Réception & séjour", title: "Réception et séjour", spec: "§8 RES, §9 FOF, §10 ACC, §12 FOL", screens: [
-    { id: "accueil", label: "Tableau de bord", view: views.accueil },
-    { id: "reservations", label: "Réservations", view: views.reservations },
-    { id: "checkin", label: "Check-in et clé", view: views.checkin },
-    { id: "checkout", label: "Check-out et facture", view: views.checkout },
+    { id: "accueil", label: "Tableau de bord", spec: "FOF", view: views.accueil },
+    { id: "reservations", label: "Réservations", spec: "RES", view: views.reservations },
+    { id: "checkin", label: "Check-in et clé", spec: "FOF ACC", view: views.checkin },
+    { id: "checkout", label: "Check-out et facture", spec: "FOF FOL ACC", view: views.checkout },
     { id: "facture", hidden: true, navAs: "checkout", view: views.facture, redirect: (p) => ((R(p[0]) || {}).invoice ? null : "checkout") },
   ] })
   HMS.module({ ...common, group: "Opérations", title: "Statut des chambres", spec: "§11 HKM", screens: [{ id: "chambres", label: "Statut des chambres", view: views.chambres }] })
