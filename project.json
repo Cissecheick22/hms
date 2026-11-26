@@ -9,5 +9,53 @@
     "visibility": "public",
     "project_number": null
   },
-  "created": "2026-11-26"
+  "created": "2026-11-26",
+  "cadrage": {
+    "idee": "Un logiciel de gestion hôtelière en ligne pour gérer les réservations, la réception, les chambres et les clés d'accès d'un hôtel.",
+    "cible": "Les hôtels indépendants (un établissement), d'abord leurs réceptionnistes et chefs de réception.",
+    "probleme": "La gestion d'un hôtel est éclatée entre plusieurs outils déconnectés des serrures : check-in lent, risques de surréservation et d'erreurs de facturation.",
+    "fonctions": [
+      {
+        "titre": "Tableau de bord de la réception",
+        "description": "Le réceptionniste voit en un écran les arrivées, départs, clients présents, chambres prêtes, VIP et demandes spéciales du jour.",
+        "nouvelle_page": true
+      },
+      {
+        "titre": "Réservations",
+        "description": "Le réceptionniste crée, modifie et annule une réservation (dates, type de chambre, tarif, client, garantie) et consulte le planning des disponibilités.",
+        "nouvelle_page": true
+      },
+      {
+        "titre": "Check-in avec émission de clé",
+        "description": "Le réceptionniste attribue une chambre, vérifie l'identité du client puis encode sa carte d'accès en une seule action (simulée dans la maquette).",
+        "nouvelle_page": true
+      },
+      {
+        "titre": "Check-out et facture",
+        "description": "Le réceptionniste contrôle le folio du séjour, encaisse, édite la facture et révoque la clé du client.",
+        "nouvelle_page": true
+      },
+      {
+        "titre": "Statut des chambres (housekeeping)",
+        "description": "La gouvernante voit et met à jour l'état de chaque chambre (propre, sale, en inspection, hors service) et répartit les tâches des femmes de chambre.",
+        "nouvelle_page": true
+      },
+      {
+        "titre": "Fiche client",
+        "description": "Le réceptionniste consulte et met à jour les coordonnées, l'historique des séjours et les préférences d'un client.",
+        "nouvelle_page": true
+      }
+    ],
+    "hors_perimetre": [
+      "Plus tard (spec phase 3) : RH, plannings et paie (pack Côte d'Ivoire)",
+      "Plus tard (spec phase 4) : tarifs avancés, inventaire et distribution (OTA, channel manager)",
+      "Plus tard (spec phase 5) : CRM et fidélité au-delà de la fiche client",
+      "Plus tard (spec phase 8) : connexion réelle aux serrures et passerelle edge",
+      "Plus tard (spec phases 11-15) : restauration / POS, spa, événements, achats et stocks, buanderie",
+      "Plus tard (spec phase 16) : comptabilité SYSCOHADA complète",
+      "Plus tard (spec phases 17-18) : plateforme IA et BI",
+      "Plus tard (spec phases 19-21) : applications mobiles, hub d'intégration, exploitation SaaS multi-tenant",
+      "Plus tard : multi-établissements et vue groupe"
+    ]
+  }
 }
