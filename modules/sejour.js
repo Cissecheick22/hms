@@ -118,24 +118,43 @@
     ],
     coShift: {},
     ckTimes: [98, 125, 104, 140, 92, 117, 131], // durées de check-in mesurées (secondes, exemple)
+    // Contrats entreprises : tarifs négociés, volume annuel engagé (nuitées), conditions, consommation (EF-RES-009)
+    contracts: [
+      { id: "CT-01", account: "AC1", name: "Société Ivoirienne Exemple", rates: { STD: 38000, SUP: 51000, SUI: 94000 }, volume: 120, used: 96, from: "2026-01-01", to: "2026-12-31", conditions: "Annulation sans frais jusqu'à 18 h la veille · petit-déjeuner inclus · paiement à 30 jours" },
+      { id: "CT-02", account: "AC3", name: "Transports Lagune Exemple", rates: { STD: 40000, SUP: 53000, SUI: 97000 }, volume: 60, used: 57, from: "2026-03-01", to: "2027-02-28", conditions: "Équipages : départ tardif offert · facturation mensuelle" },
+    ],
+    postings: [], // nuitées publiées par l'audit de nuit (journal du revenu hébergement)
+    allotLog: [],
+    // Instructions de routage automatiques par compte (EF-FOL-003)
+    routeRules: [{ account: "AC1", what: "Hébergement et taxes" }, { account: "AC3", what: "Hébergement" }],
   }
   const S = D.sej
 
   // ---------- Règles et calculs ----------
-  const meta = (r) => S.meta[r.id] || { source: "Réception", segment: "Individuel", booked: r.from }
+  const meta = (r) => S.meta[r.id] || { source: r.source || (r.walkin ? "Walk-in" : "Réception"), segment: r.segment || "Individuel", booked: r.booked || r.from }
   // IA (simulée) : probabilité de no-show / annulation — garantie, canal, délai, profil ; repli sur taux historiques
   const risk = (r) => {
     const m = meta(r), lead = nights(m.booked, r.from)
-    let v = { Aucune: 34, Acompte: 12, "Carte bancaire": 9, "Compte société": 5 }[r.guarantee] ?? 15
+    let v = { Aucune: 34, Acompte: 12, "Mobile Money": 12, "Carte bancaire": 9, "Compte société": 5 }[r.guarantee] ?? 15
     if (/OTA/.test(m.source)) v += 9
     if (lead > 45) v += 6
     if (lead <= 2) v += 4
     if (G(r.guest)?.vip) v -= 4
     return Math.max(2, Math.min(90, v))
   }
+  // IA (simulée) : probabilité d'annulation — plan tarifaire, canal, délai, garantie
+  const cancelRisk = (r) => {
+    const m = meta(r), lead = nights(m.booked, r.from)
+    let v = r.plan === "NR" ? 3 : 11
+    if (/OTA/.test(m.source)) v += 14
+    if (lead > 30) v += 8
+    if (r.guarantee === "Aucune") v += 12
+    if (r.contract || r.group) v -= 5
+    return Math.max(2, Math.min(90, v))
+  }
   const riskBadge = (r) => { const v = risk(r); return badge(v + " %", v >= 30 ? "dark" : v >= 15 ? "outline" : "") }
-  const penalty = (r) => ({ "Carte bancaire": r.rate, "Compte société": r.rate, Acompte: D.payments[r.id] || 0 }[r.guarantee] || 0)
-  const penaltyText = (r) => ({ "Carte bancaire": "1re nuit prélevée (jeton PSP)", "Compte société": "1re nuit facturée à la société", Acompte: "acompte conservé" }[r.guarantee] || "libérée sans frais (RG-RES-01)")
+  const penalty = (r) => ({ "Carte bancaire": r.rate, "Compte société": r.rate, Acompte: D.payments[r.id] || 0, "Mobile Money": D.payments[r.id] || 0 }[r.guarantee] || 0)
+  const penaltyText = (r) => ({ "Carte bancaire": "1re nuit prélevée (jeton PSP)", "Compte société": "1re nuit facturée à la société", Acompte: "acompte conservé", "Mobile Money": "garantie mobile money conservée" }[r.guarantee] || "libérée sans frais (RG-RES-01)")
   const pendingArr = (d = S.biz) => D.reservations.filter((r) => r.from === d && r.status === "confirmee")
   const stayEnd = (r) => (r.status === "arrivee" && r.to <= S.biz ? addDays(S.biz, 1) : r.to)
   const roomOf = (r) => (r.status === "arrivee" ? r.room : r.preRoom)
@@ -177,7 +196,8 @@
   const windows = (r) => {
     const f = folio(r), rt = S.routing[r.id]
     const ex = D.extras[r.id] || []
-    const lines = f.lines.map((l, i) => ({ ...l, idx: i - 1, win: i === 0 ? (rt ? "B" : "A") : ex[i - 1].win || (rt && rt.what === "Tout le folio" ? "B" : "A") }))
+    const auto = (l) => (rt && (rt.what === "Tout le folio" || (l.code === "HEB") || (rt.what === "Hébergement et taxes" && l.code === "TAXE")) ? "B" : "A")
+    const lines = f.lines.map((l, i) => ({ ...l, idx: i - 1, win: i === 0 ? (rt ? "B" : "A") : ex[i - 1].win || auto(l) }))
     const A_ = lines.filter((l) => l.win === "A"), B_ = lines.filter((l) => l.win === "B")
     const tB = sum(B_, (l) => l.amount), tr = S.transferred[r.id] || 0
     return { f, A: A_, B: B_, tA: sum(A_, (l) => l.amount), tB, tr, restB: tB - tr }
@@ -220,7 +240,7 @@
         }), "Toutes les réservations à venir ont une chambre pré-attribuée.")
         + `${D.reservations.some((r) => r.preRoom && r.status === "confirmee") ? `<p class="muted" style="margin-top:8px">Pré-attributions : ${D.reservations.filter((r) => r.preRoom && r.status === "confirmee").map((r) => `${esc(r.id)} → ${esc(r.preRoom)} <button class="link" onclick="A.sej.preassign(${q(r.id)}, '')">retirer</button>`).join(" · ")}</p>` : ""}</section>`
         + `<section><h2>Suggestions</h2><div class="stack">`
-        + aiBox("Attribution optimisée des chambres", props.length ? props.map((p) => `${p.r.id} (${gname(p.r)}) → ${p.room.no} : ${p.why}`).join(" · ") : "Aucune réservation à attribuer.", props.length ? btn("Appliquer la proposition", "A.sej.applyProps()", "sm") : "")
+        + aiBox("Attribution optimisée des chambres", (props.length ? props.map((p) => `${p.r.id} (${gname(p.r)}) → ${p.room.no} : ${p.why}`).join(" · ") : "Aucune réservation à attribuer.") + " Type, préférences, propreté et demandes pris en compte (EF-FOF-002).", props.length ? btn("Appliquer la proposition", "A.sej.applyProps()", "sm") : "")
         + ups.map((u) => aiBox("Upsell au check-in", `${gname(u.r)} (${u.r.id}, ${T(u.r.type).label}) : proposer ${T(u.to).label} pour ${money(u.price)} de plus par nuit, soit ${money(u.price * nights(u.r.from, u.r.to))} sur le séjour. Prix recommandé par le modèle (simulé).`, btn("Surclassement accepté", `A.sej.upsell(${q(u.r.id)}, ${q(u.to)}, ${u.price})`, "sm"))).join("")
         + `</div></section></div>`
     },
@@ -237,8 +257,8 @@
     groupes(p) {
       const tab = p[0] || "groupes"
       return pageHead("Groupes et liste d'attente", "Blocs de groupes avec cut-off et rooming list, liste d'attente, saisie assistée des demandes (exemple).")
-        + subtabs("sej-groupes", [["groupes", "Groupes et blocs"], ["attente", "Liste d'attente"], ["copilote", "Copilote de réservation"]], tab)
-        + ({ groupes: groupsTab, attente: waitTab, copilote: copilotTab }[tab] || groupsTab)()
+        + subtabs("sej-groupes", [["groupes", "Groupes et blocs"], ["allot", "Allotements et contrats"], ["attente", "Liste d'attente"], ["copilote", "Copilote de réservation"]], tab)
+        + ({ groupes: groupsTab, allot: allotTab, attente: waitTab, copilote: copilotTab }[tab] || groupsTab)()
     },
 
     // Audit de nuit, main courante, indicateurs
@@ -256,6 +276,7 @@
       return pageHead("Folios et routage", "Folio par séjour en deux fenêtres (client / société), routage, imputations, transferts et encaissements. Montants d'exemple.")
         + split(listItems(list.map((x) => ({ id: x.id, title: `Ch. ${x.room} · ${gname(x)}`, sub: `${x.id} · solde ${money(folio(x).balance)}`, badge: S.routing[x.id] ? " " + badge("Routage", "outline") : "" })), r?.id, "fol-folios"),
           r ? folioPanel(r) : `<p class="muted">Aucun client en séjour.</p>`)
+        + `<h2>Comptes maîtres de groupe</h2>` + masterAccounts()
     },
     paiements(p) {
       const tab = p[0] || "journal"
@@ -313,7 +334,9 @@
         field("wi-nights", "Nuits", input("wi-nights", "1", 'type="number" min="1" max="30"')),
         field("wi-pay", "Garantie immédiate", select("wi-pay", ["Espèces", "Carte (jeton PSP)", "Mobile Money (Orange Money)", "Mobile Money (MTN MoMo)", "Mobile Money (Wave)"], "Espèces")),
         field("wi-amount", "Montant encaissé", input("wi-amount", free[0] ? String(T(free[0].type).rate) : "0", 'type="number" min="0" step="500"')),
-        `<div class="full" id="wi-police-row" style="display:none"><label class="row" style="color:var(--ink)"><input type="checkbox" id="wi-police"> Fiche de police remplie (voyageur étranger)</label></div>`,
+        `<div class="full" id="wi-police-row" style="display:none"><strong>Fiche de police</strong> ${badge("Obligatoire", "dark")} <span class="muted">Voyageur étranger : tous les champs sont exigés (RG-FOF-07). EF-CRM-013</span>
+          <div class="form" style="margin-top:6px">${[["birth", "Date de naissance", "date"], ["place", "Lieu de naissance"], ["prof", "Profession"], ["addr", "Adresse habituelle"], ["doc", "Passeport (n°)"], ["issued", "Délivré le", "date"], ["entry", "Entrée en Côte d'Ivoire le", "date"], ["from", "Provenance"], ["to", "Destination"]]
+            .map(([k, l, t]) => field("wi-fp-" + k, l, input("wi-fp-" + k, k === "entry" ? S.biz : k === "to" ? "Abidjan" : "", t ? `type="${t}"` : ""))).join("")}</div></div>`,
         `<div class="full"><label class="row" style="color:var(--ink)"><input type="checkbox" id="wi-id"> Pièce d'identité présentée et conforme</label></div>`,
         `<div class="full" id="wi-err"></div>`,
         `<div class="full row">${btn("Enregistrer l'arrivée et encoder la clé", "A.sej.walkin()", "accent")}</div>`,
@@ -339,6 +362,9 @@
         ])}`)}</section>
       <section>${card("Prolonger ou écourter", `<p class="muted" style="margin-top:0">Départ prévu le ${fd(r.to)}. Les nuits ajoutées sont contrôlées contre la disponibilité ; la validité de la clé suit la nouvelle date (EF-FOF-008).</p>
         ${form([field("ex-to", "Nouvelle date de départ", input("ex-to", addDays(r.to, 1), 'type="date"')), `<div class="full" id="ex-err"></div>`, `<div class="full">${btn("Modifier le départ", `A.sej.extend(${q(r.id)})`, "ghost")}</div>`])}`)}</section></div>
+      ${card("Changement de tarif en cours de séjour", `<p class="muted" style="margin-top:0">Nouveau tarif appliqué aux nuits restantes à partir d'une date ; les nuits passées gardent leur prix (ajustement imputé au folio). EF-RES-002</p>
+        ${form([field("rc-from", "À partir de la nuit du", input("rc-from", S.biz, 'type="date"')), field("rc-rate", "Nouveau tarif par nuit", input("rc-rate", String(r.rate), 'type="number" min="0" step="500"')),
+          field("rc-why", "Motif", select("rc-why", ["Renégociation", "Tarif contrat entreprise", "Geste commercial", "Fin de promotion"], "Renégociation")), `<div class="full" id="rc-err"></div>`, `<div class="full">${btn("Appliquer le nouveau tarif", `A.sej.rateChange(${q(r.id)})`, "ghost")}</div>`])}`, 'style="margin-top:14px"')}
       <h2>Historique des changements</h2>${tbl(["Horodatage", "Séjour", "De", "Vers", "Motif", "Par"], S.moves.map((m) => [esc(m.at), esc(m.resId), esc(m.from), esc(m.to), esc(m.reason), esc(m.by)]))}`
   }
 
@@ -364,7 +390,9 @@
   // ---------- No-shows ----------
   function noshowTab() {
     const list = pendingArr()
+    const opts = list.filter((r) => r.guarantee === "Aucune")
     return `<p class="muted">Arrivées non présentées pour le ${fd(S.biz)}. Pénalité selon la garantie ; une réservation non garantie est libérée à 18 h sans frais. Normalement traité par l'audit de nuit (EF-RES-012), possible ici à la main.</p>
+      ${opts.length ? `<div class="row" style="margin-bottom:10px">${btn(`Il est 18 h : libérer ${opts.length} option(s) non garantie(s)`, "A.sej.release18()", "ghost sm")}<span class="muted">Option tenue jusqu'à 18 h puis rendue à l'inventaire sans frais (RG-RES-01, EF-RES-005).</span></div>` : ""}
       ${tbl(["Réf.", "Client", "Type", "Garantie", "Risque IA", "Pénalité prévue", ""], list.map((r) => [esc(r.id), esc(gname(r)) + vip(G(r.guest)), esc(T(r.type).label), esc(r.guarantee), riskBadge(r),
         `${money(penalty(r))}${muted(penaltyText(r))}`,
         `<span class="row" style="flex-wrap:nowrap">${btn("Relancer", `A.sej.remind(${q(r.id)})`, "ghost sm")}${btn("Déclarer no-show", `A.sej.noshow(${q(r.id)})`, "sm")}</span>`]), "Aucune arrivée en attente.")}
@@ -395,6 +423,32 @@
         <div id="gr-ierr"></div>
         <div class="row" style="margin-top:10px">${btn("Importer", `A.sej.importRooming(${q(g.id)})`, "ghost")}${btn("Générer les réservations", `A.sej.genGroup(${q(g.id)})`)}${g.released ? "" : btn("Appliquer le cut-off", `A.sej.cutoff(${q(g.id)})`, "ghost")}</div>
         <p class="muted">Au cut-off, les chambres non reprises retournent à l'inventaire général (RG-RES-03). EF-RES-007</p></div>`)
+  }
+  // ---------- Allotements et contrats entreprises ----------
+  const allots = () => D.rat?.allotments || []
+  const allotRel = (a) => addDays(a.from, -a.release)
+  const ctUsed = (c) => c.used + sum(D.reservations.filter((r) => r.contract === c.id && !["annulee", "noshow", "deloge"].includes(r.status)), (r) => nights(r.from, r.to))
+  function allotTab() {
+    const al = allots()
+    return `<h2>Allotements agences et entreprises</h2>
+      <p class="muted">Chambres accordées à un tiers jusqu'à une date de libération (J-x avant l'arrivée). L'audit de nuit libère automatiquement les allotements échus et les remet en vente. EF-RES-008</p>
+      ${tbl(["Réf.", "Bénéficiaire", "Type", "Période", "#Accordées", "#Prises", "Libération", "Statut", ""], al.map((a) => {
+        const due = !a.released && allotRel(a) <= S.biz
+        return [esc(a.id), esc(a.holder), esc(T(a.type).label), `${fd(a.from)} → ${fd(a.to)}`, a.rooms, a.picked, `J-${a.release} (${fd(allotRel(a))})`,
+          a.released ? badge(a.releasedBy ? "Libéré (" + a.releasedBy + ")" : "Libéré", "outline") : due ? badge("Échu : libéré au prochain audit", "dark") : badge("Actif", "on"),
+          a.released || a.picked >= a.rooms ? "" : btn("Réserver sur l'allotement", `A.sej.allotPick(${q(a.id)})`, "ghost sm")]
+      }), "Aucun allotement (module Tarifs et distribution).")}
+      ${al.length ? form([field("al-name", "Nom du client (réservation sur allotement)", input("al-name", "", 'placeholder="Ex. Serge Gnahoré"')), `<div class="full" id="al-err"></div>`]) : ""}
+      ${S.allotLog.length ? `<p class="muted">${S.allotLog.map(esc).join(" · ")}</p>` : ""}
+      <h2>Contrats entreprises</h2>
+      <p class="muted">Tarifs négociés par type, volume annuel de nuitées et conditions ; la consommation est suivie à chaque réservation au plan « Contrat entreprise ». EF-RES-009</p>
+      ${tbl(["Contrat", "Entreprise", "Tarifs STD / SUP / SUI", "Période", "#Volume", "#Consommé", "Suivi", "Conditions"], S.contracts.map((c) => { const u = ctUsed(c), p = Math.round((u / c.volume) * 100)
+        return [esc(c.id), esc(c.name), typeOrder.map((t) => money(c.rates[t])).join(" / "), `${fd(c.from)}/${c.from.slice(2, 4)} → ${fd(c.to)}/${c.to.slice(2, 4)}`, c.volume, u,
+          `<span class="track" style="display:inline-block;width:80px;vertical-align:middle"><i style="width:${Math.min(100, p)}%"></i></span> ${badge(p + " %", p >= 100 ? "dark" : p >= 90 ? "outline" : "")}${p >= 100 ? muted("volume dépassé : renégocier") : p >= 90 ? muted("volume presque atteint") : ""}`, ref(c.conditions)] }))}
+      <h3>Nouveau contrat</h3>${form([field("ct-acc", "Compte", select("ct-acc", S.ar.accounts.map((a) => [a.id, a.name]), "AC2")),
+        ...typeOrder.map((t) => field("ct-" + t, `Tarif ${T(t).label}`, input("ct-" + t, String(Math.round(T(t).rate * 0.85 / 500) * 500), 'type="number" min="0" step="500"'))),
+        field("ct-vol", "Volume annuel (nuitées)", input("ct-vol", "50", 'type="number" min="1"')), field("ct-cond", "Conditions", input("ct-cond", "", 'placeholder="Ex. annulation sans frais 24 h avant"'), "full"),
+        `<div class="full" id="ct-err"></div>`, `<div class="full">${btn("Créer le contrat", "A.sej.newContract()", "ghost")}</div>`])}`
   }
   function waitTab() {
     return `<div class="row between"><p class="muted" style="margin:0">Notification automatique dès qu'une disponibilité se libère (EF-RES-010, message simulé).</p>${btn("Vérifier les disponibilités", "A.sej.checkWait()")}</div>
@@ -437,10 +491,12 @@
       { label: "Arrivées du jour traitées", ok: !pend.length, block: false, hint: pend.length ? `${pend.length} arrivée(s) non présentée(s) seront traitées en no-show` : "" },
       { label: "Départs du jour clôturés", ok: !deps.length, block: false, hint: deps.length ? `${deps.map((r) => "ch. " + r.room).join(", ")} : départ prévu non enregistré (nuit supplémentaire si le client reste)` : "" },
       { label: "Caisses fermées", ok: !openShift(), block: false, hint: openShift() ? `Caisse ${openShift().id} (${openShift().user}) encore ouverte` : "" },
+      (() => { const l = inHouse().filter((r) => r.preauth && folio(r).balance > r.preauth.amount); return { label: "Soldes couverts par la pré-autorisation", ok: !l.length, block: false, hint: l.length ? `${l.map((r) => "ch. " + r.room).join(", ")} : solde au-delà du montant autorisé, ajustement automatique (RG-FOL-07)` : "" } })(),
+      (() => { const l = allots().filter((a) => !a.released && allotRel(a) <= S.biz); return { label: "Allotements échus", ok: !l.length, block: false, hint: l.length ? `${l.map((a) => a.id).join(", ")} seront libérés par l'audit` : "" } })(),
     ]
   }
   let auditRun = null // audit en cours : état transitoire, non sauvegardé
-  const AUDIT_STEPS = ["Contrôles préalables", "Traitement des no-shows", "Publication de la taxe de séjour sur les folios", "Édition et archivage des rapports", "Changement de date hôtelière"]
+  const AUDIT_STEPS = ["Contrôles préalables et anomalies", "Traitement des no-shows", "Publication des nuitées et des taxes sur les folios", "Libération des allotements échus", "Édition et archivage des rapports", "Changement de date hôtelière"]
   function auditTab() {
     const checks = auditChecks(), blocked = checks.some((c) => c.block && !c.ok), run = auditRun
     return `<div class="cols"><section><h2>Contrôles préalables</h2>
@@ -448,7 +504,9 @@
       <div class="row" style="margin-top:12px">${run ? "" : btn(`Lancer l'audit du ${fd(S.biz)}`, "A.sej.runAudit()", blocked ? "" : "accent")}${blocked ? `<span class="muted">Audit bloqué tant qu'un contrôle bloquant n'est pas levé.</span>` : ""}</div></section>
       <section><h2>Étapes</h2>${AUDIT_STEPS.map((s, i) => `<div class="step"><b class="n">${i + 1}</b><div><strong>${esc(s)}</strong> ${run ? (run.step > i ? badge("Fait", "on") : run.step === i ? badge("En cours", "outline") : "") : ""}${run && run.notes[i] ? `<div class="muted">${esc(run.notes[i])}</div>` : ""}</div></div>`).join("")}
       ${run && run.step >= AUDIT_STEPS.length ? `<p style="margin-top:14px">${badge("Audit terminé", "on")} Nouvelle date hôtelière : <strong>${esc(fdLong(S.biz))}</strong> (toute la maquette passe à cette date).</p>${btn("Fermer le compte rendu", "A.sej.closeAudit()", "ghost sm")}` : ""}</section></div>
-      <h2>Audits archivés</h2>${tbl(["Date hôtelière", "Terminé à", "Par", "#No-shows", "#Taxe publiée", "#Chambres"], S.audits.map((a) => [fd(a.date), esc(a.at), esc(a.by), a.noshows, money(a.tax), a.rooms]))}`
+      <h2>Audits archivés</h2>${tbl(["Date hôtelière", "Terminé à", "Par", "#No-shows", "#Taxe publiée", "#Chambres", ""], S.audits.map((a, i) => [fd(a.date), esc(a.at), esc(a.by), a.noshows, money(a.tax), a.rooms, a.report ? btn("Rapport", `ui.sejReport=${i};render()`, "ghost sm") : ref("archivé (PDF)")]))}
+      ${(() => { const a = S.audits[ui.sejReport]; return a && a.report ? card(`Rapport de l'audit du ${fd(a.date)}`, `<div class="grid">${kpi("Occupation", a.report.occ + " %", `${a.report.inHouse} chambre(s)`)}${kpi("Prix moyen (ADR)", money(a.report.adr), "nuitées publiées")}${kpi("RevPAR", money(a.report.revpar), "exemple")}${kpi("No-shows", a.report.noshows, "traités")}</div><p class="muted">${a.report.open} point(s) ouvert(s) en main courante. ${btn("Fermer", "ui.sejReport=null;render()", "ghost sm")}</p>`, 'style="margin-top:14px"') : "" })()}
+      <p class="muted">EF-FOF-013 : contrôle des anomalies, publication des nuitées et taxes, no-shows, allotements, rapports archivés, changement de date hôtelière. ${S.postings.length} nuitée(s) publiée(s) dans le journal.</p>`
   }
 
   // ---------- Main courante ----------
@@ -492,36 +550,68 @@
   }
 
   // ---------- Folio ----------
+  // Codes de transaction : centre de profit et TVA (EF-FOL-002)
+  const TRX = {
+    Restaurant: { code: "2000", centre: "F&B — Restaurant", tva: 18 }, Bar: { code: "2100", centre: "F&B — Bar", tva: 18 }, Minibar: { code: "2200", centre: "F&B — Minibar", tva: 18 },
+    Blanchisserie: { code: "3000", centre: "Hébergement — Blanchisserie", tva: 18 }, Spa: { code: "4000", centre: "Spa et bien-être", tva: 18 },
+    Téléphone: { code: "5000", centre: "Divers — Téléphone", tva: 18 }, "Frais divers": { code: "9000", centre: "Divers", tva: 18 },
+  }
+  const FXR = { FCFA: 1, EUR: 655.957, USD: 610 }
   function folioPanel(r) {
     const w = windows(r), rt = S.routing[r.id], others = inHouse().filter((x) => x.id !== r.id)
-    const lineRows = (lines) => lines.map((l) => [esc(l.label) + (l.reversed ? " " + badge("Annulée", "outline") : ""), money(l.amount),
+    const lineRows = (lines) => lines.map((l) => [esc(l.label) + (l.reversed ? " " + badge("Annulée", "outline") : "") + (l.trx ? `<div class="muted">${esc(l.trx)} · ${esc(l.centre)} · TVA ${l.tva} %${l.cur && l.cur !== "FCFA" ? ` · ${esc(String(l.orig))} ${esc(l.cur)}` : ""}</div>` : l.code === "TAXE" ? `<div class="muted">TAXE · taxe de séjour par personne</div>` : ""), money(l.amount),
       l.idx < 0 || l.reversed || l.amount < 0 ? ref(l.idx < 0 ? "nuitées" : "") : `<span class="row" style="flex-wrap:nowrap">
         ${btn(l.win === "A" ? "→ B" : "→ A", `A.fol.swap(${q(r.id)}, ${l.idx})`, "ghost sm")}
+        ${btn("Fractionner", `A.fol.split(${q(r.id)}, ${l.idx})`, "ghost sm")}
         ${others.length ? btn("Transférer", `A.fol.transfer(${q(r.id)}, ${l.idx})`, "ghost sm") : ""}
         ${btn("Écriture inverse", `A.fol.reverse(${q(r.id)}, ${l.idx})`, "ghost sm")}</span>`])
     const pays = allPayments().filter((p) => p.resId === r.id)
-    return `<div class="card"><div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(gname(r))}</span>${rt ? badge(`Routage : ${rt.what} → ${accName(rt.to)}`, "outline") : ""}</div>
-      <div class="muted">${esc(r.id)} · du ${fd(r.from)} au ${fd(r.to)} · garantie ${esc(r.guarantee)}</div>
+    const posted = S.postings.filter((x) => x.resId === r.id).length
+    const pa = r.preauth, over = pa && w.f.balance > pa.amount
+    return `<div class="card"><div class="row between"><span class="big">Ch. ${esc(r.room)} — ${esc(gname(r))}</span>${rt ? badge(`Routage${rt.auto ? " auto" : ""} : ${rt.what} → ${accName(rt.to)}`, "outline") : ""}</div>
+      <div class="muted">${esc(r.id)} · du ${fd(r.from)} au ${fd(r.to)} · garantie ${esc(r.guarantee)} · folio ouvert automatiquement au check-in · nuitées publiées par l'audit : ${posted}/${nights(r.from, r.to)}</div>
+      ${pa ? `<p style="margin:6px 0 0">${esc(pa.mode)} : ${money(pa.amount)} (${esc(pa.ref)})${over ? ` ${badge("Solde au-delà de l'autorisé", "dark")} ${btn("Ajuster la pré-autorisation", `A.fol.adjustPA(${q(r.id)})`, "ghost sm")}` : ""}</p>` : ""}
       <div class="grid" style="margin:14px 0">${kpi("Total folio", money(w.f.total), "toutes fenêtres")}${kpi("Réglé", money(w.f.paid), "paiements + transferts")}${kpi("Solde", money(w.f.balance), w.f.balance > 0 ? "à encaisser avant départ" : "soldé")}</div>
       <h3>Fenêtre A — client</h3>${tbl(["Désignation", "#Montant", ""], lineRows(w.A), "Aucune imputation.", `<tfoot><tr><td>Sous-total A</td><td class="num">${money(w.tA)}</td><td></td></tr></tfoot>`)}
       <h3>Fenêtre B — ${rt ? esc(accName(rt.to)) : "société / compte maître"}</h3>${tbl(["Désignation", "#Montant", ""], lineRows(w.B), "Fenêtre vide : définir un routage ou basculer une ligne.", `<tfoot><tr><td>Sous-total B${w.tr ? ` (dont ${money(w.tr)} transférés au city ledger)` : ""}</td><td class="num">${money(w.tB)}</td><td></td></tr></tfoot>`)}
       ${rt && w.restB > 0 ? `<div class="row" style="margin-top:10px">${btn(`Transférer ${money(w.restB)} au city ledger (${accName(rt.to)})`, `A.fol.toLedger(${q(r.id)})`)}<span class="muted">Le check-out exige un solde nul, sauf transfert city ledger autorisé (RG-FOL-02).</span></div>` : ""}
       ${others.length ? `<div class="row" style="margin-top:10px"><label for="fol-target" style="margin:0">Folio cible des transferts</label><select id="fol-target" style="max-width:280px">${others.map((x) => `<option value="${esc(x.id)}">Ch. ${esc(x.room)} · ${esc(gname(x))}</option>`).join("")}</select></div>` : ""}
+      <p class="muted">EF-FOL-001 (folio par séjour, fenêtres A/B) · EF-FOL-004 (fractionnement, transfert entre folios, comptes maîtres ci-dessous).</p>
       <div class="cols" style="margin-top:6px"><section><h3>Imputer une prestation</h3>${form([
-        field("po-code", "Code", select("po-code", ["Restaurant", "Bar", "Minibar", "Blanchisserie", "Spa", "Téléphone", "Frais divers"], "Restaurant")),
+        field("po-code", "Code de transaction", select("po-code", Object.entries(TRX).map(([k, t]) => [k, `${t.code} · ${k}`]), "Restaurant")),
         field("po-amount", "Montant", input("po-amount", "", 'type="number" min="0" step="500"')),
-        field("po-win", "Fenêtre", select("po-win", [["A", "A — client"], ["B", "B — société"]], "A")),
+        field("po-cur", "Devise", select("po-cur", Object.keys(FXR), "FCFA")),
+        field("po-win", "Fenêtre", select("po-win", [["auto", "Selon le routage"], ["A", "A — client"], ["B", "B — société"]], "auto")),
         `<div class="full">${btn("Imputer", `A.fol.post(${q(r.id)})`, "ghost")}</div>`])}
-        <h3>Routage</h3>${form([field("rt-what", "Prestations", select("rt-what", ["Hébergement", "Tout le folio"], rt?.what || "Hébergement")), field("rt-to", "Vers", select("rt-to", S.ar.accounts.map((a) => [a.id, a.name]), rt?.to || "AC1")),
-          `<div class="full row">${btn("Définir le routage", `A.fol.route(${q(r.id)})`, "ghost")}${rt ? btn("Supprimer", `A.fol.unroute(${q(r.id)})`, "ghost") : ""}</div>`])}</section>
+        <p class="muted">Chaque imputation porte son code, son centre de profit, sa TVA et sa devise (convertie en FCFA). EF-FOL-002</p>
+        <h3>Routage</h3>${form([field("rt-what", "Prestations", select("rt-what", ["Hébergement", "Hébergement et taxes", "Tout le folio"], rt?.what || "Hébergement")), field("rt-to", "Vers", select("rt-to", S.ar.accounts.map((a) => [a.id, a.name]), rt?.to || "AC1")),
+          `<div class="full row">${btn("Définir le routage", `A.fol.route(${q(r.id)})`, "ghost")}${rt ? btn("Supprimer", `A.fol.unroute(${q(r.id)})`, "ghost") : ""}</div>`])}
+        <p class="muted">Instructions automatiques par compte : ${S.routeRules.map((x) => `${esc(accName(x.account))} → ${esc(x.what)}`).join(" ; ")}. Appliquées au check-in des séjours en compte société ou sous contrat. EF-FOL-003</p>
+        <h3>Taxes</h3>${A.fof?.taxTable ? A.fof.taxTable(w.f.lines) : ""}</section>
       <section><h3>Encaisser</h3>${form([
         field("py-mode", "Moyen", select("py-mode", ["Espèces", "Carte (jeton PSP)", "Mobile Money (Orange Money)", "Mobile Money (MTN MoMo)", "Mobile Money (Wave)", "Mobile Money (Moov)", "Virement", "Chèque"], "Mobile Money (Orange Money)")),
         field("py-amount", "Montant", input("py-amount", String(Math.max(0, w.f.balance)), 'type="number" min="0" step="500"')),
         field("py-phone", "N° mobile money", input("py-phone", (G(r.guest) || {}).phone || "+225 07 ", 'placeholder="+225 07 …"')),
         `<div class="full" id="py-err"></div>`,
         `<div class="full">${btn("Encaisser", `A.fol.pay(${q(r.id)})`, "accent")}</div>`])}
-        <p class="muted">Aucun numéro de carte n'est saisi ni stocké : seul un jeton PSP est conservé (RG-FOL-01). Mobile money : confirmation asynchrone de l'opérateur (simulée).</p>
-        ${tbl(["Réf.", "Moyen", "#Montant", "Statut"], pays.map((p) => [esc(p.id), esc(p.mode), money(p.amount), payStatus(p.status)]), "Aucun paiement.")}</section></div></div>`
+        <p class="muted">Aucun numéro de carte n'est saisi ni stocké : seul un jeton PSP est conservé (RG-FOL-01). Mobile money via agrégateur : demande à l'opérateur puis confirmation asynchrone (simulée). EF-FOL-006</p>
+        ${tbl(["Réf.", "Moyen", "#Montant", "Statut"], pays.map((p) => [esc(p.id), esc(p.mode), money(p.amount), payStatus(p.status)]), "Aucun paiement.")}
+        <h3>Vue client dans l'application</h3>
+        ${phone(`<strong>Mon folio</strong><div class="muted">Ch. ${esc(r.room)} · ${esc(gname(r))}</div>
+          ${w.A.slice(-6).map((l) => `<div class="row between" style="font-size:13px;margin-top:4px"><span>${esc(l.label.slice(0, 34))}</span><span>${money(l.amount)}</span></div>`).join("")}
+          <div class="row between" style="margin-top:8px"><strong>À payer</strong><strong>${money(Math.max(0, w.tA - Math.max(0, w.f.paid - w.tr)))}</strong></div>
+          <div style="margin-top:10px">${btn("Payer par Mobile Money", `A.fol.appPay(${q(r.id)})`, "accent sm")}</div>`, "Hôtel Exemple")}
+        <p class="muted">Le client consulte son folio (fenêtre A) en temps réel et paie depuis l'application (simulé). EF-FOL-014</p></section></div></div>`
+  }
+  // Comptes maîtres de groupe : hébergement des participants routé vers le compte du groupe
+  function masterAccounts() {
+    const gs = S.groups.filter((g) => D.reservations.some((r) => r.group === g.id))
+    if (!gs.length) return `<p class="muted">Aucun groupe avec réservations générées (Réception › Groupes et attente).</p>`
+    return tbl(["Groupe", "Compte maître", "#Participants", "#En séjour", "#Hébergement routé (prévu)", ""], gs.map((g) => {
+      const m = D.reservations.filter((r) => r.group === g.id && !["annulee", "noshow", "deloge"].includes(r.status)), ih = m.filter((r) => r.status === "arrivee")
+      return [esc(g.name), esc(accName(g.account)), m.length, ih.length, money(sum(m, (r) => nights(r.from, r.to) * r.rate)),
+        ih.some((r) => windows(r).restB > 0) ? btn("Transférer au city ledger", `A.fol.masterLedger(${q(g.id)})`, "ghost sm") : ref("hébergement facturé au départ")]
+    }))
   }
 
   // ---------- Paiements ----------
@@ -548,7 +638,7 @@
       field("rf-amount", "Montant", input("rf-amount", "", 'type="number" min="0" step="500"')),
       field("rf-why", "Motif", input("rf-why", "", 'placeholder="Ex. geste commercial"'), "full"),
       `<div class="full" id="rf-err"></div>`,
-      `<div class="full">${btn("Soumettre", "A.fol.refund()")}</div>`]) + `<p class="muted">Au-delà de ${money(REFUND_LIMIT)}, deux validations sont exigées (RG-FOL-04).</p>`)}</section>
+      `<div class="full">${btn("Soumettre", "A.fol.refund()")}</div>`]) + `<p class="muted">Au-delà de ${money(REFUND_LIMIT)}, deux validations sont exigées par deux personnes distinctes (RG-FOL-04). EF-FOL-008</p>`)}</section>
       <section><h2>Demandes</h2>${tbl(["Réf.", "Folio", "#Montant", "Motif", "Demandé par", "Risque IA", "Statut", ""], S.refunds.map((x) => [esc(x.id), esc(x.label || `${x.resId} · ${R(x.resId) ? gname(R(x.resId)) : ""}${x.note ? " (" + x.note + ")" : ""}`), money(x.amount), esc(x.reason), esc(x.by), fraudBadge(fraud({ ...x, refund: true })),
         badge(x.status, x.status === "effectué" ? "on" : x.status === "refusé" ? "" : "dark"),
         x.status === "à valider" ? `<span class="row" style="flex-wrap:nowrap">${btn("2e validation", `A.fol.approve(${q(x.id)})`, "sm")}${btn("Refuser", `A.fol.reject(${q(x.id)})`, "ghost sm")}</span>` : ref(x.approvedBy ? "validé par " + x.approvedBy : "")]))}</section></div>`
@@ -689,22 +779,24 @@
       if (!no) return err("wi-err", "Aucune chambre propre et libre.")
       if (!(n >= 1)) return err("wi-err", "Nombre de nuits invalide.")
       if (!$("#wi-id").checked) return err("wi-err", "Vérifiez la pièce d'identité.")
-      if (nat !== "Côte d'Ivoire" && !$("#wi-police").checked) return err("wi-err", "Fiche de police obligatoire pour un voyageur étranger (RG-FOF-07).")
+      const FP = ["birth", "place", "prof", "addr", "doc", "issued", "entry", "from", "to"], police = Object.fromEntries(FP.map((k) => [k, val("wi-fp-" + k)]))
+      if (nat !== "Côte d'Ivoire" && FP.some((k) => !police[k])) return err("wi-err", "Fiche de police incomplète : obligatoire pour un voyageur étranger (RG-FOF-07).")
       const room = D.rooms.find((x) => x.no === no), rate = T(room.type).rate, to = addDays(S.biz, n)
       if (amount < rate) return err("wi-err", `Garantie immédiate d'au moins une nuit (${money(rate)}).`)
       if (mode === "Espèces" && !openShift()) return err("wi-err", "Aucune caisse ouverte : impossible d'encaisser des espèces.")
       const full = nightsOk(room.type, S.biz, to)
       if (full) return err("wi-err", `Plus de ${T(room.type).label} disponible la nuit du ${fd(full)} : chambre réservée pour une arrivée. Réduisez le séjour ou changez de chambre.`)
       if (busy(no, S.biz, to)) return err("wi-err", `La chambre ${no} est pré-attribuée sur une partie du séjour.`)
-      const guest = newGuest(name, { phone: val("wi-phone"), nationality: nat, idDoc: "Pièce vérifiée au comptoir" })
+      const guest = newGuest(name, { phone: val("wi-phone"), nationality: nat, idDoc: nat !== "Côte d'Ivoire" ? "Passeport " + police.doc : "Pièce vérifiée au comptoir" })
       const id = "R-" + ui.resSeq++
       D.reservations.push({ id, guest, type: room.type, from: S.biz, to, rate, guarantee: mode === "Espèces" ? "Acompte" : "Carte bancaire", status: "arrivee", room: no, key: "active", walkin: true })
       S.meta[id] = { source: "Walk-in", segment: "Individuel", booked: S.biz, mode: "comptoir" }
       D.extras[id] = []
       D.payments[id] = amount
       logPay({ resId: id, mode, amount, note: "Garantie walk-in" })
+      const fp = nat !== "Côte d'Ivoire" && A.fof?.addPolice ? A.fof.addPolice({ ...police, resId: id, guest, nationality: nat }) : null
       S.ckTimes.push(150)
-      toast(`Walk-in enregistré — chambre ${no}, clé encodée (simulé)`)
+      toast(`Walk-in enregistré — chambre ${no}, clé encodée (simulé)${fp ? `, fiche de police ${fp.id}` : ""}`)
       render()
     },
     move(id) {
@@ -713,7 +805,11 @@
       const room = D.rooms.find((x) => x.no === to)
       if (room.type !== r.type && nightsOk(room.type, S.biz, r.to, id)) return err("mv-err", `Type ${T(room.type).label} complet sur une des nuits restantes.`)
       const from = r.room
-      if (val("mv-rate") === "new") r.rate = T(room.type).rate
+      if (val("mv-rate") === "new" && T(room.type).rate !== r.rate) {
+        // les nuits passées gardent leur tarif : ajustement sur les nuits restantes (EF-RES-002)
+        const n = nights(S.biz, r.to), delta = T(room.type).rate - r.rate
+        if (n > 0) (D.extras[id] = D.extras[id] || []).push({ label: `Changement de type au ${fd(S.biz)} : ${n} nuit(s) × ${money(delta)}`, amount: n * delta, code: "HEB" })
+      }
       Object.assign(r, { room: to, type: room.type })
       D.rooms.find((x) => x.no === from).hk = "sale"
       S.moves.unshift({ at: `${today} ${nowT()}`, resId: id, from, to, reason: val("mv-why"), by: USER })
@@ -733,6 +829,45 @@
       toast(`${id} : départ ${fd(old)} → ${fd(to)}, validité de la clé ajustée (simulé)`)
       render()
     },
+    rateChange(id) {
+      const r = R(id), from = val("rc-from"), rate = Number(val("rc-rate"))
+      if (!from || from < S.biz || from >= r.to) return err("rc-err", `La date doit être comprise entre le ${fd(S.biz)} et la veille du départ.`)
+      if (!(rate > 0) || rate === r.rate) return err("rc-err", "Indiquez un nouveau tarif différent de l'actuel.")
+      const n = nights(from, r.to), delta = rate - r.rate
+      ;(D.extras[id] = D.extras[id] || []).push({ label: `Changement de tarif au ${fd(from)} (${val("rc-why")}) : ${n} nuit(s) × ${money(delta)}`, amount: n * delta, code: "HEB" })
+      toast(`${id} : ${money(rate)}/nuit à partir du ${fd(from)}, ajustement de ${money(n * delta)} au folio`)
+      render()
+    },
+    release18() {
+      const l = pendingArr().filter((r) => r.guarantee === "Aucune")
+      if (!confirm(`Libérer ${l.length} option(s) non garantie(s) ? Les chambres retournent à l'inventaire, sans frais.`)) return
+      l.forEach((r) => { r.status = "annulee"; r.cancel = { at: `${today} 18:00`, fee: 0, reason: "Option non garantie libérée à 18 h (RG-RES-01)", by: "Automatique" }; A.fof?.msg?.(r.id, "Annulation", "SMS", `Votre option ${r.id} non garantie a été libérée à 18 h.`) })
+      toast(`${l.length} option(s) libérée(s), chambres remises en vente`)
+      render()
+    },
+    allotPick(aid) {
+      const a = allots().find((x) => x.id === aid), name = val("al-name")
+      if (!name) return err("al-err", "Indiquez le nom du client.")
+      if (a.released) return err("al-err", "Allotement libéré : réserver sur l'inventaire général.")
+      if (a.picked >= a.rooms) return err("al-err", "Allotement épuisé.")
+      const id = "R-" + ui.resSeq++, acc = S.ar.accounts.find((x) => x.name === a.holder)
+      D.reservations.push({ id, guest: newGuest(name), type: a.type, from: a.from, to: a.to, rate: Math.round(T(a.type).rate * 0.9 / 500) * 500, guarantee: acc ? "Compte société" : "Carte bancaire", account: acc?.id, status: "confirmee", allot: a.id, source: "Allotement", segment: "Affaires", booked: S.biz })
+      a.picked++
+      S.allotLog.unshift(`${fd(S.biz)} : ${id} réservée sur ${a.id} (${a.picked}/${a.rooms})`)
+      toast(`${id} créée sur l'allotement ${a.id} (${a.picked}/${a.rooms})`)
+      render()
+    },
+    newContract() {
+      const acc = S.ar.accounts.find((a) => a.id === val("ct-acc")), vol = Number(val("ct-vol"))
+      const rates = Object.fromEntries(typeOrder.map((t) => [t, Number(val("ct-" + t))]))
+      if (typeOrder.some((t) => !(rates[t] > 0))) return err("ct-err", "Tarifs obligatoires pour chaque type.")
+      if (typeOrder.some((t) => rates[t] > T(t).rate)) return err("ct-err", "Un tarif négocié ne peut pas dépasser le tarif public.")
+      if (!(vol > 0)) return err("ct-err", "Volume annuel obligatoire.")
+      const id = "CT-" + String(S.contracts.length + 1).padStart(2, "0")
+      S.contracts.push({ id, account: acc.id, name: acc.name, rates, volume: vol, used: 0, from: S.biz, to: addDays(S.biz, 364), conditions: val("ct-cond") || "Conditions standard" })
+      toast(`Contrat ${id} créé pour ${acc.name} : utilisable au plan « Contrat entreprise »`)
+      render()
+    },
     walk() {
       const r = R(val("wk-res")), h = S.partners.find((x) => x.name === val("wk-hotel")), taxi = Number(val("wk-taxi")) || 0
       if (!confirm(`Déloger ${gname(r)} vers ${h.name} ?`)) return
@@ -743,6 +878,7 @@
     },
     remind(id) {
       toast(`Rappel pré-arrivée envoyé à ${gname(R(id))} (SMS simulé)`)
+      A.fof?.msg?.(id, "Rappel pré-arrivée", "SMS", `Arrivée le ${fd(R(id).from)} : check-in en ligne sur https://exemple.test/checkin/${id} (lien simulé)`)
       S.log.unshift({ id: uid("MC"), at: `${today} ${nowT()}`, author: USER, type: "Message client", room: "", text: `Rappel pré-arrivée envoyé pour ${id}.`, status: "traitée", doneMin: 1 })
     },
     askGuarantee(id) {
@@ -835,12 +971,22 @@
       if (auditRun) return
       const blk = auditChecks().filter((c) => c.block && !c.ok)
       if (blk.length) return toast("Audit bloqué : " + blk[0].hint)
-      const date = S.biz, run = (auditRun = { step: 0, notes: [] }), res = { noshows: 0, tax: 0, rooms: 0 }
+      const date = S.biz, run = (auditRun = { step: 0, notes: [] }), res = { noshows: 0, tax: 0, rooms: 0, revenue: 0 }
       const work = [
-        () => "Aucune anomalie bloquante.",
+        () => { const w = auditChecks().filter((c) => !c.ok); return w.length ? `Anomalies signalées : ${w.map((c) => c.label.toLowerCase()).join(", ")}.` : "Aucune anomalie." },
         () => { const l = pendingArr(date); l.forEach((r) => sej.noshow(r.id, true)); res.noshows = l.length; return l.length ? `${l.length} no-show(s) : ${l.map((r) => r.id).join(", ")}` : "Aucun no-show." },
-        () => { const l = inHouse().filter((r) => r.to > date); l.forEach((r) => (D.extras[r.id] = D.extras[r.id] || []).push({ label: `Taxe de séjour — nuit du ${fd(date)}`, amount: TAXE, code: "TAXE" })); res.rooms = l.length; res.tax = l.length * TAXE; return `${money(res.tax)} sur ${l.length} folio(s) (nuitées déjà valorisées au folio)` },
-        () => "Rapport d'occupation, main courante, balance des folios et caisses archivés (PDF simulé).",
+        () => {
+          const l = inHouse().filter((r) => r.to > date), t = D.fof?.fisc?.taxeSejour || TAXE
+          l.forEach((r) => {
+            S.postings.push({ date, resId: r.id, room: r.room, amount: r.rate })
+            const ex = (D.extras[r.id] = D.extras[r.id] || [])
+            if (!ex.some((x) => x.code === "TAXE" && x.night === date)) { ex.push({ label: `Taxe de séjour — nuit du ${fd(date)} (${r.adults || 1} pers.)`, amount: t * (r.adults || 1), code: "TAXE", night: date }); res.tax += t * (r.adults || 1) }
+          })
+          res.rooms = l.length; res.revenue = sum(l, (r) => r.rate)
+          return `${l.length} nuitée(s) publiée(s) (${money(res.revenue)}) et ${money(res.tax)} de taxe de séjour par personne sur les folios`
+        },
+        () => { const l = allots().filter((a) => !a.released && allotRel(a) <= date); l.forEach((a) => { a.released = true; a.releasedBy = "audit de nuit"; S.allotLog.unshift(`${fd(date)} : ${a.id} (${a.holder}) libéré, ${a.rooms - a.picked} ${T(a.type).label} remises en vente`) }); return l.length ? `${l.length} allotement(s) libéré(s) : ${l.map((a) => a.id).join(", ")}` : "Aucun allotement échu." },
+        () => { const sell = D.rooms.filter((x) => x.hk !== "hs").length; res.report = { occ: Math.round((res.rooms / sell) * 100), adr: res.rooms ? Math.round(res.revenue / res.rooms) : 0, revpar: Math.round((res.revenue || 0) / sell), inHouse: res.rooms, noshows: res.noshows, open: S.log.filter((e) => e.status === "ouverte").length }; return "Rapport d'occupation, revenu, main courante, balance des folios et caisses archivés (PDF simulé)." },
         () => { S.biz = addDays(date, 1); setBusinessDate(S.biz); S.audits.unshift({ date, at: nowT(), by: USER, ...res }); return `Date hôtelière : ${fd(S.biz)}` },
       ]
       const next = () => {
@@ -872,11 +1018,50 @@
   // ---------- Actions facturation (fol) ----------
   const fol = {
     post(id) {
-      const amount = Number(val("po-amount"))
-      if (!(amount > 0)) return toast("Indiquez un montant")
-      ;(D.extras[id] = D.extras[id] || []).push({ label: val("po-code"), amount, win: val("po-win"), code: val("po-code") })
-      toast("Prestation imputée")
+      const orig = Number(val("po-amount")), cur = val("po-cur") || "FCFA", k = val("po-code"), t = TRX[k], w = val("po-win")
+      if (!(orig > 0)) return toast("Indiquez un montant")
+      const amount = Math.round(orig * FXR[cur])
+      ;(D.extras[id] = D.extras[id] || []).push({ label: k + (cur !== "FCFA" ? ` (${orig} ${cur})` : ""), amount, win: w === "auto" ? undefined : w, code: k, trx: t.code, centre: t.centre, tva: t.tva, cur, orig })
+      toast(`Prestation imputée : ${t.code} ${k}, ${money(amount)}`)
       render()
+    },
+    split(id, i) {
+      const l = D.extras[id][i]
+      const v = Number(prompt(`Fractionner « ${l.label} » (${money(l.amount)}) : montant à basculer dans l'autre fenêtre`, String(Math.round(l.amount / 2 / 500) * 500)))
+      if (!(v > 0) || v >= l.amount) return toast("Montant de fractionnement invalide")
+      const cur = windows(R(id)).A.concat(windows(R(id)).B).find((x) => x.idx === i).win
+      l.amount -= v
+      l.win = cur
+      D.extras[id].push({ ...l, label: `${l.label} (part fractionnée)`, amount: v, win: cur === "A" ? "B" : "A" })
+      toast(`${money(v)} basculés en fenêtre ${cur === "A" ? "B" : "A"}`)
+      render()
+    },
+    autoRoute(id) {
+      const r = R(id)
+      if (!r || S.routing[id]) return
+      const acc = r.account || (r.contract && S.contracts.find((c) => c.id === r.contract)?.account)
+      if (!acc) return
+      const rule = S.routeRules.find((x) => x.account === acc)
+      S.routing[id] = { what: rule ? rule.what : "Hébergement", to: acc, auto: true }
+    },
+    applyRules() { inHouse().forEach((r) => fol.autoRoute(r.id)); toast("Instructions de routage automatiques appliquées"); render() },
+    adjustPA(id) {
+      const r = R(id), b = folio(r).balance
+      r.preauth = { ...r.preauth, amount: b + (D.fof?.fisc?.caution || 20000), ref: uid("PA") }
+      toast(`Pré-autorisation ajustée à ${money(r.preauth.amount)} (RG-FOL-07, PSP simulé)`)
+      render()
+    },
+    appPay(id) {
+      const w = windows(R(id)), amount = Math.max(0, w.tA - Math.max(0, w.f.paid - w.tr))
+      if (!amount) return toast("Rien à payer sur la fenêtre client")
+      const p = logPay({ resId: id, mode: "Mobile Money (Wave)", amount, status: "en attente", by: "Application client", note: "Paiement depuis l'application (simulé)" })
+      toast("Demande envoyée depuis l'application : validation sur le téléphone du client…")
+      setTimeout(() => { const x = S.payLog.find((y) => y.id === p.id); if (!x || x.status !== "en attente") return; x.status = "confirmé"; x.note = "Confirmé par l'opérateur (simulé)"; D.payments[id] = (D.payments[id] || 0) + amount; toast(`Paiement application ${x.id} confirmé`); render() }, 2500)
+      render()
+    },
+    masterLedger(gid) {
+      const l = D.reservations.filter((r) => r.group === gid && r.status === "arrivee" && S.routing[r.id] && windows(r).restB > 0)
+      l.forEach((r) => fol.toLedger(r.id))
     },
     swap(id, i) { const l = D.extras[id][i]; const w = windows(R(id)); const cur = w.A.concat(w.B).find((x) => x.idx === i).win; l.win = cur === "A" ? "B" : "A"; render() },
     reverse(id, i) {
@@ -1014,6 +1199,7 @@
     if (r && D.payments[r.id] != null && r.status !== "partie") { D.payments[r.id] -= x.amount; x.counted = true }
   }
 
+  sej.riskOf = (id) => { const r = R(id); return r ? { noshow: risk(r), cancel: cancelRisk(r) } : null }
   HMS.module({ code: "sej", group: "Réception & séjour", title: "Séjour : compléments", phase: "4-6", spec: "§8 RES, §9 FOF", actions: sej, screens: [
     { id: "sej-rack", label: "Plan des chambres", spec: "FOF RES", view: views.rack },
     { id: "sej-mouv", label: "Mouvements de séjour", spec: "FOF RES", view: views.mouv },
