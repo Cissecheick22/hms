@@ -90,7 +90,7 @@
     tpos: [["Bar Lagune", "Terminal tiers BAR-01 via hub d'intégration", "Synchronisé 13:02"], ["Snack Piscine", "Tablette POS native", "En ligne"]],
     ai: {}, seq: 305, rsSeq: 43, tbSeq: 4,
   }
-  Object.assign(ui, { fnbOutlet: "REST", fnbRole: "serveur", fnbCarte: "REST", fnbStation: "toutes" })
+  Object.assign(ui, { fnbOutlet: "REST", fnbRole: "serveur", fnbCarte: "REST", fnbStation: "toutes", fnbMobTable: null, fnbAppRes: null })
   const F = D.fnb
   const I = (id) => F.items.find((i) => i.id === id)
   const O = (id) => F.outlets.find((o) => o.id === id)
@@ -116,16 +116,26 @@
     return null
   }
   const post = (r, label, amount) => { (D.extras[r.id] = D.extras[r.id] || []).push({ label, amount }) }
+  // Décrément des stocks dans Achats (lien inter-modules, carte #61) : sans effet si l'API n'est pas chargée
+  const consume = (lines, centre) => { if (lines.length) A.prc && A.prc.consume && A.prc.consume(lines, centre) }
+  const stockLines = (lines) => lines.map((l) => ({ label: I(l.item).name, qty: l.qty }))
+  // Carte selon l'heure (US-FNB-01) : créneau de l'article comparé à l'heure simulée
+  const slotOk = (i, h = mins(F.now)) => {
+    if (h >= 23 * 60 || h < 6 * 60) return i.slot === "Toute la journée" // carte réduite de nuit
+    if (i.slot === "Midi") return h >= 11 * 60 && h < 15 * 60
+    if (i.slot === "À partir de 17:00") return h >= 17 * 60
+    return true
+  }
   const AI_DONE = { forecast: "Prévision transmise aux Achats (commande poisson +30 %) et aux RH (2 extras samedi midi)", buffet: "Bon de production du buffet de demain mis à jour : 2,5 kg de fruits, 40 viennoiseries" }
   const aiAct = (k, label) => (F.ai[k] ? badge("Appliqué", "on") + " " + muted(AI_DONE[k]) : btn(label, `A.fnb.ai(${q(k)})`, "ghost sm"))
   const avgPrep = (s) => { const a = F.prep[s] || []; return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0 }
 
   // ---------- Écran ----------
-  const TABS = [["salle", "Salle et commandes"], ["cuisine", "Écran cuisine"], ["roomservice", "Room service"], ["chambres", "Minibar et petits-déj."], ["carte", "Carte et fiches techniques"], ["pdv", "Points de vente et tables"], ["pilotage", "KPI et IA"]]
+  const TABS = [["salle", "Salle et commandes"], ["mobile", "Commande mobile"], ["cuisine", "Écran cuisine"], ["roomservice", "Room service"], ["chambres", "Minibar et petits-déj."], ["carte", "Carte et fiches techniques"], ["pdv", "Points de vente et tables"], ["pilotage", "KPI et IA"]]
   const views = {
     fnb(p) {
       const tab = p[0] || "salle"
-      const body = { salle, cuisine, roomservice, chambres, carte, pdv, pilotage }[tab] || salle
+      const body = { salle, mobile, cuisine, roomservice, chambres, carte, pdv, pilotage }[tab] || salle
       return pageHead("Restauration / POS", `Service de midi en cours (heure simulée ${F.now}). Montants et volumes d'exemple ; TPE, imprimantes et écrans cuisine simulés.`,
         F.offline ? badge("Hors ligne · commandes en file", "dark") + btn("Revenir en ligne", "A.fnb.online()", "sm") : btn("Simuler une coupure réseau", "A.fnb.offline()", "ghost sm"))
         + subtabs("fnb", TABS, tab) + body(p.slice(1))
@@ -140,7 +150,7 @@
         <div class="row between"><span class="roomno">${esc(x)}</span>${badge(s, k)}</div>
         <div class="muted">${F.seats[x]} places${c ? ` · ${c.covers} couv. · ${money(total(c))}` : ""}</div></button>` }).join("")}</div>`
     return `${chips("fnbOutlet", outs)}
-      <p class="muted">${esc(o.name)} · ${esc(o.hours)} · EF-FNB-001/003</p>
+      <p class="muted">${esc(o.name)} · ${esc(o.hours)} · EF-FNB-001 · EF-FNB-003 (tablette de salle ; version mobile dans « Commande mobile »)</p>
       ${t ? split(plan, ticket(o, t)) : plan + `<p class="muted" style="margin-top:12px">Sélectionnez une table pour ouvrir ou reprendre un ticket.</p>`}`
   }
 
@@ -187,6 +197,27 @@
       </div>`
   }
 
+  // EF-FNB-003 : prise de commande sur mobile du serveur, y compris hors ligne (même ticket que la tablette)
+  function mobile() {
+    const o = O(ui.fnbOutlet), t = o.tables.includes(ui.fnbMobTable) ? ui.fnbMobTable : o.tables.find((x) => checkOf(x)) || o.tables[0]
+    const c = checkOf(t), menu = F.items.filter((i) => i.outlets.includes(o.id))
+    const queued = F.checks.reduce((s, x) => s + x.lines.filter((l) => l.st === "file").length, 0)
+    const unsent = c ? c.lines.filter((l) => !l.sent).length : 0
+    const screen = `<div class="row between"><span class="muted">${esc(o.name)}</span>${F.offline ? badge("Hors ligne", "dark") : badge("En ligne", "outline")}</div>
+      ${field("fnb-mt", "Table", select("fnb-mt", o.tables.map((x) => [x, `${x}${checkOf(x) ? " · ouverte" : ""}`]), t, `onchange="ui.fnbMobTable=this.value;render()"`))}
+      ${c ? `<div class="muted" style="margin-top:6px">Ticket ${esc(c.id)} · ${c.covers} couv. · ${esc(money(total(c)))}</div>
+        <div class="stack" style="margin-top:6px">${c.lines.map((l) => `<div class="row between"><span>${l.qty} × ${esc(I(l.item).name)}</span>${lineBadge(l)}</div>`).join("") || muted("Aucun article.")}</div>
+        <div class="row" style="margin-top:8px">${menu.filter((i) => i.avail).map((i) => `<button class="btn ghost sm" onclick="A.fnb.add(${q(c.id)}, ${q(i.id)})">${esc(i.name)}</button>`).join("")}</div>
+        <div class="row" style="margin-top:10px">${btn(`Envoyer${unsent ? ` (${unsent})` : ""}`, `A.fnb.send(${q(c.id)})`, unsent ? "accent" : "")}</div>`
+        : `<p class="muted">Table libre · ${F.seats[t]} places.</p>${btn("Ouvrir (2 couverts)", `A.fnb.mobOpen(${q(t)})`)}`}`
+    return `${chips("fnbOutlet", Object.fromEntries(F.outlets.filter((x) => x.tables.length).map((x) => [x.id, x.name])))}
+      <div class="cols"><section>${phone(screen, "POS serveur · mobile")}</section>
+      <section>${card("Synchronisation", `<p style="margin:0">Le mobile et la tablette de salle partagent les mêmes tickets. En cas de coupure, les lignes sont gardées sur l'appareil puis transmises en cuisine au retour du réseau.</p>
+        <p class="muted">${queued} ligne(s) en file d'attente sur les appareils.</p>
+        <div class="row">${F.offline ? btn("Revenir en ligne et synchroniser", "A.fnb.online()", "sm") : btn("Simuler une coupure réseau", "A.fnb.offline()", "ghost sm")}</div>
+        <p class="muted">EF-FNB-003 · ENF-FNB-01 · appareils simulés</p>`)}</section></div>`
+  }
+
   function cuisine() {
     const stations = [...new Set(F.outlets.flatMap((o) => o.stations))]
     const tickets = []
@@ -215,7 +246,8 @@
       ${tbl(["N°", "Chambre", "Commande", "#Montant", "Canal", "Statut", ""], F.rs.map((o) => { const r = R(o.res), amt = o.lines.reduce((s, l) => s + I(l.item).price * l.qty, 0)
         return [esc(o.id), `Ch. ${esc(r.room)}<div class="muted">${esc(G(r.guest).name)}</div>`, esc(o.lines.map((l) => `${l.qty} × ${I(l.item).name}`).join(", ")), money(amt), `${esc(o.via)}<div class="muted">${esc(o.placed)}</div>`, badge(...RS[o.status]),
           next[o.status] ? btn(o.status === "livraison" ? "Livrée" : RS[next[o.status]][0], `A.fnb.rsNext(${q(o.id)})`, "sm") : muted("Imputée au folio")] }), "Aucune commande.")}
-      <p class="muted">Le client suit le statut en temps réel dans l'application (US-FNB-01). Paiement sur la chambre à la livraison.</p></section>
+      <p class="muted">Le client suit le statut en temps réel dans l'application (US-FNB-01). Paiement sur la chambre à la livraison.</p>
+      ${appRs(rooms, RS)}</section>
       <section><h2>Nouvelle commande (saisie téléphone)</h2><div class="card">
         ${form([field("rs-res", "Chambre", select("rs-res", rooms.map((r) => [r.id, `Ch. ${r.room} — ${G(r.guest).name}`]), rooms[0]?.id, `onchange="A.fnb.rsCheck()"`))])}
         <h3>Carte room service (selon l'heure)</h3>
@@ -223,6 +255,28 @@
         <div id="rs-alert" style="margin-top:8px"></div>
         <div class="row" style="margin-top:10px">${btn("Transmettre en cuisine", "A.fnb.rsCreate()")}</div>
         <p class="muted">Allergènes du profil client signalés à la commande (RG-FNB-02).</p></div></section></div>`
+  }
+
+  // EF-FNB-006 : application client — carte selon l'heure, commande payée sur la chambre, suivi de la livraison
+  function appRs(rooms, RS) {
+    const r = R(ui.fnbAppRes) && R(ui.fnbAppRes).status === "arrivee" ? R(ui.fnbAppRes) : rooms[0]
+    if (!r) return ""
+    const al = F.allergies[r.guest] || [], menu = F.items.filter((i) => i.outlets.includes("RS") && i.avail && slotOk(i))
+    const mine = F.rs.filter((o) => o.res === r.id), steps = ["recue", "preparation", "livraison", "livree"]
+    const screen = `<div class="muted">Ch. ${esc(r.room)} · ${esc(G(r.guest).name)}</div>
+      <h3 style="margin:8px 0 4px">Carte de ${esc(F.now)}</h3>
+      ${menu.map((i) => { const hit = i.allergens.some((a) => al.includes(a))
+        return `<label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink);margin:4px 0"><input type="checkbox" class="app-item" value="${esc(i.id)}"><span>${esc(i.name)} · ${esc(money(i.price))}${hit ? `<br><strong>Allergène : ${esc(i.allergens.filter((a) => al.includes(a)).join(", "))}</strong>` : ""}</span></label>` }).join("")}
+      ${al.length ? `<label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink);margin-top:6px"><input type="checkbox" id="app-ack"><span>Je confirme commander malgré mon allergie (${esc(al.join(", "))})</span></label>` : ""}
+      <div id="app-err" style="margin-top:6px"></div>
+      <div style="margin-top:8px">${btn("Commander · payer sur la chambre", "A.fnb.appOrder()", "accent")}</div>
+      ${mine.length ? `<h3 style="margin:12px 0 4px">Mes commandes</h3>${mine.map((o) => `<div class="card" style="padding:8px;margin-bottom:6px"><div class="row between"><strong>${esc(o.id)}</strong>${badge(...RS[o.status])}</div>
+        <div class="muted">${esc(o.lines.map((l) => `${l.qty} × ${I(l.item).name}`).join(", "))}</div>
+        <div class="row" style="gap:4px;margin-top:6px">${steps.map((s, k) => `<span class="pill ${k <= steps.indexOf(o.status) ? "on" : "outline"}">${esc(RS[s][0])}</span>`).join("")}</div></div>`).join("")}` : ""}`
+    return `<h2>Application client (EF-FNB-006)</h2>
+      <div class="row"><span class="muted">Client connecté :</span>${select("fnb-appres", rooms.map((x) => [x.id, `Ch. ${x.room} — ${G(x.guest).name}`]), r.id, `onchange="ui.fnbAppRes=this.value;render()"`)}</div>
+      <div style="margin-top:10px">${phone(screen, "Appli client · room service")}</div>
+      <p class="muted">Commande reçue par l'équipe dans le tableau ci-dessus ; chaque changement de statut est visible par le client (notification simulée). EF-FNB-006 · US-FNB-01 · RG-FNB-02</p>`
   }
 
   function chambres() {
@@ -252,7 +306,7 @@
     const detail = sel ? card(`Fiche technique — ${sel.name}`, `<div class="muted">Rendement : ${r.yield} portion(s) · poste ${esc(sel.station)} · modificateurs : ${esc(sel.mods.join(", ") || "aucun")}</div>
       ${tbl(["Ingrédient", "Quantité", "#Coût"], r.ingr.map((x) => [esc(x[0]), esc(x[1]), money(x[2])]), "", `<tfoot><tr><td>Coût par portion</td><td></td><td class="num">${money(cost(sel.id))}</td></tr></tfoot>`)}
       <div class="form" style="margin-top:12px">${field("fnb-price", "Prix de vente (FCFA)", input("fnb-price", sel.price, 'type="number" min="0" step="500"'))}<div style="align-self:end">${btn("Mettre à jour le prix", `A.fnb.price(${q(sel.id)})`)}</div></div>
-      <p class="muted">Chaque vente décrémente le stock théorique des ingrédients dans Achats et stocks (fnb.stock.consumed, simulé). EF-FNB-008.</p>`) : ""
+      <p class="muted">Chaque vente décrémente le stock dans Achats et stocks (fnb.stock.consumed) ${A.prc && A.prc.consume ? "— liaison active" : "— liaison Achats non chargée"}. EF-FNB-008.</p>`) : ""
     const stars = F.items.filter((i) => i.sold >= 40 && cost(i.id) / i.price < 0.32).map((i) => i.name)
     const puzzle = F.items.filter((i) => i.sold < 25 && cost(i.id) / i.price < 0.3).map((i) => i.name)
     return `${chips("fnbCarte", { toutes: "Toute la carte", ...Object.fromEntries(F.outlets.filter((o) => o.id !== "MB").map((o) => [o.id, o.name])) })}
@@ -308,6 +362,21 @@
       F.checks.forEach((c) => c.lines.forEach((l) => { if (l.st === "file") Object.assign(l, { st: "attente", sent: F.now }) }))
       F.offline = false; toast(`Synchronisation terminée : ${n} ligne(s) transmise(s) en cuisine`); render()
     },
+    mobOpen(t) {
+      F.checks.push({ id: "C-" + F.seq++, outlet: ui.fnbOutlet, table: t, covers: Math.min(2, F.seats[t]), waiter: "Seydou Bamba (mobile)", opened: F.now, status: "ouvert", lines: [] })
+      ui.fnbMobTable = t; toast(F.offline ? "Ticket ouvert hors ligne, conservé sur le mobile" : "Ticket ouvert depuis le mobile"); render()
+    },
+    appOrder() {
+      const r = R(val("fnb-appres")), ids = [...document.querySelectorAll(".app-item:checked")].map((x) => x.value)
+      const e = (m) => ($("#app-err").innerHTML = err(m))
+      if (!ids.length) return e("Choisissez au moins un article.")
+      const issue = creditIssue(r)
+      if (issue) return e(`Paiement sur la chambre impossible : ${issue}`)
+      const al = F.allergies[r.guest] || []
+      if (ids.some((id) => I(id).allergens.some((a) => al.includes(a))) && !$("#app-ack")?.checked) return e("Un article contient un allergène déclaré dans votre profil : confirmez ou retirez-le (RG-FNB-02).")
+      F.rs.push({ id: "RS-" + F.rsSeq++, res: r.id, lines: ids.map((item) => ({ item, qty: 1 })), placed: F.now, via: "App mobile", status: "recue" })
+      toast("Commande reçue, suivez-la dans l'application"); render()
+    },
     open(t) {
       const cov = Number(val("fnb-cov"))
       if (!(cov > 0)) return toast("Indiquez le nombre de couverts")
@@ -355,6 +424,7 @@
         F.closed.push({ id: c.id, outlet: c.outlet, covers: c.covers, total: amount, mode: label, hotel: true, cost: live(c).reduce((s, l) => s + cost(l.item) * l.qty, 0) })
       } else F.closed.push({ id: c.id, outlet: c.outlet, covers: c.covers, total: amount, mode, hotel: false, cost: live(c).reduce((s, l) => s + cost(l.item) * l.qty, 0) })
       live(c).forEach((l) => (I(l.item).sold += l.qty))
+      consume(stockLines(live(c)), "Restaurant")
       c.status = "clos"
       toast(`${c.id} réglé : ${money(amount)} · ${label}`)
       go("fnb/salle")
@@ -387,6 +457,7 @@
       if (o.status === "livree") {
         const r = R(o.res), amt = o.lines.reduce((s, l) => s + I(l.item).price * l.qty, 0)
         post(r, `Room service — ${o.id}`, amt)
+        consume(stockLines(o.lines), "Restaurant")
         F.closed.push({ id: o.id, outlet: "RS", covers: 1, total: amt, mode: `Imputation ch. ${r.room}`, hotel: true, cost: o.lines.reduce((s, l) => s + cost(l.item) * l.qty, 0) })
         toast(`Livrée et imputée au folio ch. ${r.room}`)
       } else toast("Statut mis à jour, client notifié (simulé)")
@@ -407,6 +478,7 @@
       const issue = creditIssue(r)
       if (issue) return toast(`Imputation refusée : ${issue}`)
       post(r, `Minibar — ${d.qty} × ${MBI(d.item).name}`, d.qty * MBI(d.item).price)
+      consume([{ label: MBI(d.item).name, qty: d.qty }], "Minibar")
       F.mbDetected = F.mbDetected.filter((x) => x !== d)
       toast(`Minibar imputé ch. ${d.room}`); render()
     },
@@ -416,6 +488,7 @@
       const issue = creditIssue(r)
       if (issue) return ($("#mb-err").innerHTML = err(`Imputation refusée (RG-FNB-01) : ${issue}`))
       post(r, `Minibar — ${lines.map(([i, n]) => `${n} × ${i.name}`).join(", ")}`, lines.reduce((s, [i, n]) => s + i.price * n, 0))
+      consume(lines.map(([i, n]) => ({ label: i.name, qty: n })), "Minibar")
       toast(`Minibar imputé au folio ch. ${r.room}`); render()
     },
     toggle(id) { const i = I(id); i.avail = !i.avail; toast(`${i.name} : ${i.avail ? "disponible" : "retiré des commandes"}`); render() },
