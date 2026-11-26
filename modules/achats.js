@@ -4,19 +4,40 @@
 ;(() => {
   // ---------- Données d'exemple ----------
   D.prc = {
-    stores: ["Magasin central", "Économat cuisine", "Cave / bar", "Magasin technique"],
+    stores: ["Magasin central", "Économat cuisine", "Cave / bar", "Magasin technique", "Réserve spa"],
     items: [
       { code: "ART-101", name: "Riz parfumé (sac 25 kg)", unit: "sac", family: "Denrées", account: "6011", cost: 18500, store: "Économat cuisine", supplier: "F-A" },
       { code: "ART-102", name: "Huile végétale (bidon 20 L)", unit: "bidon", family: "Denrées", account: "6011", cost: 26000, store: "Économat cuisine", supplier: "F-A" },
-      { code: "ART-103", name: "Filet de poulet (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 3200, store: "Économat cuisine", supplier: "F-B", perishable: true },
+      { code: "ART-103", name: "Filet de poulet (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 3200, store: "Économat cuisine", supplier: "F-B", perishable: true, keys: ["poulet"], perSale: 0.4 },
       { code: "ART-104", name: "Tomates fraîches (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 900, store: "Économat cuisine", supplier: "F-B", perishable: true },
       { code: "ART-201", name: "Eau minérale 50 cl (pack 12)", unit: "pack", family: "Boissons", account: "6012", cost: 2400, store: "Cave / bar", supplier: "F-C" },
-      { code: "ART-202", name: "Jus de fruits 1 L", unit: "bouteille", family: "Boissons", account: "6012", cost: 1500, store: "Cave / bar", supplier: "F-C" },
+      { code: "ART-202", name: "Jus de fruits 1 L", unit: "bouteille", family: "Boissons", account: "6012", cost: 1500, store: "Cave / bar", supplier: "F-C", keys: ["jus de fruits", "jus"], perSale: 0.25 },
+      // articles vendus à l'unité par le restaurant, le bar et le minibar (keys : mots-clés de correspondance, perSale : quantité de stock par unité vendue)
+      { code: "ART-203", name: "Eau minérale 50 cl (bouteille)", unit: "bouteille", family: "Boissons", account: "6012", cost: 200, store: "Cave / bar", supplier: "F-C", keys: ["eau minerale", "eau"] },
+      { code: "ART-204", name: "Bière locale 65 cl", unit: "bouteille", family: "Boissons", account: "6012", cost: 900, store: "Cave / bar", supplier: "F-C", keys: ["biere"] },
+      { code: "ART-205", name: "Soda 33 cl", unit: "canette", family: "Boissons", account: "6012", cost: 450, store: "Cave / bar", supplier: "F-C", keys: ["soda"] },
+      { code: "ART-206", name: "Fleurs de bissap (sachet 200 g)", unit: "sachet", family: "Boissons", account: "6012", cost: 1000, store: "Cave / bar", supplier: "F-B", keys: ["bissap"], perSale: 0.1 },
+      { code: "ART-207", name: "Café en grains (kg)", unit: "kg", family: "Boissons", account: "6012", cost: 9000, store: "Cave / bar", supplier: "F-A", keys: ["cafe", "expresso"], perSale: 0.01 },
+      { code: "ART-208", name: "Noix de cajou (sachet)", unit: "sachet", family: "Boissons", account: "6012", cost: 1200, store: "Cave / bar", supplier: "F-A", keys: ["cajou"] },
+      { code: "ART-209", name: "Chocolat (tablette)", unit: "tablette", family: "Boissons", account: "6012", cost: 800, store: "Cave / bar", supplier: "F-A", keys: ["chocolat"] },
+      { code: "ART-105", name: "Capitaine frais (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 5000, store: "Économat cuisine", supplier: "F-B", perishable: true, keys: ["capitaine", "poisson"], perSale: 0.4 },
+      { code: "ART-106", name: "Crevettes décortiquées (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 15000, store: "Économat cuisine", supplier: "F-B", perishable: true, keys: ["crevette"], perSale: 0.12 },
+      { code: "ART-107", name: "Viande de bœuf (kg)", unit: "kg", family: "Denrées", account: "6011", cost: 8000, store: "Économat cuisine", supplier: "F-B", perishable: true, keys: ["boeuf"], perSale: 0.2 },
       { code: "ART-301", name: "Savon d'accueil 30 g", unit: "pièce", family: "Produits d'accueil", account: "6022", cost: 150, store: "Magasin central", supplier: "F-D" },
       { code: "ART-302", name: "Gel douche 30 ml", unit: "flacon", family: "Produits d'accueil", account: "6022", cost: 220, store: "Magasin central", supplier: "F-D" },
       { code: "ART-401", name: "Lessive liquide (bidon 20 L)", unit: "bidon", family: "Lessiviels", account: "6022", cost: 32000, store: "Magasin central", supplier: "F-D" },
-      { code: "ART-501", name: "Condensateur 35 µF", unit: "pièce", family: "Pièces techniques", account: "6052", cost: 12000, store: "Magasin technique", supplier: "F-E" },
-      { code: "ART-502", name: "Ampoule LED E27", unit: "pièce", family: "Pièces techniques", account: "6052", cost: 1800, store: "Magasin technique", supplier: "F-E" },
+      { code: "ART-501", name: "Condensateur 35 µF", unit: "pièce", family: "Pièces techniques", account: "6052", cost: 12000, store: "Magasin technique", supplier: "F-E", keys: ["condensateur"] },
+      { code: "ART-502", name: "Ampoule LED E27", unit: "pièce", family: "Pièces techniques", account: "6052", cost: 1800, store: "Magasin technique", supplier: "F-E", keys: ["ampoule"] },
+      { code: "ART-503", name: "Joint de robinet (lot de 10)", unit: "lot", family: "Pièces techniques", account: "6052", cost: 2500, store: "Magasin technique", supplier: "F-E", keys: ["joint"] },
+      { code: "ART-504", name: "Flexible inox 40 cm", unit: "pièce", family: "Pièces techniques", account: "6052", cost: 3500, store: "Magasin technique", supplier: "F-E", keys: ["flexible"] },
+      { code: "ART-505", name: "Piles serrure (lot de 4)", unit: "lot", family: "Pièces techniques", account: "6052", cost: 4000, store: "Magasin technique", supplier: "F-E", keys: ["piles", "pile", "batterie"] },
+      // spa : produits de soin (cabine) et produits revendus en boutique
+      { code: "ART-601", name: "Huile de massage professionnelle (litre)", unit: "litre", family: "Produits spa", account: "6022", cost: 14000, store: "Réserve spa", supplier: "F-D", keys: ["massage", "rituel"], perSale: 0.05 },
+      { code: "ART-602", name: "Huile de massage au karité 100 ml (boutique)", unit: "flacon", family: "Produits spa", account: "6022", cost: 3500, store: "Réserve spa", supplier: "F-D", keys: ["huile de massage"] },
+      { code: "ART-603", name: "Savon noir artisanal", unit: "pain", family: "Produits spa", account: "6022", cost: 1500, store: "Réserve spa", supplier: "F-D", keys: ["savon noir", "hammam"] },
+      { code: "ART-604", name: "Crème visage hydratante (boutique)", unit: "pot", family: "Produits spa", account: "6022", cost: 7000, store: "Réserve spa", supplier: "F-D", keys: ["creme visage"] },
+      { code: "ART-605", name: "Crème de soin professionnelle (pot 500 ml)", unit: "pot", family: "Produits spa", account: "6022", cost: 18000, store: "Réserve spa", supplier: "F-D", keys: ["soin visage", "visage", "manucure"], perSale: 0.05 },
+      { code: "ART-606", name: "Beurre de karité pur 200 g", unit: "pot", family: "Produits spa", account: "6022", cost: 2500, store: "Réserve spa", supplier: "F-D", keys: ["beurre de karite", "gommage"] },
     ],
     // stock par magasin ; lots et péremption pour les denrées (EF-PRC-010)
     stock: [
@@ -32,7 +53,28 @@
       { item: "ART-501", store: "Magasin technique", qty: 0, min: 1, max: 4 },
       { item: "ART-502", store: "Magasin technique", qty: 25, min: 10, max: 50 },
       { item: "ART-301", store: "Économat cuisine", qty: 0, min: 0, max: 0 },
+      { item: "ART-203", store: "Cave / bar", qty: 64, min: 48, max: 240 },
+      { item: "ART-204", store: "Cave / bar", qty: 30, min: 24, max: 120 },
+      { item: "ART-205", store: "Cave / bar", qty: 40, min: 24, max: 96 },
+      { item: "ART-206", store: "Cave / bar", qty: 6, min: 3, max: 20 },
+      { item: "ART-207", store: "Cave / bar", qty: 4, min: 2, max: 10 },
+      { item: "ART-208", store: "Cave / bar", qty: 18, min: 12, max: 48 },
+      { item: "ART-209", store: "Cave / bar", qty: 13, min: 12, max: 48 },
+      { item: "ART-105", store: "Économat cuisine", qty: 8, min: 5, max: 25, lots: [{ lot: "L-2611C", exp: "2026-11-28", qty: 8 }] },
+      { item: "ART-106", store: "Économat cuisine", qty: 3, min: 2, max: 8, lots: [{ lot: "L-2511K", exp: "2026-11-29", qty: 3 }] },
+      { item: "ART-107", store: "Économat cuisine", qty: 10, min: 6, max: 25, lots: [{ lot: "L-2611D", exp: "2026-11-30", qty: 10 }] },
+      { item: "ART-503", store: "Magasin technique", qty: 4, min: 2, max: 10 },
+      { item: "ART-504", store: "Magasin technique", qty: 3, min: 2, max: 8 },
+      { item: "ART-505", store: "Magasin technique", qty: 6, min: 4, max: 20 },
+      { item: "ART-601", store: "Réserve spa", qty: 3, min: 2, max: 10 },
+      { item: "ART-602", store: "Réserve spa", qty: 12, min: 5, max: 30 },
+      { item: "ART-603", store: "Réserve spa", qty: 4, min: 6, max: 24 },
+      { item: "ART-604", store: "Réserve spa", qty: 7, min: 3, max: 15 },
+      { item: "ART-605", store: "Réserve spa", qty: 2, min: 1, max: 6 },
+      { item: "ART-606", store: "Réserve spa", qty: 20, min: 8, max: 40 },
     ],
+    // alertes de seuil levées par les sorties (ventes POS, spa, minibar, maintenance)
+    alerts: [],
     suppliers: [
       { id: "F-A", name: "Ets Kouassi & Fils (exemple)", nif: "CI-0000000A", family: "Épicerie sèche", terms: "30 jours fin de mois", lead: 3, rating: 4.4, email: "commandes@kouassi-fils.exemple.test", docs: [["RCCM", "valide"], ["Attestation de régularité fiscale", "2027-03-31"]], createdBy: "Moussa Traoré", iban: "CI•• •••• •••• 4412" },
       { id: "F-B", name: "Marché Frais Treichville Exemple", nif: "CI-0000000B", family: "Produits frais", terms: "Comptant à la livraison", lead: 1, rating: 3.9, email: "ventes@marche-treichville.exemple.test", docs: [["RCCM", "valide"], ["Attestation de régularité fiscale", "2026-12-15"]], createdBy: "Estelle Yapi", iban: "CI•• •••• •••• 7781",
@@ -41,7 +83,13 @@
       { id: "F-D", name: "Société Ivoirienne Hygiène Exemple", nif: "CI-0000000D", family: "Hygiène et accueil", terms: "30 jours", lead: 7, rating: 4.6, email: "pro@sih.exemple.test", docs: [["RCCM", "valide"], ["Attestation de régularité fiscale", "2027-01-31"]], createdBy: "Moussa Traoré", iban: "CI•• •••• •••• 3388", contract: "Contrat-cadre groupe 2026" },
       { id: "F-E", name: "Quincaillerie Yopougon Exemple", nif: "CI-0000000E", family: "Pièces techniques", terms: "30 jours", lead: 4, rating: 3.6, email: "service@quincaillerie-yopougon.exemple.test", docs: [["RCCM", "valide"], ["Attestation de régularité fiscale", "2027-02-28"]], createdBy: "Estelle Yapi", iban: "CI•• •••• •••• 5530" },
     ],
-    budgets: { Cuisine: [3500000, 2610000], Bar: [1200000, 640000], Hébergement: [900000, 520000], Technique: [800000, 705000], Buanderie: [600000, 310000] },
+    // contrats-cadres négociés par le groupe : prix appliqués automatiquement aux commandes (EF-PRC-002)
+    contracts: [
+      { id: "CC-2026-01", supplier: "F-D", title: "Contrat-cadre groupe 2026 — hygiène et accueil", scope: "Groupe, tous établissements", from: "2026-01-01", to: "2026-12-31", prices: [{ item: "ART-301", price: 140 }, { item: "ART-302", price: 200 }, { item: "ART-401", price: 30000 }] },
+      { id: "CC-2026-02", supplier: "F-C", title: "Accord boissons 2026", scope: "Groupe, 3 établissements", from: "2026-02-01", to: "2027-01-31", prices: [{ item: "ART-201", price: 2300 }, { item: "ART-203", price: 190 }] },
+      { id: "CC-2025-04", supplier: "F-E", title: "Accord pièces techniques 2025", scope: "Établissement", from: "2025-01-01", to: "2025-12-31", prices: [{ item: "ART-502", price: 1600 }] },
+    ],
+    budgets: { Cuisine: [3500000, 2610000], Bar: [1200000, 640000], Hébergement: [900000, 520000], Technique: [800000, 705000], Buanderie: [600000, 310000], Spa: [700000, 280000] },
     // statut DA : brouillon | soumise | approuvee | rejetee | commandee
     requests: [
       { id: "DA-118", service: "Cuisine", by: "Didier Zadi", date: "2026-11-25", lines: [{ item: "ART-102", qty: 6 }, { item: "ART-101", qty: 4 }], status: "soumise", approvals: [{ role: "Chef de service", who: "Didier Zadi" }] },
@@ -77,7 +125,7 @@
     counts: [{ id: "INV-031", store: "Cave / bar", date: "2026-10-31", gap: -18400 }, { id: "INV-030", store: "Économat cuisine", date: "2026-10-31", gap: -42500 }, { id: "INV-029", store: "Magasin central", date: "2026-10-31", gap: 3600 }],
     tolerance: 2, // % d'écart toléré au rapprochement (EF-PRC-006)
     thresholds: { daf: 500000, dg: 2000000 }, // RG-PRC-02
-    seq: { da: 120, bc: 452, br: 313, ff: 2293, tr: 119, inv: 32 },
+    seq: { da: 120, bc: 452, br: 313, ff: 2293, tr: 119, inv: 32, sup: 6, bs: 900 },
   }
   const P = D.prc
   // article hors catalogue (demande venant d'un autre module) : libellé libre
@@ -90,6 +138,24 @@
   const daTotal = (r) => r.lines.reduce((s, l) => s + l.qty * (l.price ?? IT(l.item).cost), 0)
   const required = (r) => { const t = daTotal(r); return ["Chef de service", ...(t >= P.thresholds.daf ? ["DAF"] : []), ...(t >= P.thresholds.dg ? ["Directeur"] : [])] }
   const stockOf = (item, store) => P.stock.find((s) => s.item === item && s.store === store)
+  const r2 = (n) => Math.round(n * 100) / 100
+  // Correspondance libellé de vente → article de stock (A.prc.consume) : mot-clé en début de mot, insensible à la casse et aux accents ;
+  // le mot-clé le plus long l'emporte ; à défaut, la catégorie (famille) citée dans le libellé ou passée dans la ligne.
+  const norm = (t) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim()
+  const hasKey = (label, key) => (" " + label + " ").includes(" " + key)
+  const findItem = (label, cat) => {
+    const l = norm(label)
+    let best = null, len = 0
+    P.items.forEach((it) => (it.keys || []).forEach((k) => { const nk = norm(k); if (nk && nk.length > len && hasKey(l, nk)) { best = it; len = nk.length } }))
+    if (best) return best
+    const c = norm(cat)
+    return P.items.find((it) => it.keys && (c ? norm(it.family) === c : hasKey(l, norm(it.family)))) || null
+  }
+  const contractPrice = (sup, item) => {
+    const c = P.contracts.find((x) => x.supplier === sup && x.from <= today && today <= x.to && x.prices.some((y) => y.item === item))
+    return c ? { id: c.id, price: c.prices.find((y) => y.item === item).price } : null
+  }
+  const expiredDocs = (sup) => sup.docs.filter(([, v]) => v !== "valide" && v < today)
   const DST = { brouillon: ["Brouillon", "outline"], soumise: ["À approuver", ""], approuvee: ["Approuvée", "on"], rejetee: ["Rejetée", "dark"], commandee: ["Commandée", "outline"] }
   const OST = { envoyee: ["Envoyée", ""], partielle: ["Reçue partiellement", "outline"], recue: ["Reçue", "on"] }
   const FST = { a_rapprocher: ["À rapprocher", ""], bloquee: ["Bloquée", "dark"], approuvee: ["Bon à payer", "on"], a_valider: ["OCR à valider", "outline"] }
@@ -158,7 +224,8 @@
       <div class="row">${req.map((x) => { const a = r.approvals.find((y) => y.role === x); return a ? badge(`${x} : ${a.who}`, "on") : badge(`${x} : en attente`, "outline") }).join(" ")}</div>
       ${r.status === "soumise" ? `<div class="row" style="margin-top:12px">${btn(`Approuver (${nextRole})`, `A.prc.approve(${q(r.id)})`, "accent")}${btn("Rejeter", `A.prc.reject(${q(r.id)})`, "ghost")}</div>` : ""}
       ${r.status === "brouillon" ? `<div class="row" style="margin-top:12px">${btn("Soumettre", `A.prc.submit(${q(r.id)})`)}</div>` : ""}
-      ${r.status === "approuvee" ? `<h3>Transformer en commande</h3><div class="row" style="flex-wrap:nowrap">${select("da-sup", P.suppliers.map((s) => [s.id, s.name]), IT(r.lines[0].item).supplier)}${btn("Créer et envoyer le bon de commande", `A.prc.toOrder(${q(r.id)})`)}</div>` : ""}`)
+      ${r.status === "approuvee" ? `<h3>Transformer en commande</h3><div class="row" style="flex-wrap:nowrap">${select("da-sup", P.suppliers.map((s) => [s.id, s.name + (expiredDocs(s).length ? " (documents expirés)" : "")]), IT(r.lines[0].item).supplier)}${btn("Créer et envoyer le bon de commande", `A.prc.toOrder(${q(r.id)})`)}</div>
+        <p class="muted" style="font-size:12px">Prix du contrat-cadre groupe appliqué s'il existe ; commande refusée à un fournisseur dont un document légal est expiré (EF-PRC-002).</p><div id="da-order-err"></div>` : ""}`)
   }
 
   function tabOrders(p) {
@@ -201,11 +268,30 @@
         btn("Lire une facture d'exemple", "A.prc.ocr()", "sm"))
   }
 
+  function supplierForm() {
+    return card("Nouveau fournisseur", form([
+      field("ns-name", "Raison sociale", input("ns-name", "", 'placeholder="Ex. Transports Lagune Exemple"'), "full"),
+      field("ns-nif", "N° contribuable", input("ns-nif", "", 'placeholder="CI-0000000X"')),
+      field("ns-family", "Famille d'achat", input("ns-family", "", 'placeholder="Ex. Produits frais"')),
+      field("ns-terms", "Conditions de paiement", select("ns-terms", ["Comptant à la livraison", "30 jours", "30 jours fin de mois", "45 jours", "60 jours"], "30 jours")),
+      field("ns-lead", "Délai de livraison (j)", input("ns-lead", "3", 'type="number" min="0"')),
+      field("ns-mail", "E-mail commandes", input("ns-mail", "", 'placeholder="commandes@fournisseur.exemple.test"')),
+      field("ns-by", "Créé par", select("ns-by", ["Moussa Traoré", "Estelle Yapi", "Nadège Beugré"], "Nadège Beugré")),
+      field("ns-rccm", "RCCM reçu", select("ns-rccm", [["valide", "Oui, valide"], ["", "Non, à fournir"]], "valide")),
+      field("ns-fisc", "Attestation fiscale valable jusqu'au", input("ns-fisc", addDays(today, 180), 'type="date"')),
+      `<div class="full" id="ns-err"></div>`,
+      `<div class="full row">${btn("Créer le fournisseur", "A.prc.createSupplier()")}${btn("Annuler", "go('prc-achats/fournisseurs')", "ghost")}${muted("Le créateur ne pourra pas valider les paiements ni le RIB de ce fournisseur (RG-PRC-01).")}</div>`,
+    ]))
+  }
+
   function tabSuppliers(p) {
-    const cur = SUP(p[0]) || P.suppliers[0]
-    const left = listItems(P.suppliers.map((s) => ({ id: s.id, title: s.name, badge: s.bankChange ? " " + badge("RIB à valider", "on") : "", sub: `${s.family} · note ${s.rating.toFixed(1).replace(".", ",")} / 5` })), cur.id, "prc-achats/fournisseurs")
+    const cur = p[0] === "new" ? null : SUP(p[0]) || P.suppliers[0]
+    const left = `<div class="row" style="margin-bottom:8px">${btn("Nouveau fournisseur", "go('prc-achats/fournisseurs/new')", "ghost sm")}${muted("EF-PRC-002")}</div>`
+      + listItems(P.suppliers.map((s) => ({ id: s.id, title: s.name, badge: (s.bankChange ? " " + badge("RIB à valider", "on") : "") + (expiredDocs(s).length ? " " + badge("Document expiré", "dark") : ""), sub: `${s.family} · note ${s.rating.toFixed(1).replace(".", ",")} / 5` })), cur && cur.id, "prc-achats/fournisseurs")
+    if (!cur) return split(left, supplierForm())
     const po = P.orders.filter((o) => o.supplier === cur.id)
     const late = po.filter((o) => o.received && o.received > o.expected).length
+    const ctr = P.contracts.filter((c) => c.supplier === cur.id)
     return split(left, card("", `<div class="row between"><span class="big">${esc(cur.name)}</span>${cur.contract ? badge(cur.contract, "outline") : ""}</div>
       <div class="form" style="margin:12px 0">
         ${field("s-nif", "N° contribuable", input("s-nif", cur.nif, "disabled"))}${field("s-terms", "Conditions de paiement", input("s-terms", cur.terms))}
@@ -213,9 +299,17 @@
       </div>
       <div class="row">${btn("Enregistrer", `A.prc.saveSupplier(${q(cur.id)})`)}</div>
       <h3>Documents légaux</h3>
-      ${tbl(["Document", "Validité"], cur.docs.map(([d, v]) => [esc(d), v === "valide" ? badge("Valide", "outline") : v < today ? badge(`Expirée le ${fd(v)}`, "on") : `jusqu'au ${fd(v)}/${v.slice(0, 4)}`]))}
+      ${tbl(["Document", "Validité", ""], cur.docs.map(([d, v], i) => [esc(d), v === "valide" ? badge("Valide", "outline") : !v ? badge("À fournir", "on") : v < today ? badge(`Expirée le ${fd(v)}`, "on") : `jusqu'au ${fd(v)}/${v.slice(0, 4)}`,
+        v === "valide" || (v && v >= addDays(today, 30)) ? "" : btn("Enregistrer le document renouvelé", `A.prc.renewDoc(${q(cur.id)}, ${i})`, "ghost sm")]))}
+      ${expiredDocs(cur).length ? `<p class="err">Document légal expiré : aucune nouvelle commande ne peut être envoyée à ce fournisseur.</p>` : ""}
       <h3>Évaluation</h3>
       ${cards([kpi("Note", cur.rating.toFixed(1).replace(".", ",") + " / 5", "qualité, délai, prix"), kpi("Commandes", po.length, "sur la période"), kpi("Livraisons en retard", late, `délai annoncé ${cur.lead} j`)])}
+      <div class="row" style="margin-top:8px;flex-wrap:nowrap">${[["ev-q", "Qualité"], ["ev-d", "Délai"], ["ev-p", "Prix"]].map(([id, l]) => `<label for="${id}" style="margin:0">${l}</label>${select(id, ["1", "2", "3", "4", "5"], "4", 'style="max-width:70px"')}`).join("")}${btn("Enregistrer l'évaluation", `A.prc.evaluate(${q(cur.id)})`, "ghost sm")}</div>
+      ${(cur.evals || []).length ? `<p class="muted" style="font-size:12px">${cur.evals.map((e) => `${fd(e.date)} : qualité ${e.q}, délai ${e.d}, prix ${e.p}`).join(" · ")}</p>` : ""}
+      <h3>Contrats-cadres groupe</h3>
+      ${tbl(["Contrat", "Portée", "Période", "Prix négociés", "État"], ctr.map((c) => [esc(c.id) + " " + muted(c.title), esc(c.scope), `${fd(c.from)}/${c.from.slice(2, 4)} → ${fd(c.to)}/${c.to.slice(2, 4)}`,
+        esc(c.prices.map((x) => `${IT(x.item).name} : ${money(x.price)}`).join(" ; ")), c.to < today ? badge("Échu", "dark") : c.from > today ? badge("À venir", "outline") : badge("Actif", "on")]), "Aucun contrat-cadre pour ce fournisseur.")}
+      <p class="muted" style="font-size:12px">Les prix d'un contrat actif remplacent le prix de référence à la création du bon de commande.</p>
       <h3>Coordonnées bancaires</h3>
       <p>RIB actuel : ${esc(cur.iban)} ${muted("chiffré, affichage masqué")}</p>
       ${cur.bankChange ? `<div class="card"><p class="err" style="margin-top:0">Modification demandée le ${fd(cur.bankChange.date)} par ${esc(cur.bankChange.by)} : nouveau RIB ${esc(cur.bankChange.iban)}. Double validation obligatoire, par une autre personne (RG-PRC-04, RG-PRC-01).</p>
@@ -231,18 +325,21 @@
     const expSoon = P.stock.flatMap((x) => (x.lots || []).map((l) => ({ ...l, item: x.item }))).filter((l) => l.exp <= addDays(today, 3))
     return pageHead("Stocks", "Niveaux par magasin, seuils, lots et péremption, mouvements, transferts et inventaires. Valorisation au coût moyen pondéré (CMUP). Données d'exemple.")
       + cards([kpi("Valeur du stock", money(value), "au CMUP"), kpi("Articles sous le seuil", low.length, "réapprovisionnement à lancer"),
-        kpi("Lots à consommer sous 3 j", expSoon.length, "denrées périssables"), kpi("Magasins", P.stores.length, "par établissement")])
+        kpi("Lots à consommer sous 3 j", expSoon.length, "denrées périssables"), kpi("Alertes de seuil", P.alerts.filter((a) => !a.done).length, "levées par les ventes et sorties")])
       + subtabs("prc-stocks", [["niveaux", "Niveaux et alertes"], ["mouvements", "Mouvements et transferts"], ["inventaire", "Inventaire"], ["articles", "Articles"], ["kpi", "Indicateurs"]], tab)
       + ({ niveaux: tabLevels, mouvements: tabMoves, inventaire: tabCount, articles: tabItems, kpi: tabKpi }[tab] || tabLevels)(p.slice(1))
   }
 
-  const reorderProposal = () => P.stock.filter((x) => x.min > 0 && x.qty < x.min).map((x) => ({ item: x.item, store: x.store, qty: x.max - x.qty }))
+  const reorderProposal = () => P.stock.filter((x) => x.min > 0 && x.qty < x.min).map((x) => ({ item: x.item, store: x.store, qty: Math.ceil(x.max - x.qty) }))
 
   function tabLevels() {
     const store = ui.prcStore || "tous"
     const rows = P.stock.filter((x) => (store === "tous" || x.store === store) && (x.max > 0 || x.qty > 0))
     const prop = reorderProposal()
-    return `<div class="chips">${[["tous", "Tous les magasins"], ...P.stores.map((s) => [s, s])].map(([k, l]) => `<button aria-pressed="${store === k}" onclick="ui.prcStore=${q(k)};render()">${esc(l)}</button>`).join("")}</div>`
+    const alerts = P.alerts.filter((a) => !a.done)
+    return (alerts.length ? card(`Alertes de seuil (${alerts.length})`, tbl(["Date", "Article", "Magasin", "#Stock", "#Seuil", "Origine"], alerts.slice(0, 8).map((a) => [fd(a.date), esc(IT(a.item).name), esc(a.store), a.qty, a.min, esc(a.centre)]))
+        + `<div class="row" style="margin-top:8px">${btn("Créer les demandes proposées", "A.prc.reorder()", "sm")}${btn("Marquer comme vues", "A.prc.ackAlerts()", "ghost sm")}</div>`) : "")
+      + `<div class="chips">${[["tous", "Tous les magasins"], ...P.stores.map((s) => [s, s])].map(([k, l]) => `<button aria-pressed="${store === k}" onclick="ui.prcStore=${q(k)};render()">${esc(l)}</button>`).join("")}</div>`
       + tbl(["Article", "Magasin", "#Stock", "#Seuil", "#Max", "#Valeur", "Lots / péremption", "État"], rows.map((x) => {
         const it = IT(x.item), low = x.qty < x.min
         return [esc(it.name), esc(x.store), `${x.qty} ${esc(it.unit)}`, x.min, x.max, money(x.qty * it.cost),
@@ -250,6 +347,9 @@
           x.qty === 0 ? badge("Rupture", "dark") : low ? badge("Sous le seuil", "on") : badge("OK", "outline")]
       }))
       + `<p class="muted">Règle de sortie des denrées : premier périmé, premier sorti ${muted("EF-PRC-010")}</p>`
+      + card("Seuils de réapprovisionnement", `<div class="row" style="flex-wrap:nowrap">${select("th-row", P.stock.map((x, i) => [String(i), `${IT(x.item).name} — ${x.store}`]).filter((_, i) => P.stock[i].max > 0 || P.stock[i].qty > 0), ui.prcTh || "0", `onchange="ui.prcTh=this.value;render()"`)}
+          ${input("th-min", (P.stock[Number(ui.prcTh || 0)] || {}).min ?? 0, 'type="number" min="0" style="max-width:90px" aria-label="Seuil"')}${input("th-max", (P.stock[Number(ui.prcTh || 0)] || {}).max ?? 0, 'type="number" min="0" style="max-width:90px" aria-label="Maximum"')}${btn("Enregistrer", "A.prc.setThreshold()", "ghost")}</div>
+          <p class="muted" style="font-size:12px;margin-bottom:0">Sous le seuil, l'article est proposé à la commande pour revenir au maximum (quantité = max − stock) ${muted("EF-PRC-009")}</p><div id="th-err"></div>`)
       + aiBox("Prévision des besoins", prop.length ? `Proposition selon consommation des 30 derniers jours, prévision d'occupation et délais fournisseurs : ${prop.map((x) => `${IT(x.item).name} × ${x.qty}`).join(" ; ")}. Les quantités sont modifiables avant envoi pour approbation.` : "Aucun article sous le seuil : pas de commande à proposer.",
         prop.length ? btn("Créer les demandes proposées", "A.prc.reorder()", "sm") : "")
   }
@@ -263,6 +363,8 @@
       `<div class="full" id="tr-err"></div>`,
       `<div class="full row">${btn("Enregistrer le mouvement", "A.prc.transfer()")}${muted("EF-PRC-007")}</div>`,
     ]))
+      + card("Sortie par vente (restaurant, bar, minibar, spa)", `<p class="muted" style="margin-top:0">Les ventes des points de vente appellent <code>A.prc.consume(lignes, centre)</code> : chaque libellé vendu est rapproché d'un article (mot-clé ou catégorie), puis sorti vers le centre de coût, avec alerte de seuil. Sans article correspondant, la ligne est ignorée.</p>
+        <div class="row" style="flex-wrap:nowrap">${input("cs-label", "Bière locale 65 cl", 'aria-label="Libellé vendu"')}${input("cs-qty", "2", 'type="number" min="1" style="max-width:80px" aria-label="Quantité"')}${select("cs-cc", ["Restaurant", "Bar", "Minibar", "Spa"], "Bar", 'style="max-width:130px"')}${btn("Simuler la vente", "A.prc.saleTest()", "ghost")}</div>`)
       + `<h2>Derniers mouvements</h2>`
       + tbl(["Date", "Type", "Article", "#Qté", "De", "Vers", "Référence"], P.movements.map((m) => [fd(m.date), esc(m.type), esc(IT(m.item).name), m.qty, esc(m.from), esc(m.to), esc(m.ref)]))
   }
@@ -322,12 +424,15 @@
     },
     reject(id) { DA(id).status = "rejetee"; toast(`${id} rejetée`); render() },
     toOrder(id) {
-      const r = DA(id), sup = val("da-sup")
-      const o = { id: "BC-0" + P.seq.bc++, supplier: sup, da: id, date: today, expected: addDays(today, SUP(sup).lead), lines: r.lines.map((l) => ({ item: l.item, qty: l.qty, price: l.price ?? IT(l.item).cost, received: 0 })), status: "envoyee" }
+      const r = DA(id), sup = val("da-sup"), exp = expiredDocs(SUP(sup))
+      if (exp.length) { const el = $("#da-order-err"); if (el) el.innerHTML = `<div class="err">Commande refusée : ${esc(exp.map(([d]) => d).join(", "))} expiré(e) chez ${esc(SUP(sup).name)}. Enregistrez le document renouvelé dans la fiche fournisseur.</div>`; return toast("Fournisseur non conforme : document légal expiré") }
+      const lines = r.lines.map((l) => { const c = contractPrice(sup, l.item); return { item: l.item, qty: l.qty, price: c ? c.price : l.price ?? IT(l.item).cost, received: 0, ...(c ? { contract: c.id } : {}) } })
+      const o = { id: "BC-0" + P.seq.bc++, supplier: sup, da: id, date: today, expected: addDays(today, SUP(sup).lead), lines, status: "envoyee" }
       P.orders.unshift(o)
       r.status = "commandee"
       const b = P.budgets[r.service]; if (b) b[1] += daTotal(r)
-      toast(`${o.id} envoyé à ${SUP(sup).name} (e-mail simulé)`)
+      const nc = lines.filter((l) => l.contract).length
+      toast(`${o.id} envoyé à ${SUP(sup).name} (e-mail simulé)${nc ? ` — prix contrat-cadre sur ${nc} ligne(s)` : ""}`)
       go("prc-achats/commandes/" + o.id)
     },
     receive(id) {
@@ -396,9 +501,10 @@
     },
     refuseBank(id) { delete SUP(id).bankChange; toast("Modification de RIB refusée"); render() },
     reorder() {
+      P.alerts.forEach((a) => (a.done = true))
       const prop = reorderProposal()
       const bySvc = {}
-      const svc = (store) => ({ "Économat cuisine": "Cuisine", "Cave / bar": "Bar", "Magasin technique": "Technique" }[store] || "Hébergement")
+      const svc = (store) => ({ "Économat cuisine": "Cuisine", "Cave / bar": "Bar", "Magasin technique": "Technique", "Réserve spa": "Spa" }[store] || "Hébergement")
       prop.forEach((x) => (bySvc[svc(x.store)] = bySvc[svc(x.store)] || []).push({ item: x.item, qty: x.qty }))
       Object.entries(bySvc).forEach(([service, lines]) => P.requests.push({ id: "DA-" + P.seq.da++, service, by: "Proposition IA (simulée)", date: today, lines, status: "brouillon", approvals: [] }))
       toast(`${Object.keys(bySvc).length} demande(s) en brouillon, à vérifier puis soumettre`)
@@ -429,7 +535,76 @@
       toast(gap ? `Inventaire validé — écart ${money(gap)}` : "Inventaire validé — aucun écart")
       render()
     },
+    createSupplier() {
+      const name = val("ns-name"), nif = val("ns-nif"), mail = val("ns-mail")
+      const err = (m) => ($("#ns-err").innerHTML = `<div class="err">${esc(m)}</div>`)
+      if (!name || !nif) return err("Raison sociale et numéro de contribuable obligatoires.")
+      if (P.suppliers.some((x) => x.nif.toLowerCase() === nif.toLowerCase())) return err("Un fournisseur porte déjà ce numéro de contribuable (doublon).")
+      if (mail && !/^[^@\s]+@[^@\s]+\.[a-z]+$/i.test(mail)) return err("E-mail invalide.")
+      const id = "F-" + String.fromCharCode(64 + P.seq.sup++)
+      P.suppliers.push({ id, name, nif, family: val("ns-family") || "Divers", terms: val("ns-terms"), lead: Number(val("ns-lead")) || 0, rating: 3, email: mail, docs: [["RCCM", val("ns-rccm")], ["Attestation de régularité fiscale", val("ns-fisc")]], createdBy: val("ns-by"), iban: "à renseigner (double validation)" })
+      toast(`${name} créé — RIB à saisir puis valider par une autre personne`)
+      go("prc-achats/fournisseurs/" + id)
+    },
+    renewDoc(id, i) {
+      const s = SUP(id), d = s.docs[i]
+      const until = prompt(`${d[0]} renouvelé : valable jusqu'au (AAAA-MM-JJ)`, addDays(today, 365))
+      if (!until) return
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today) return toast("Date de validité invalide ou déjà passée")
+      d[1] = d[0] === "RCCM" ? "valide" : until
+      toast(`${d[0]} enregistré pour ${s.name}`)
+      render()
+    },
+    evaluate(id) {
+      const s = SUP(id), e = { date: today, q: Number(val("ev-q")), d: Number(val("ev-d")), p: Number(val("ev-p")) }
+      ;(s.evals = s.evals || []).unshift(e)
+      const all = s.evals.map((x) => (x.q + x.d + x.p) / 3)
+      s.rating = Math.round(((s.rating + all.reduce((a, b) => a + b, 0)) / (all.length + 1)) * 10) / 10
+      toast(`Évaluation enregistrée — note ${s.rating.toFixed(1).replace(".", ",")} / 5`)
+      render()
+    },
+    setThreshold() {
+      const x = P.stock[Number(val("th-row"))], min = Number(val("th-min")), max = Number(val("th-max"))
+      if (!x) return
+      if (!(min >= 0) || !(max > 0) || min > max) return ($("#th-err").innerHTML = `<div class="err">Le seuil doit être positif et inférieur ou égal au maximum.</div>`)
+      Object.assign(x, { min, max })
+      toast(`${IT(x.item).name} : seuil ${min}, maximum ${max}${x.qty < min ? " — article proposé à la commande" : ""}`)
+      render()
+    },
+    ackAlerts() { P.alerts.forEach((a) => (a.done = true)); toast("Alertes marquées comme vues"); render() },
+    saleTest() {
+      const n = A.prc.consume([{ label: val("cs-label"), qty: Number(val("cs-qty")) || 1 }], val("cs-cc"))
+      toast(n ? "Vente déstockée : mouvement de sortie enregistré" : "Aucun article de stock ne correspond : ligne ignorée")
+      render()
+    },
+    // API inter-modules (#61) : ventes restaurant, bar, minibar et spa → sortie de stock vers le centre de coût.
+    // lines = [{ label, qty, cat? }], centre = "Restaurant" | "Spa" | "Centre de coût …". Renvoie le nombre de lignes déstockées.
+    consume(lines, centre) {
+      const cc = /^centre de co/i.test(centre || "") ? centre : "Centre de coût " + (centre || "Divers")
+      let n = 0
+      ;(Array.isArray(lines) ? lines : []).forEach((ln) => {
+        const qty = Number(ln && ln.qty) || 0
+        const it = ln && qty > 0 ? findItem(ln.label, ln.cat) : null
+        if (!it) return
+        const s = stockOf(it.code, it.store) || P.stock.find((x) => x.item === it.code)
+        if (!s) return
+        const out = r2(qty * (it.perSale || 1)), before = s.qty
+        s.qty = Math.max(0, r2(s.qty - out))
+        if (s.lots) { // premier périmé, premier sorti (EF-PRC-010)
+          let rest = out
+          s.lots.sort((a, b) => a.exp.localeCompare(b.exp)).forEach((l) => { const t = Math.min(l.qty, rest); l.qty = r2(l.qty - t); rest = r2(rest - t) })
+          s.lots = s.lots.filter((l) => l.qty > 0)
+        }
+        pushMove({ type: "Sortie", item: it.code, qty: out, from: s.store, to: cc, ref: `Vente : ${ln.label} × ${qty}` })
+        if ((s.min > 0 && before >= s.min && s.qty < s.min) || (before > 0 && s.qty === 0))
+          P.alerts.unshift({ date: today, item: it.code, store: s.store, qty: s.qty, min: s.min, centre: cc, done: false })
+        n++
+      })
+      return n
+    },
     // utilisé par d'autres modules (ex. maintenance) pour tracer un besoin
+    // recherche d'un article par libellé (utilisée par la maintenance pour les pièces) : null si aucun
+    find(label) { const it = findItem(label); if (!it) return null; const s = stockOf(it.code, it.store); return { code: it.code, name: it.name, cost: it.cost, qty: s ? s.qty : 0 } },
     externalRequest(label, cost, service) {
       P.requests.push({ id: "DA-" + P.seq.da++, service: P.budgets[service] ? service : "Technique", by: "Demande automatique (autre module)", date: today, lines: [{ item: label, qty: 1, price: cost || 0 }], status: "brouillon", approvals: [] })
     },
