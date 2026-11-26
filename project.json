@@ -1,0 +1,13 @@
+{
+  "name": "hms",
+  "title": "HMS",
+  "idea": "Un logiciel de gestion hôtelière en ligne pour gérer les réservations, la réception, les chambres et les clés d'accès d'un hôtel.",
+  "mode": "prototype",
+  "github": {
+    "owner": "Cissecheick22",
+    "repo": "Cissecheick22/hms",
+    "visibility": "public",
+    "project_number": null
+  },
+  "created": "2026-11-26"
+}
